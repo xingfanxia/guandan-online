@@ -1,0 +1,7 @@
+dist/
+node_modules/
+.vercel/
+coverage/
+demos/preview-*.png
+demos/screenshot-*.png
+*.lock

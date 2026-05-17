@@ -1,9 +1,31 @@
-# Handoff — guandan-online v0.6 (pre-implementation)
+# Handoff — guandan-online v0.7 (P0 in progress)
 
 **Date**: 2026-05-17
-**Status**: All pre-implementation work complete. Ready for execution per `docs/plan/PLAN.md`.
+**Status**: Implementation started. P0 foundation laid (bootstrap + AUTH-1 + CORE-1 part 1). See [Progress](#progress) below.
 **Repo**: https://github.com/xingfanxia/guandan-online
 **Domain (locked)**: `gdo.ax0x.ai` (sibling subdomain to scorer at `gd.ax0x.ai`)
+
+---
+
+## Progress
+
+### 2026-05-17 — P0 kick-off session
+
+| Commit | Milestone | What |
+|---|---|---|
+| `1672b4c` | Bootstrap | Vite 8 + TS 6 + React 19 + Vitest 4 scaffold, Vercel Fluid Compute config, dir skeleton, smoke test |
+| `c4310a4` | AUTH-1 | `lib/auth/` — `validateOwnershipToken` + `extractBearerToken` + handle normalization, ported verbatim from sibling scorer's `api/players/_utils.js:247-285` with `// SYNC:` pins. 32 tests |
+| `af9c409` | CORE-1 part 1 | `lib/game/` foundation — `mode.ts` / `levels.ts` / `cards.ts` / `upgrade.ts` / `aLevel.ts`. Pure-functional ports of sibling scorer's well-tested logic. 79 tests |
+
+**Stats**: 111/111 tests passing · 98.45% statements · 100% functions · TS strict mode clean.
+
+**Outstanding P0 work** (per dependency graph in `docs/plan/PLAN.md`):
+- CORE-1 part 2 — `patterns.ts` (combo recognition), `bomb.ts` (power hierarchy), `wildcard.ts` (红心级牌 substitution). Dispatchable as parallel subagents on the foundation. Effort: ~3-4 days. License check on `hash-panda/guandan-guide` before adopting source.
+- CORE-2 — game state machine (deal → trick → round-end). Depends on CORE-1 complete. 4-5 days.
+- NET-1 — SSE+POST + Upstash Redis transport. Independent of CORE work. 3-4 days.
+- NET-2 — idempotency + Last-Event-ID resume + 270s rotation. Depends on NET-1. 2-3 days.
+- NET-3 — `buildClientPayload` + grep-no-leak CI gate. **SECURITY-CRITICAL.** Depends on CORE-2 + NET-1. 2-3 days.
+- AUTH-2 — sibling scorer key migration `player:*` → `gs:*`. **PAUSE BEFORE PROD DEPLOY.** 1-2 days.
 
 ---
 

@@ -10,14 +10,25 @@ Companion to sibling `../guandan-scorer` (in-person scoring/tracking app). This 
 
 ## Current phase
 
-**Research → Design → Plan → Implementation.** Currently in research phase. Findings live under `docs/research/`. No implementation has begun.
+**P0 Foundation (week 1-2).** Bootstrap + AUTH-1 + CORE-1 part 1 shipped 2026-05-17. See `HANDOFF.md` Progress section and `docs/plan/PLAN.md` for milestone-level status.
 
-DO NOT skip ahead to code. Subsequent phases gate on completed prior phase:
+The plan has 6 phases (P0 → P5) plus deferred polish. Each phase ends with a working, demoable artifact. See `docs/plan/README.md` for the dependency graph and phase entry criteria.
 
-1. Research (`docs/research/*`) — investigate AI engines, rules, architecture, mobile UX
-2. Design doc — single-page spec, user-approved before plan
-3. Implementation plan — milestone breakdown (`<MILESTONE>-N: description` naming)
-4. Implementation — phased delivery with own-merge autonomy per `feedback_solo_project_autonomy` in sibling project's memory
+## Coding conventions (post-bootstrap)
+
+- **TypeScript strict mode** with `noUncheckedIndexedAccess`. Indexing returns `T | undefined` — use `?? fallback` or `!` (with proof of bounds).
+- **Pure functions where the sibling has singletons.** Sibling scorer uses a `state` singleton (`src/core/state.js`); online's multiplayer model demands purity. Caller passes state in, function returns a diff.
+- **`// SYNC:` pins** — any file that ports sibling-scorer logic carries a `// SYNC: ../guandan-scorer/<path>:<lines>` comment. If sibling changes, update both within the same PR. Drift here breaks cross-app account/result correctness once AUTH-2 ships.
+- **Path aliases**: `@/*` → `src/*`, `@lib/*` → `lib/*`, `@tests/*` → `tests/*`.
+- **TDD non-negotiable for `lib/game/*` and `lib/realtime/*`** — failing test first, then minimal impl. Other surfaces (UI, scripts) can write tests alongside.
+- **Coverage gate**: 80% lines on `lib/**` enforced by `vitest run --coverage`. CORE-1 explicitly targets 95%+ (currently 99.4%).
+- **Comments**: explain WHY not WHAT. The plan's "no narration / no edit-history" rule applies here too.
+
+## Tooling
+
+- Node `>=22` (Vercel deploys on `nodejs22.x`); local dev tolerates Node 23.x with a benign vitest engine warning.
+- `npm test` (vitest), `npm run typecheck`, `npm run build` (tsc -b + vite build), `npm run dev` (vite dev server on :5174).
+- Vercel project NOT yet created. DEPLOY-1 (P5) creates it. Local dev uses `.env.local` per `.env.example`.
 
 ## Domain references
 
@@ -46,4 +57,5 @@ Follow the global file-organization rules from `~/.claude/CLAUDE.md`:
 
 ## Last updated
 
-Initial scaffold: 2026-05-16 (research phase begin)
+- 2026-05-17 — P0 kickoff: bootstrap + AUTH-1 + CORE-1 part 1 shipped (3 commits). 111/111 tests, 98.45% statement coverage.
+- 2026-05-16 — Initial scaffold (research phase begin)

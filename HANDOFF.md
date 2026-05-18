@@ -1,7 +1,7 @@
-# Handoff — guandan-online v0.7 (P0 in progress)
+# Handoff — guandan-online v0.8 (P0 in progress)
 
 **Date**: 2026-05-17
-**Status**: Implementation started. P0 foundation laid (bootstrap + AUTH-1 + CORE-1 part 1). See [Progress](#progress) below.
+**Status**: Implementation continuing. P0 foundation + card-play engine shipped (bootstrap + AUTH-1 + CORE-1). See [Progress](#progress) below.
 **Repo**: https://github.com/xingfanxia/guandan-online
 **Domain (locked)**: `gdo.ax0x.ai` (sibling subdomain to scorer at `gd.ax0x.ai`)
 
@@ -16,12 +16,14 @@
 | `1672b4c` | Bootstrap | Vite 8 + TS 6 + React 19 + Vitest 4 scaffold, Vercel Fluid Compute config, dir skeleton, smoke test |
 | `c4310a4` | AUTH-1 | `lib/auth/` — `validateOwnershipToken` + `extractBearerToken` + handle normalization, ported verbatim from sibling scorer's `api/players/_utils.js:247-285` with `// SYNC:` pins. 32 tests |
 | `af9c409` | CORE-1 part 1 | `lib/game/` foundation — `mode.ts` / `levels.ts` / `cards.ts` / `upgrade.ts` / `aLevel.ts`. Pure-functional ports of sibling scorer's well-tested logic. 79 tests |
+| _next_ | CORE-1 part 2 | `lib/game/` card-play layer — `wildcard.ts` (逢人配 partition helpers) / `bomb.ts` (7-tier power hierarchy + flush-straight detection + joker bomb) / `patterns.ts` (all 10 hand kinds + `analyzeHand` + `canBeat`). Port-semantics from `docs/research/game-rules.md` (license-safe; no external source copied). 115 new tests |
 
-**Stats**: 111/111 tests passing · 98.45% statements · 100% functions · TS strict mode clean.
+**Stats**: 226/226 tests passing · 94.93% statements · 100% functions · 98.75% lines · TS strict mode clean.
+
+**License decision (CORE-1 part 2)**: Ported semantics from the in-repo `docs/research/game-rules.md` spec (authoritative World 2025 ruleset, multi-source attributed). No source code copied from `hash-panda/guandan-guide` — the spec is self-sufficient and avoids license risk. `// SYNC:` pins reference the spec section, not external code.
 
 **Outstanding P0 work** (per dependency graph in `docs/plan/PLAN.md`):
-- CORE-1 part 2 — `patterns.ts` (combo recognition), `bomb.ts` (power hierarchy), `wildcard.ts` (红心级牌 substitution). Dispatchable as parallel subagents on the foundation. Effort: ~3-4 days. License check on `hash-panda/guandan-guide` before adopting source.
-- CORE-2 — game state machine (deal → trick → round-end). Depends on CORE-1 complete. 4-5 days.
+- CORE-2 — game state machine (deal → trick → round-end). Depends on CORE-1 complete (NOW UNBLOCKED). 4-5 days.
 - NET-1 — SSE+POST + Upstash Redis transport. Independent of CORE work. 3-4 days.
 - NET-2 — idempotency + Last-Event-ID resume + 270s rotation. Depends on NET-1. 2-3 days.
 - NET-3 — `buildClientPayload` + grep-no-leak CI gate. **SECURITY-CRITICAL.** Depends on CORE-2 + NET-1. 2-3 days.

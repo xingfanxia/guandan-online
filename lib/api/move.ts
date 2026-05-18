@@ -131,20 +131,55 @@ export async function handleMove(
   }
 
   // ── Dispatch ────────────────────────────────────────────────────────────
-  const { newRound, response } = handleMoveCommand(
+  const dispatch = handleMoveCommand(
     envelope.round,
     member.id,
     parsed.value.command,
     envelope.version
   );
+  const newRound = dispatch.newRound;
+  let response: MoveResponse = dispatch.response;
 
   // ── Persist + publish + commit ──────────────────────────────────────────
   if (response.ok) {
+    const turnTimeoutSeconds =
+      deps.turnTimeoutSeconds ?? DEFAULT_TURN_TIMEOUT_SECONDS;
+    const turnDeadline = new Date(
+      now() + turnTimeoutSeconds * 1000
+    ).toISOString();
+
+    // A single move can emit multiple events (move_played + trick_won).
+    // deriveMoveEvent assigns sequential versions starting from
+    // response.appliedVersion. The final round.version is the LAST event's
+    // version — so the next move's fromVersion check stays aligned with
+    // the per-recipient log seq used for SSE Last-Event-ID resume.
+    const events = deriveMoveEvent(
+      member.id,
+      parsed.value.command,
+      envelope.round,
+      newRound,
+      response.appliedVersion,
+      turnDeadline
+    );
+    const finalVersion =
+      events.length > 0
+        ? Math.max(...events.map((e) => e.version))
+        : response.appliedVersion;
+    if (events.length > 1) {
+      // Update the response so the client sees the LAST event version as
+      // their fromVersion baseline for the next move.
+      response = {
+        ok: true,
+        appliedVersion: finalVersion,
+        result: response.result,
+      };
+    }
+
     await deps.roundStore.put(
       code,
       {
         round: newRound,
-        version: response.appliedVersion,
+        version: finalVersion,
         updatedAt: now(),
       },
       ROUND_TTL_SECONDS
@@ -153,23 +188,12 @@ export async function handleMove(
     // Event fanout. Failures here are logged but never propagated — the
     // move already applied to the durable round state, and SSE replay via
     // EventLog will catch any clients that miss the live broadcast.
-    const turnTimeoutSeconds =
-      deps.turnTimeoutSeconds ?? DEFAULT_TURN_TIMEOUT_SECONDS;
-    const turnDeadline = new Date(
-      now() + turnTimeoutSeconds * 1000
-    ).toISOString();
-    const authorEvent = deriveMoveEvent(
-      member.id,
-      parsed.value.command,
-      envelope.round,
-      newRound,
-      response.appliedVersion,
-      turnDeadline
-    );
-    if (authorEvent) {
+    if (events.length > 0) {
       try {
         const gameState = buildGameState(room, newRound);
-        await publishEvent(code, authorEvent, gameState, deps.bus, deps.log);
+        for (const event of events) {
+          await publishEvent(code, event, gameState, deps.bus, deps.log);
+        }
       } catch (err) {
         console.error('[move] publishEvent failed:', err);
       }

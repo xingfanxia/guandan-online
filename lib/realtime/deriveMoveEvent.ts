@@ -1,11 +1,17 @@
-// Produce the AuthorEvent that publishEvent should emit after a successful
-// move dispatch. For v0 we cover the two move-command kinds that
-// handleMoveCommand actually applies: 'play' and 'pass'. trick_won /
-// round_end follow when those state transitions are detected in pre vs
-// post-round comparison (out of scope for API-4 part B).
+// Produce the AuthorEvents that publishEvent should emit after a successful
+// move dispatch. For v0 we cover:
 //
-// move_played / move_passed are pass-through events (no hidden state), so
-// the resulting AuthorEvent is structurally identical to ServerEvent.
+//   move_played / move_passed  — every successful move
+//   trick_won                  — when the move ended the current trick
+//                                (preRound.currentTrick → postRound.currentTrick=null)
+//
+// round_end requires GameSession persistence (team levels + finished-rounds
+// counter live there, NOT on GameRound) and lands with the session layer.
+// All three move-command kinds also need stamping when tribute / pre-round
+// flow is wired (TRIBUTE-1 / handleMove dispatch extension).
+//
+// move_played / move_passed / trick_won are pass-through events, so the
+// AuthorEvent shape is structurally identical to ServerEvent.
 
 import { analyzeHand } from '../game/patterns';
 import { decodeCardIds } from './cardCodec';
@@ -19,11 +25,52 @@ import type { AuthorEvent } from './buildClientPayload';
 import type { ISOTimestamp } from './messages';
 
 /**
- * Derive the AuthorEvent for a single successful move. Returns null when
- * the command kind doesn't produce a per-move broadcast (tribute_select,
- * anti_tribute, report_card, ready land with TRIBUTE-1 / pre-round flow).
+ * Derive the AuthorEvents for a single successful move. Returns an array so
+ * the caller can publish each in order; many moves emit just one event,
+ * but a move that closes a trick emits move_played/move_passed THEN
+ * trick_won at appliedVersion + 1.
+ *
+ * Returns [] for command kinds that don't yet have a dispatched event path
+ * (tribute_select, anti_tribute, report_card, ready — these land with
+ * TRIBUTE-1 / pre-round flow).
  */
 export function deriveMoveEvent(
+  playerId: PlayerId,
+  command: MoveCommand,
+  preRound: GameRound,
+  postRound: GameRound,
+  appliedVersion: number,
+  turnDeadline: ISOTimestamp
+): AuthorEvent[] {
+  const moveEvent = deriveMoveOnlyEvent(
+    playerId,
+    command,
+    preRound,
+    postRound,
+    appliedVersion,
+    turnDeadline
+  );
+  if (!moveEvent) return [];
+
+  const events: AuthorEvent[] = [moveEvent];
+
+  // Trick-end detection: a trick was in progress (preRound.currentTrick !==
+  // null — guaranteed because handleMoveCommand only applies on non-null
+  // currentTrick); post is null iff this action ended it.
+  if (preRound.currentTrick !== null && postRound.currentTrick === null) {
+    const trickWinner = preRound.currentTrick.bestPlayer ?? playerId;
+    events.push({
+      type: 'trick_won',
+      version: appliedVersion + 1,
+      winner: trickWinner,
+      nextLeader: postRound.leader,
+    });
+  }
+
+  return events;
+}
+
+function deriveMoveOnlyEvent(
   playerId: PlayerId,
   command: MoveCommand,
   preRound: GameRound,
@@ -53,8 +100,6 @@ export function deriveMoveEvent(
     case 'anti_tribute':
     case 'report_card':
     case 'ready':
-      // Not yet wired through handleMoveCommand; their event derivation
-      // lands alongside the matching dispatcher branches.
       return null;
     default: {
       const _exhaustive: never = command;

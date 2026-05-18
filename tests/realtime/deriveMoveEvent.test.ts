@@ -47,7 +47,7 @@ describe('deriveMoveEvent — play', () => {
     const command: PlayCommand = { kind: 'play', cards, fromVersion: 0 };
     const postRound = playCards(preRound, [card]);
 
-    const event = deriveMoveEvent(
+    const events = deriveMoveEvent(
       'p0',
       command,
       preRound,
@@ -55,8 +55,9 @@ describe('deriveMoveEvent — play', () => {
       1,
       TURN_DEADLINE
     );
-    expect(event).not.toBeNull();
-    if (!event || event.type !== 'move_played') {
+    expect(events).toHaveLength(1);
+    const event = events[0]!;
+    if (event.type !== 'move_played') {
       throw new Error('expected move_played event');
     }
     expect(event.player).toBe('p0');
@@ -76,7 +77,7 @@ describe('deriveMoveEvent — play', () => {
     };
     const postRound = playCards(preRound, [card]);
 
-    const event = deriveMoveEvent(
+    const events = deriveMoveEvent(
       'p0',
       command,
       preRound,
@@ -84,7 +85,9 @@ describe('deriveMoveEvent — play', () => {
       1,
       TURN_DEADLINE
     );
-    if (event?.type !== 'move_played') throw new Error('expected move_played');
+    expect(events).toHaveLength(1);
+    const event = events[0]!;
+    if (event.type !== 'move_played') throw new Error('expected move_played');
     expect(event.nextTurn).toBe(postRound.currentTrick?.currentPlayer);
     expect(event.nextTurn).not.toBe('p0');
   });
@@ -97,18 +100,14 @@ describe('deriveMoveEvent — pass', () => {
     let round = buildBaseRound();
     const p0Card = round.hands['p0']![0]!;
     round = playCards(round, [p0Card]);
-    // Now p1 (or whoever currentTrick.currentPlayer is) can pass.
     const passer = round.currentTrick!.currentPlayer;
     const passCommand: PassCommand = { kind: 'pass', fromVersion: 1 };
-    // simulate pass via round.ts pass() — but we don't need the actual
-    // newRound here; just need the deriver to label the event correctly.
-    // Use a stub postRound matching shape.
     const postRound: GameRound = {
       ...round,
       currentTrick: { ...round.currentTrick!, currentPlayer: 'p2' },
     };
 
-    const event = deriveMoveEvent(
+    const events = deriveMoveEvent(
       passer,
       passCommand,
       round,
@@ -116,22 +115,70 @@ describe('deriveMoveEvent — pass', () => {
       2,
       TURN_DEADLINE
     );
-    if (event?.type !== 'move_passed') throw new Error('expected move_passed');
+    expect(events).toHaveLength(1);
+    const event = events[0]!;
+    if (event.type !== 'move_passed') throw new Error('expected move_passed');
     expect(event.player).toBe(passer);
     expect(event.nextTurn).toBe('p2');
     expect(event.version).toBe(2);
   });
 });
 
-describe('deriveMoveEvent — non-play kinds return null', () => {
+describe('deriveMoveEvent — trick_won emission', () => {
+  it('appends a trick_won event when the move ends the current trick', () => {
+    const round = buildBaseRound();
+    const preRound: GameRound = {
+      ...round,
+      currentTrick: { ...round.currentTrick!, currentPlayer: 'p0' },
+    };
+    // Construct a post-state where the trick has ended:
+    //   - currentTrick: null
+    //   - leader: 'p0' (the winner of the previous trick becomes leader)
+    // Best player was p3 (last played before the closing pass).
+    const trickWithWinner = {
+      ...round.currentTrick!,
+      bestPlayer: 'p3',
+    };
+    const preWithWinner: GameRound = {
+      ...round,
+      currentTrick: trickWithWinner,
+    };
+    const postRound: GameRound = {
+      ...round,
+      currentTrick: null,
+      leader: 'p3',
+    };
+    const events = deriveMoveEvent(
+      'p0',
+      { kind: 'pass', fromVersion: 1 },
+      preWithWinner,
+      postRound,
+      2,
+      TURN_DEADLINE
+    );
+    expect(events).toHaveLength(2);
+    expect(events[0]?.type).toBe('move_passed');
+    expect(events[0]?.version).toBe(2);
+    const trickEvent = events[1]!;
+    if (trickEvent.type !== 'trick_won') throw new Error('expected trick_won');
+    expect(trickEvent.winner).toBe('p3');
+    expect(trickEvent.nextLeader).toBe('p3');
+    expect(trickEvent.version).toBe(3); // appliedVersion + 1
+    // Silence the unused-binding linter for preRound (the test fixture is
+    // wired to demonstrate both pre and post-state branches).
+    expect(preRound.currentTrick?.currentPlayer).toBe('p0');
+  });
+});
+
+describe('deriveMoveEvent — non-play kinds return empty array', () => {
   it.each([
     ['tribute_select', { kind: 'tribute_select', targetCard: '5-S-1', fromVersion: 0 }],
     ['anti_tribute', { kind: 'anti_tribute', fromVersion: 0 }],
     ['report_card', { kind: 'report_card', cards: ['5-S-1'], fromVersion: 0 }],
     ['ready', { kind: 'ready', fromVersion: 0 }],
-  ])('returns null for command kind %s', (_label, command) => {
+  ])('returns [] for command kind %s', (_label, command) => {
     const round = buildBaseRound();
-    const event = deriveMoveEvent(
+    const events = deriveMoveEvent(
       'p0',
       command as MoveCommand,
       round,
@@ -139,6 +186,6 @@ describe('deriveMoveEvent — non-play kinds return null', () => {
       0,
       TURN_DEADLINE
     );
-    expect(event).toBeNull();
+    expect(events).toEqual([]);
   });
 });

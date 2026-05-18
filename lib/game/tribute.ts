@@ -9,7 +9,10 @@
 // deferred per the same spec lines (~252-253). Caller checks mode before
 // dispatching.
 
-import type { Card } from './cards';
+import type { Card, NaturalRank } from './cards';
+import { isWildcard } from './cards';
+import type { LevelRank } from './levels';
+import { powerRank } from './patterns';
 import type { PlayerId, PlayerSeat } from './round';
 import type { TeamKey } from './mode';
 
@@ -94,4 +97,71 @@ function countRJsHeldBy(
     }
   }
   return rj;
+}
+
+// ─── Tribute card pickers ─────────────────────────────────────────────────────
+//
+// game-rules.md § "Tribute exempt card": "Heart-suit level-rank card (红心
+// 级牌 / 逢人配) is exempt from tribute. The loser may not select it as their
+// tribute card even if it is their highest-ranked card."
+//
+// 还贡 rule (line ~222): "The 头游 returns one card (≤ 10 in rank). If all
+// cards in the winner's hand are above 10, they return their smallest card."
+
+/**
+ * Pick the tribute card from the losing player's hand.
+ *
+ * Highest-powerRank non-wildcard card. Returns null if hand is empty or
+ * consists entirely of wildcards (impossible at deck-physics level but
+ * defensible).
+ */
+export function pickTributeCard(
+  hand: readonly Card[],
+  levelRank: LevelRank
+): Card | null {
+  let best: Card | null = null;
+  let bestPower = -1;
+  for (const card of hand) {
+    if (isWildcard(card, levelRank)) continue;
+    const p = powerRank(card.rank, levelRank);
+    if (p > bestPower) {
+      bestPower = p;
+      best = card;
+    }
+  }
+  return best;
+}
+
+/**
+ * Pick the return-tribute card from the winning player's hand.
+ *
+ * Prefer the lowest natural rank ≤10 (2..10). If all available cards are
+ * above 10 (J, Q, K, A, level rank, jokers), return the smallest by
+ * powerRank. Heart-level wildcards are exempt — same as inbound tribute.
+ */
+export function pickReturnCard(
+  hand: readonly Card[],
+  levelRank: LevelRank
+): Card | null {
+  const eligible = hand.filter((c) => !isWildcard(c, levelRank));
+  if (eligible.length === 0) return null;
+
+  const lowRankSet = new Set<NaturalRank>([
+    '2', '3', '4', '5', '6', '7', '8', '9', '10',
+  ]);
+  const lowCandidates = eligible.filter((c) =>
+    lowRankSet.has(c.rank as NaturalRank)
+  );
+  const pool = lowCandidates.length > 0 ? lowCandidates : eligible;
+
+  let best = pool[0]!;
+  let bestPower = powerRank(best.rank, levelRank);
+  for (let i = 1; i < pool.length; i++) {
+    const p = powerRank(pool[i]!.rank, levelRank);
+    if (p < bestPower) {
+      bestPower = p;
+      best = pool[i]!;
+    }
+  }
+  return best;
 }

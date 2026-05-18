@@ -1,0 +1,89 @@
+// POST /api/room/[code]/join — pure handler.
+//
+// The Vercel wrapper parses the room code from the URL path and forwards
+// (req, code, deps) here. Same pure-handler pattern as createRoom for
+// testability.
+
+import { joinRoom } from '../room/lifecycle';
+import { isValidRoomCode } from '../room/code';
+import { normalizeHandle, validateHandle } from '../auth/handle';
+import type { RoomStore } from '../storage/roomStore';
+
+export interface JoinRoomDeps {
+  roomStore: RoomStore;
+  tokenGen?: () => string;
+  now?: () => number;
+}
+
+export interface JoinRoomResponseBody {
+  playerId: string;
+  joinToken: string;
+}
+
+const ROOM_TTL_SECONDS = 86_400;
+
+export async function handleJoinRoom(
+  req: Request,
+  code: string,
+  deps: JoinRoomDeps
+): Promise<Response> {
+  if (req.method !== 'POST') {
+    return json({ error: 'method_not_allowed' }, 405);
+  }
+  if (!isValidRoomCode(code)) {
+    return json({ error: 'invalid_room_code' }, 400);
+  }
+
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return json({ error: 'invalid_json' }, 400);
+  }
+
+  const handleRaw = (body as Record<string, unknown> | null)?.['handle'];
+  const handle = normalizeHandle(handleRaw);
+  const validation = validateHandle(handle);
+  if (!validation.valid) {
+    return json({ error: 'invalid_handle', details: validation.error }, 400);
+  }
+
+  const state = await deps.roomStore.get(code);
+  if (!state) {
+    return json({ error: 'room_not_found' }, 404);
+  }
+
+  // Next-available playerId is "p<members.length>" — dense and stable.
+  const nextId = `p${state.members.length}`;
+  const tokenGen = deps.tokenGen ?? defaultTokenGen;
+  const now = deps.now ?? Date.now;
+
+  let updated;
+  try {
+    updated = joinRoom(state, { id: nextId, handle }, now(), tokenGen);
+  } catch (err) {
+    // Lifecycle throws on "room full", "handle taken", "phase != lobby" —
+    // all client conflicts, surfaced as 409.
+    return json({ error: 'conflict', details: (err as Error).message }, 409);
+  }
+
+  await deps.roomStore.put(updated, ROOM_TTL_SECONDS);
+
+  const newMember = updated.members[updated.members.length - 1]!;
+  const responseBody: JoinRoomResponseBody = {
+    playerId: newMember.id,
+    joinToken: newMember.joinToken,
+  };
+  return json(responseBody, 200);
+}
+
+function defaultTokenGen(): string {
+  return crypto.randomUUID();
+}
+
+function json(body: unknown, status: number): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}

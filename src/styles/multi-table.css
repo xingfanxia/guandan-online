@@ -1,0 +1,194 @@
+/* 6P / 8P oval-table layout — ported from demos S05 / S06.
+ * Tokens via tokens.css; reuses .card / .avatar / .chip primitives. */
+
+.mtable {
+  display: grid;
+  grid-template-rows: 34px 1fr 112px;
+  width: 100%;
+  height: 100dvh;
+  background: var(--surface-0);
+  position: relative;
+  overflow: hidden;
+}
+
+.mtable-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px 0 60px;
+  border-bottom: 1px solid var(--rule-1);
+  background: var(--surface-1);
+  gap: 12px;
+}
+
+.mtable-top__key {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--ink-3);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.mtable-top__val {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--ink-1);
+  letter-spacing: var(--tracking-wide);
+  font-variant-numeric: tabular-nums;
+}
+.mtable-top__val em { font-style: normal; color: var(--accent); }
+
+.mtable-arena {
+  position: relative;
+  overflow: hidden;
+}
+
+.oval-felt {
+  position: absolute;
+  border-radius: 50%;
+  background:
+    radial-gradient(ellipse at 50% 40%, oklch(18% 0.035 150 / 0.8), transparent 70%),
+    radial-gradient(ellipse at 50% 50%, oklch(13% 0.025 150), oklch(10% 0.015 150));
+  box-shadow:
+    inset 0 0 0 1px oklch(28% 0.030 150 / 0.6),
+    inset 0 -3px 12px oklch(0% 0 0 / 0.4),
+    0 0 24px oklch(0% 0 0 / 0.3);
+}
+
+.oval-felt--6p { left: 156px; top: 50px; width: 520px; height: 140px; }
+.oval-felt--8p { left: 136px; top: 46px; width: 560px; height: 144px; }
+
+.oval-seat {
+  position: absolute;
+  width: 88px;
+  height: 70px;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  z-index: 3;
+}
+
+.oval-seat__stack {
+  display: flex;
+  height: 14px;
+  margin-bottom: 1px;
+}
+.oval-seat__stack .card {
+  --card-w: 10px;
+  --card-h: 14px;
+  margin-left: -5px;
+  border-radius: 2px;
+  padding: 0;
+}
+.oval-seat__stack .card:first-child { margin-left: 0; }
+
+.oval-seat__avatar-wrap { position: relative; }
+.oval-seat__avatar-wrap .avatar { width: 30px; height: 30px; font-size: 10px; }
+
+.oval-seat__ring {
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 2px solid;
+}
+.oval-seat__ring--A { border-color: var(--team-self); }
+.oval-seat__ring--B { border-color: var(--team-rival); }
+.oval-seat__ring--C { border-color: var(--team-c); }
+.oval-seat__ring--D { border-color: var(--team-d); }
+
+.oval-seat__active {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 16px oklch(68% 0.20 30 / 0.7);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.oval-seat__name {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-1);
+  line-height: 1.1;
+  white-space: nowrap;
+  letter-spacing: 0;
+}
+
+.oval-seat__meta {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  color: var(--ink-3);
+  letter-spacing: var(--tracking-wide);
+  line-height: 1;
+  text-transform: uppercase;
+}
+.oval-seat__meta em { font-style: normal; color: var(--accent); }
+
+.oval-seat__bot-chip {
+  font-family: var(--font-mono);
+  font-size: 7px;
+  color: var(--info);
+  letter-spacing: 0.04em;
+  padding: 0 3px;
+  border: 1px solid var(--info-tint);
+  border-radius: 2px;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.oval-trick {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  z-index: 2;
+  pointer-events: auto;
+  max-width: 320px;
+}
+
+.oval-trick__meta {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--ink-3);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  margin-bottom: 4px;
+  white-space: normal;
+  line-height: 1.3;
+}
+.oval-trick__meta em { font-style: normal; color: var(--ink-1); }
+
+.oval-trick__cards { display: flex; justify-content: center; }
+.oval-trick__cards .card { margin-left: -14px; }
+.oval-trick__cards .card:first-child { margin-left: 0; }
+
+.mtable-bot {
+  background: var(--surface-1);
+  border-top: 1px solid var(--rule-1);
+  padding: 8px 24px 8px 60px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.mtable-bot__meta {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--ink-3);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+.mtable-bot__meta em { font-style: normal; color: var(--ink-1); }
+.mtable-bot__meta .my-team-A { color: var(--team-self); }
+
+.mtable-bot__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+}

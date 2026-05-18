@@ -7,6 +7,7 @@ import './styles/screens.css';
 import './styles/tribute.css';
 import './styles/round-end.css';
 import './styles/game-table.css';
+import './styles/multi-table.css';
 
 const rootEl = document.getElementById('root');
 if (!rootEl) {

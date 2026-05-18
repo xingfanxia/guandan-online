@@ -4,7 +4,15 @@ Real online multiplayer **Guandan** (掼蛋) — landscape-first web game for 4 
 
 ## Status
 
-🚧 **P0 logic layer + most of P1 logic shipped** (2026-05-18). 487/487 tests, TS strict clean. All pure-functional pieces are in `lib/`: full Guandan rules engine (10 pattern kinds + 7-tier bomb hierarchy + wildcards), round + trick + session state machines, tribute (detect / pick / apply), realtime types + hidden-state filter + single-publish gateway, room lifecycle, Easy AI bot with all-10-PatternKind enumeration. Remaining work is infrastructure-bound: Upstash live impls of `lib/realtime/*` interfaces, Vercel API route handlers, UI components, AUTH-2 sibling KV migration. See [`HANDOFF.md`](HANDOFF.md) for the commit-by-commit map and [`docs/plan/PLAN.md`](docs/plan/PLAN.md) for the full 31-milestone roadmap.
+🚧 **Backend wire-complete end-to-end** (2026-05-18). **629/629 tests**, TS strict clean, grep-no-leak gate green. Beyond the P0 logic layer (Guandan rules engine, round/trick/session state machines, tribute, room lifecycle, Easy AI bot, hidden-state filter), the project now ships:
+
+- Live Upstash impls of `IdempotencyCache` / `EventLog` / `EventBus` selected via env-driven `createRealtimeInfra(env)`
+- 8 HTTP/SSE routes — create / read / join / leave / start / move / sse / health
+- Persistence: `roomStore` + `roundStore` (Memory + Upstash)
+- Move handler emits `move_played` / `move_passed` / `trick_won` via the publish gateway with per-recipient log isolation (no SSE backlog leaks)
+- End-to-end integration test driving create → join × 3 → start → SSE → play → pass
+
+Remaining: `GameSession` persistence for `round_end` / `game_end` events, lifecycle event fanout, UI-1 / UI-2 landscape gameplay, AUTH-2 sibling KV migration (Critical Decision), AI-2 Medium WASM solver. See [`HANDOFF.md`](HANDOFF.md) for the commit-by-commit map and [`docs/plan/PLAN.md`](docs/plan/PLAN.md) for the full 31-milestone roadmap.
 
 ## Stack
 
@@ -23,7 +31,7 @@ Real online multiplayer **Guandan** (掼蛋) — landscape-first web game for 4 
 ```bash
 npm install              # ~80 packages
 npm run dev              # Vite dev server on :5174
-npm test                 # vitest run (487 tests as of 2026-05-18)
+npm test                 # vitest run (629 tests as of 2026-05-18)
 npm run typecheck        # tsc -b
 npm run test:coverage    # V8 coverage; outputs to coverage/
 npm run security:no-leak # grep-no-leak CI gate (enforces single publish site)

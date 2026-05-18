@@ -37,6 +37,10 @@ import type { AuthorEvent } from '../realtime/buildClientPayload';
 import { applyRoundResult } from '../game/session';
 import { resolveRound } from '../game/resolveRound';
 import { runBots } from '../ai/runBots';
+import { dealNextRound } from '../game/nextRound';
+import { deriveTributeEvents } from '../realtime/deriveTributeEvents';
+import { encodeCards } from '../realtime/cardCodec';
+import type { AuthorDealEvent } from '../realtime/buildClientPayload';
 
 export interface MoveDeps {
   roomStore: RoomStore;
@@ -49,6 +53,8 @@ export interface MoveDeps {
   now?: () => number;
   /** Server-side turn timeout. Defaults to 30s. */
   turnTimeoutSeconds?: number;
+  /** RNG for next-round deck shuffle. Defaults to Math.random. */
+  rng?: () => number;
 }
 
 export const IDEMPOTENCY_TTL_SECONDS = 600;
@@ -198,6 +204,15 @@ export async function handleMove(
     // the session and emit the round_end (and game_end if the session also
     // finished) events. Append them AFTER all move/trick events so per-
     // recipient versions stay monotonic.
+    //
+    // When the session continues (round ended but game NOT over), also deal
+    // the next round + apply tribute (4P) + emit tribute_pending / resolved
+    // / deal events. The new round replaces the finished one in roundStore;
+    // bot leaders trigger an immediate runBots pass on the new round.
+    // Cross-round publish bookkeeping (see publish-loop comment below).
+    let nextRoundForBots: typeof advancedRound | null = null;
+    let preNextRound: typeof advancedRound | null = null;
+    let newRoundEventStart = -1;
     if (advancedRound.phase === 'finished') {
       const session = await deps.sessionStore.get(code);
       if (session === null) {
@@ -224,10 +239,101 @@ export async function handleMove(
             baseVersion,
           });
           for (const e of roundEvents) events.push(e);
+
+          // Next-round transition. Only when the session continues — game-end
+          // skips dealing the next round (no game left to play).
+          //
+          // CROSS-ROUND GAMESTATE: events emitted BEFORE the new-round deal
+          // must be filtered against the OLD round's hands (the play-the-round-
+          // closed state). Events emitted AFTER the deal use the NEW round's
+          // hands. Otherwise the hidden-state leak detector flags played cards
+          // that the new shuffle happens to redeal to a different player.
+          if (newSession.phase === 'in_progress') {
+            try {
+              // The boundary marker — events[0..newRoundEventStart-1] use the
+              // pre-next-round gameState; events[newRoundEventStart..] use the
+              // post-next-round state.
+              newRoundEventStart = events.length;
+
+              const rng = deps.rng ?? Math.random;
+              const next = dealNextRound({
+                prevRound: advancedRound,
+                session: newSession,
+                rng,
+              });
+
+              // Tribute + deal version ordering:
+              //   - tribute_pending  at tributeBase
+              //   - tribute_resolved at tributeBase + 1 (single/double only)
+              //   - deal             after the last tribute event
+              const tributeBase =
+                events.length > 0
+                  ? Math.max(...events.map((e) => e.version)) + 1
+                  : response.appliedVersion + 1;
+              const tributeEvents =
+                next.tributeMode !== null
+                  ? deriveTributeEvents({
+                      tributeMode: next.tributeMode,
+                      exchanges: next.exchanges,
+                      baseVersion: tributeBase,
+                    })
+                  : [];
+              for (const e of tributeEvents) events.push(e);
+
+              const dealVersion =
+                tributeEvents.length > 0
+                  ? Math.max(...tributeEvents.map((e) => e.version)) + 1
+                  : tributeBase;
+              const encodedHands: AuthorDealEvent['hands'] = {};
+              for (const seat of next.round.seats) {
+                encodedHands[seat.id] = encodeCards(next.round.hands[seat.id] ?? []);
+              }
+              const dealEvent: AuthorDealEvent = {
+                type: 'deal',
+                version: dealVersion,
+                hands: encodedHands,
+                // roundOwner for the new round = winning team (now updated in
+                // session.roundOwner). The new GameRound carries the same value
+                // in its `owner` field — prefer the session value to be explicit.
+                roundOwner: newSession.roundOwner!,
+              };
+              events.push(dealEvent);
+
+              // Snapshot the OLD round before we swap so the publish loop can
+              // still build the correct gameState for pre-next-round events.
+              preNextRound = advancedRound;
+              advancedRound = next.round;
+              nextRoundForBots = next.round;
+            } catch (err) {
+              // Reset the boundary marker on failure so the publish loop
+              // doesn't try to split events with a stale partial round.
+              newRoundEventStart = -1;
+              console.error('[move] dealNextRound failed:', err);
+            }
+          }
         } catch (err) {
           console.error('[move] round-end derivation failed:', err);
         }
       }
+    }
+
+    // ── Bot run-loop on the freshly-dealt round ───────────────────────────
+    // If the new round's leader is a bot, advance through any contiguous bot
+    // turns. Uses the same runBots helper that fires after a human move; the
+    // only difference here is the starting version (post-deal vs post-move).
+    if (nextRoundForBots !== null && nextRoundForBots.phase === 'playing') {
+      const startVersionForBots =
+        events.length > 0
+          ? Math.max(...events.map((e) => e.version))
+          : response.appliedVersion;
+      const newRoundBots = runBots({
+        room,
+        round: nextRoundForBots,
+        startVersion: startVersionForBots,
+        turnDeadline,
+      });
+      advancedRound = newRoundBots.round;
+      for (const e of newRoundBots.events) events.push(e);
     }
 
     const finalVersion =
@@ -257,10 +363,21 @@ export async function handleMove(
     // Event fanout. Failures here are logged but never propagated — the
     // move already applied to the durable round state, and SSE replay via
     // EventLog will catch any clients that miss the live broadcast.
+    //
+    // Cross-round split: pre-next-round events use the OLD round's gameState
+    // so the leak detector doesn't false-positive on cards that the new
+    // shuffle happens to redeal to a different player.
     if (events.length > 0) {
       try {
-        const gameState = buildGameState(room, advancedRound);
-        for (const event of events) {
+        const postGameState = buildGameState(room, advancedRound);
+        const preGameState =
+          newRoundEventStart >= 0 && preNextRound !== null
+            ? buildGameState(room, preNextRound)
+            : postGameState;
+        for (let i = 0; i < events.length; i++) {
+          const event = events[i]!;
+          const gameState =
+            newRoundEventStart >= 0 && i < newRoundEventStart ? preGameState : postGameState;
           await publishEvent(code, event, gameState, deps.bus, deps.log);
         }
       } catch (err) {

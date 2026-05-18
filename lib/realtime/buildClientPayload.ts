@@ -222,6 +222,16 @@ export function assertNoOpponentHandLeak(
   recipient: PlayerId,
   state: GameState
 ): void {
+  // Tribute events publish card identities by design — every player sees
+  // the exchange. tribute_pending's per-recipient privatePayloads are
+  // already filtered by buildClientPayload (only the winner sees their
+  // owedCard); tribute_resolved is intentionally pass-through so the
+  // exchange animation is visible to everyone. Skipping the leak scan
+  // here doesn't widen the hidden-state surface because the cards moved
+  // are common knowledge per the game rules.
+  if (payload.type === 'tribute_pending' || payload.type === 'tribute_resolved') {
+    return;
+  }
   const serialized = JSON.stringify(payload);
   for (const [otherId, otherHand] of Object.entries(state.hands)) {
     if (otherId === recipient) continue;

@@ -673,6 +673,66 @@ describe('handleMove — round_end + game_end events on finished round', () => {
     });
   }
 
+  it('emits tribute_pending + tribute_resolved + deal after round_end when game continues (4P)', async () => {
+    const fx = await fixture();
+    const round = buildNearFinishedRound();
+    await fx.deps.roundStore.put(
+      CODE,
+      { round, version: 0, updatedAt: 1_700_000_000_000 },
+      86_400
+    );
+    await fx.deps.sessionStore.put(
+      CODE,
+      {
+        mode: '4',
+        rules: DEFAULT_MODE_RULES,
+        teamLevels: { t1: '2', t2: '2' },
+        teamAFails: { t1: 0, t2: 0 },
+        roundOwner: null,
+        finishedRounds: 0,
+        phase: 'in_progress',
+        winnerTeam: null,
+      },
+      86_400
+    );
+
+    const cardId = encodeCards([round.hands['p0']![0]!])[0]!;
+    const res = await handleMove(
+      req({
+        body: {
+          moveId: 'm-tribute-cycle',
+          command: { kind: 'play', cards: [cardId], fromVersion: 0 },
+        },
+        bearer: fx.hostJoinToken,
+      }),
+      CODE,
+      fx.deps
+    );
+    const body = (await res.json()) as MoveResponse;
+    expect(body.ok).toBe(true);
+
+    const logged = await fx.deps.log.range(eventLogKey(CODE, 'p0'), null);
+    const types = logged.map((e) => e.event.type);
+    // Order: move_played → trick_won → round_end → tribute_pending → (tribute_resolved?) → deal
+    expect(types).toContain('round_end');
+    expect(types).toContain('tribute_pending');
+    expect(types).toContain('deal');
+
+    // tribute_pending fires BEFORE deal.
+    const tribIdx = types.indexOf('tribute_pending');
+    const dealIdx = types.indexOf('deal');
+    expect(tribIdx).toBeLessThan(dealIdx);
+
+    // round_end fires BEFORE tribute_pending.
+    const reIdx = types.indexOf('round_end');
+    expect(reIdx).toBeLessThan(tribIdx);
+
+    // Verify the new round was persisted (not the finished one).
+    const persistedEnvelope = await fx.deps.roundStore.get(CODE);
+    expect(persistedEnvelope?.round.phase).toBe('playing');
+    expect(persistedEnvelope?.round.finishOrder).toEqual([]);
+  });
+
   it('emits game_end when applyRoundResult closes the session (winning at A)', async () => {
     const fx = await fixture();
     const round = buildCleanWinNearFinishedRound();

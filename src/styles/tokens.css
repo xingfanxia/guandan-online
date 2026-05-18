@@ -1,0 +1,144 @@
+/* Design tokens — guandan-online
+ * Locked 2026-05-16. Token names + values are the single source of truth.
+ * Every wireframe consumes these. Never inline new values.
+ */
+
+:root {
+  /* ============ COLOR · oklch base ============ */
+
+  /* Surfaces — warm-cold neutral near-black tower */
+  --surface-0: oklch(7% 0.005 60);          /* deepest — page bg */
+  --surface-1: oklch(11% 0.006 60);         /* panel bg */
+  --surface-2: oklch(14% 0.008 60);         /* elevated card / hover */
+  --surface-3: oklch(18% 0.010 60);         /* active / pressed */
+  --surface-table: oklch(13% 0.020 150);    /* game table — subtle cool green undertone */
+
+  /* Rules / borders — calibrated against surface-1 */
+  --rule-1: oklch(20% 0.010 60);            /* subtle */
+  --rule-2: oklch(28% 0.015 60);            /* medium */
+  --rule-3: oklch(38% 0.020 60);            /* prominent */
+
+  /* Ink — text */
+  --ink-1: oklch(96% 0.012 80);             /* primary text — slightly warm white */
+  --ink-2: oklch(72% 0.015 70);             /* secondary / caption */
+  --ink-3: oklch(50% 0.012 70);             /* tertiary / disabled / footnote */
+
+  /* Accent — warm red (掼蛋的红) + gold (升级) + blue (info) */
+  --accent: oklch(68% 0.20 30);             /* primary action red */
+  --accent-hover: oklch(74% 0.22 30);
+  --accent-active: oklch(62% 0.20 30);
+  --accent-tint: oklch(68% 0.20 30 / 0.12); /* low-alpha tint */
+  --accent-border: oklch(68% 0.20 30 / 0.40);
+
+  --gold: oklch(82% 0.15 95);               /* level-up / victory */
+  --gold-tint: oklch(82% 0.15 95 / 0.15);
+
+  --info: oklch(70% 0.13 230);              /* secondary info / partner accent */
+  --info-tint: oklch(70% 0.13 230 / 0.12);
+
+  --danger: oklch(64% 0.22 25);             /* warning / A-level tension */
+  --danger-tint: oklch(64% 0.22 25 / 0.15);
+
+  /* Suit colors — calibrated for cream cards */
+  --suit-red: oklch(52% 0.22 25);           /* hearts ♥ + diamonds ♦ */
+  --suit-dark: oklch(22% 0.02 60);          /* clubs ♣ + spades ♠ */
+
+  /* Card body — light cream */
+  --card-face: oklch(94% 0.020 80);         /* cream paper */
+  --card-face-2: oklch(88% 0.025 80);       /* second deck-edge stripe */
+  --card-back: oklch(28% 0.030 25);         /* card back warm */
+  --card-back-pattern: oklch(48% 0.18 30);  /* card back accent */
+
+  /* Team colors — used for partner / opponent identification */
+  --team-self: oklch(70% 0.13 230);         /* my team — info blue */
+  --team-rival: oklch(68% 0.20 30);         /* rival — accent red */
+  --team-c: oklch(75% 0.16 130);            /* team C (6/8 player) — green */
+  --team-d: oklch(78% 0.14 70);             /* team D (8 player) — amber */
+
+  /* ============ TYPOGRAPHY ============ */
+
+  --font-sans: "Geist", "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "Geist Mono", "JetBrains Mono", ui-monospace, monospace;
+
+  /* Sizes — landscape phone is tight, calibrated to 800×340 playfield */
+  --t-3xs: 9px;       /* chip / micro-label */
+  --t-2xs: 10px;      /* card corner index, dense numerics */
+  --t-xs: 11px;       /* metadata, caption */
+  --t-sm: 13px;       /* body small */
+  --t-md: 15px;       /* body */
+  --t-lg: 18px;       /* heading 3 */
+  --t-xl: 22px;       /* heading 2 */
+  --t-2xl: 28px;      /* heading 1 / hero */
+  --t-3xl: 40px;      /* display / victory */
+  --t-4xl: 64px;      /* large display / level rank */
+
+  /* Letter-spacing */
+  --tracking-tight: -0.02em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.06em;
+  --tracking-mono: 0.04em;
+
+  /* Line height */
+  --leading-tight: 1.1;
+  --leading-snug: 1.3;
+  --leading-normal: 1.5;
+
+  /* ============ SPACING (4-px ladder) ============ */
+  --s-0: 0;
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
+  --s-10: 40px;
+
+  /* ============ RADIUS ============ */
+  --r-1: 4px;
+  --r-2: 6px;
+  --r-3: 10px;
+  --r-card: 8px;
+  --r-pill: 999px;
+
+  /* ============ SHADOW ============ */
+  --shadow-card: 0 1px 0 0 oklch(0% 0 0 / 0.3), 0 4px 16px oklch(0% 0 0 / 0.4);
+  --shadow-lifted: 0 2px 0 0 oklch(0% 0 0 / 0.3), 0 12px 28px oklch(0% 0 0 / 0.6), 0 0 0 1px oklch(68% 0.20 30 / 0.5);
+  --shadow-played: 0 1px 0 0 oklch(0% 0 0 / 0.3), 0 6px 18px oklch(0% 0 0 / 0.5);
+
+  /* ============ MOTION ============ */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 320ms;
+
+  /* ============ DEVICE METRICS ============ */
+  /* iPhone 14/15 Pro landscape — real CSS pixels (logical), ratio 2.17:1 */
+  --phone-w: 852px;
+  --phone-h: 393px;
+  /* Effective playfield AFTER safe-area insets (Dynamic Island left, home indicator bottom) */
+  --phone-playfield-w: 820px;  /* phone-w - 16px island - 16px right safe edge */
+  --phone-playfield-h: 373px;  /* phone-h - 10px screen inset top - 10px bottom */
+  /* Desktop game viewport (compact, fits in 13" laptop) */
+  --desk-w: 1280px;
+  --desk-h: 760px;
+}
+
+/* ============ RESET & BASE ============ */
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { font-feature-settings: "cv11", "ss01", "ss02"; -webkit-font-smoothing: antialiased; }
+
+body {
+  font-family: var(--font-sans);
+  background: var(--surface-0);
+  color: var(--ink-1);
+  font-size: var(--t-md);
+  line-height: var(--leading-normal);
+  font-feature-settings: "tnum" off; /* enable per-element */
+}
+
+.mono { font-family: var(--font-mono); font-feature-settings: "ss06"; }
+.tnum { font-variant-numeric: tabular-nums; }

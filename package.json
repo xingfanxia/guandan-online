@@ -23,12 +23,15 @@
     "zustand": "^5.0.13"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^25.8.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@types/seedrandom": "^3.0.8",
     "@vitejs/plugin-react": "^6.0.2",
     "@vitest/coverage-v8": "^4.1.6",
+    "jsdom": "^27.0.1",
     "prettier": "^3.8.3",
     "seedrandom": "^3.0.5",
     "typescript": "^6.0.3",

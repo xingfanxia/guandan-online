@@ -12,7 +12,14 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['tests/**/*.test.ts', 'lib/**/*.test.ts', 'src/**/*.test.ts'],
+    setupFiles: ['./tests/setup/jest-dom.ts'],
+    include: [
+      'tests/**/*.test.ts',
+      'tests/**/*.test.tsx',
+      'lib/**/*.test.ts',
+      'src/**/*.test.ts',
+      'src/**/*.test.tsx',
+    ],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json-summary', 'html'],

@@ -1,0 +1,365 @@
+/* Shared components — guandan-online wireframes
+ * Consumes tokens.css. These are the design system primitives every screen reuses.
+ */
+
+/* ============ PANEL ============ */
+
+.panel {
+  background: var(--surface-1);
+  border: 1px solid var(--rule-1);
+  border-radius: var(--r-3);
+}
+
+.panel-2 {
+  background: var(--surface-2);
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r-3);
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--s-3) var(--s-4);
+  border-bottom: 1px solid var(--rule-1);
+}
+
+.panel-title {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  letter-spacing: var(--tracking-wide);
+  color: var(--ink-2);
+  text-transform: uppercase;
+}
+
+/* ============ CHIPS / BADGES ============ */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border-radius: var(--r-pill);
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  border: 1px solid var(--rule-2);
+  color: var(--ink-2);
+  background: var(--surface-2);
+  white-space: nowrap;
+}
+
+.chip--accent {
+  background: var(--accent-tint);
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+.chip--gold {
+  background: var(--gold-tint);
+  border-color: oklch(82% 0.15 95 / 0.40);
+  color: var(--gold);
+}
+
+.chip--info {
+  background: var(--info-tint);
+  border-color: oklch(70% 0.13 230 / 0.40);
+  color: var(--info);
+}
+
+.chip--danger {
+  background: var(--danger-tint);
+  border-color: oklch(64% 0.22 25 / 0.40);
+  color: var(--danger);
+}
+
+.chip--live::before {
+  content: "";
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ============ BUTTON ============ */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: var(--r-2);
+  font-family: var(--font-sans);
+  font-size: var(--t-sm);
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-1);
+  transition: background var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out);
+  white-space: nowrap;
+}
+
+.btn--primary {
+  background: var(--accent);
+  color: oklch(15% 0.04 30);
+  font-weight: 600;
+}
+.btn--primary:hover { background: var(--accent-hover); }
+
+.btn--ghost {
+  background: var(--surface-2);
+  border-color: var(--rule-2);
+}
+.btn--ghost:hover { background: var(--surface-3); border-color: var(--rule-3); }
+
+.btn--accent-soft {
+  background: var(--accent-tint);
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+.btn--sm { padding: 5px 10px; font-size: var(--t-xs); }
+.btn--lg { padding: 12px 20px; font-size: var(--t-md); }
+
+/* ============ AVATAR ============ */
+
+.avatar {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  letter-spacing: 0;
+  text-transform: uppercase;
+  color: var(--ink-1);
+  font-weight: 600;
+  flex-shrink: 0;
+  position: relative;
+  background: oklch(22% 0.04 60);
+  border: 1px solid var(--rule-2);
+}
+
+.avatar--sm { width: 24px; height: 24px; font-size: 9px; }
+.avatar--md { width: 32px; height: 32px; font-size: 10px; }
+.avatar--lg { width: 48px; height: 48px; font-size: 14px; }
+
+.avatar--self { background: linear-gradient(135deg, oklch(45% 0.12 230), oklch(35% 0.10 230)); }
+.avatar--partner { background: linear-gradient(135deg, oklch(50% 0.10 230), oklch(40% 0.08 230)); }
+.avatar--rival-1 { background: linear-gradient(135deg, oklch(48% 0.15 30), oklch(38% 0.13 30)); }
+.avatar--rival-2 { background: linear-gradient(135deg, oklch(45% 0.13 50), oklch(35% 0.11 50)); }
+
+/* Team-coded avatar fills — for 6P/8P multi-team scenes.
+ * Hue matches the team ring color tokens exactly so fill + ring agree.
+ * Team A = blue 230, B = red 25, C = green 130, D = gold/amber 70. */
+.avatar--team-A { background: linear-gradient(135deg, oklch(48% 0.14 230), oklch(38% 0.12 230)); }
+.avatar--team-B { background: linear-gradient(135deg, oklch(50% 0.18 25), oklch(38% 0.16 25)); }
+.avatar--team-C { background: linear-gradient(135deg, oklch(52% 0.16 130), oklch(40% 0.14 130)); }
+.avatar--team-D { background: linear-gradient(135deg, oklch(60% 0.13 70), oklch(48% 0.11 70)); }
+
+.avatar--active::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 12px oklch(68% 0.20 30 / 0.6);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+/* ============ CARD (poker card) ============ */
+/* Single card primitive — used throughout for hand display, played cards, etc. */
+
+.card {
+  --card-w: 28px;
+  --card-h: 40px;
+  position: relative;
+  width: var(--card-w);
+  height: var(--card-h);
+  border-radius: var(--r-1);
+  background: var(--card-face);
+  box-shadow: var(--shadow-card);
+  font-family: var(--font-sans);
+  font-weight: 600;
+  color: var(--suit-dark);
+  display: flex;
+  flex-direction: column;
+  padding: 3px 4px;
+  user-select: none;
+  flex-shrink: 0;
+  transition: transform var(--dur-base) var(--ease-out),
+              box-shadow var(--dur-base) var(--ease-out);
+}
+
+.card--lg { --card-w: 56px; --card-h: 80px; }
+.card--md { --card-w: 40px; --card-h: 58px; }
+
+.card--red { color: var(--suit-red); }
+
+.card__rank {
+  font-size: var(--t-2xs);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+.card--lg .card__rank { font-size: var(--t-md); }
+.card--md .card__rank { font-size: var(--t-sm); }
+
+.card__suit {
+  font-size: 8px;
+  line-height: 1;
+  margin-top: 1px;
+}
+.card--lg .card__suit { font-size: 11px; margin-top: 2px; }
+
+.card__center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+}
+.card--lg .card__center { font-size: 24px; }
+.card--md .card__center { font-size: 18px; }
+
+.card--lifted {
+  transform: translateY(-12px);
+  box-shadow: var(--shadow-lifted);
+}
+
+.card--wild {
+  background: linear-gradient(135deg, var(--card-face), oklch(86% 0.05 95));
+  outline: 1px solid oklch(82% 0.15 95 / 0.5);
+}
+.card--wild::after {
+  content: "★";
+  position: absolute;
+  top: 1px; right: 2px;
+  font-size: 7px;
+  color: var(--gold);
+}
+
+.card--back {
+  background:
+    linear-gradient(135deg, transparent 48%, oklch(48% 0.18 30 / 0.5) 50%, transparent 52%),
+    linear-gradient(45deg, transparent 48%, oklch(48% 0.18 30 / 0.5) 50%, transparent 52%),
+    var(--card-back);
+  background-size: 6px 6px, 6px 6px, 100% 100%;
+  border: 1px solid oklch(40% 0.10 25);
+}
+.card--back .card__rank, .card--back .card__suit, .card--back .card__center { display: none; }
+
+/* Card hand row — overlapped */
+.hand {
+  display: flex;
+  position: relative;
+  padding-top: 16px; /* room for lift */
+}
+.hand .card {
+  margin-left: -12px; /* default 28px wide, 16px visible after overlap */
+}
+.hand .card:first-child { margin-left: 0; }
+
+/* Played stack — in trick area */
+.played-stack {
+  display: flex;
+  position: relative;
+}
+.played-stack .card {
+  margin-left: -8px;
+}
+.played-stack .card:first-child { margin-left: 0; }
+
+/* ============ PHONE FRAME (landscape) ============ */
+
+.phone {
+  width: var(--phone-w);
+  height: var(--phone-h);
+  background: var(--surface-0);
+  border-radius: 28px;
+  position: relative;
+  overflow: hidden;
+  outline: 1px solid var(--rule-1);
+  box-shadow:
+    inset 0 0 0 8px oklch(15% 0.005 60),
+    inset 0 0 0 10px oklch(8% 0.005 60),
+    0 30px 80px oklch(0% 0 0 / 0.6),
+    0 2px 0 oklch(0% 0 0 / 0.4);
+}
+
+.phone__screen {
+  position: absolute;
+  inset: 10px;
+  border-radius: 18px;
+  overflow: hidden;
+  background: var(--surface-0);
+}
+
+/* Dynamic island in landscape — on the left edge */
+.phone__island {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 36px;
+  height: 124px;
+  background: #000;
+  border-radius: 18px;
+  z-index: 20;
+}
+
+/* ============ DESKTOP FRAME ============ */
+
+.desktop {
+  width: var(--desk-w);
+  height: var(--desk-h);
+  background: var(--surface-0);
+  border-radius: 10px;
+  position: relative;
+  overflow: hidden;
+  outline: 1px solid var(--rule-1);
+  box-shadow: 0 30px 80px oklch(0% 0 0 / 0.6);
+}
+
+.desktop__chrome {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  height: 34px;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--rule-1);
+}
+
+.desktop__dot {
+  width: 11px; height: 11px;
+  border-radius: 50%;
+}
+.desktop__dot:nth-child(1) { background: oklch(55% 0.18 30); }
+.desktop__dot:nth-child(2) { background: oklch(75% 0.12 90); }
+.desktop__dot:nth-child(3) { background: oklch(65% 0.13 140); }
+
+.desktop__url {
+  flex: 1;
+  margin-left: 12px;
+  padding: 4px 12px;
+  background: var(--surface-0);
+  border: 1px solid var(--rule-1);
+  border-radius: var(--r-1);
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--ink-3);
+}

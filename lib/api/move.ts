@@ -26,17 +26,27 @@ import type { IdempotencyCache } from '../realtime/idempotency';
 import type { RateLimiter } from '../security/rateLimit';
 import type { RoomStore } from '../storage/roomStore';
 import type { RoundStore } from '../storage/roundStore';
+import type { EventBus } from '../realtime/eventBus';
+import type { EventLog } from '../realtime/eventLog';
+import { publishEvent } from '../realtime/publish';
+import { buildGameState } from '../realtime/buildGameState';
+import { deriveMoveEvent } from '../realtime/deriveMoveEvent';
 
 export interface MoveDeps {
   roomStore: RoomStore;
   roundStore: RoundStore;
   idempotency: IdempotencyCache;
   rateLimiter: RateLimiter;
+  bus: EventBus;
+  log: EventLog;
   now?: () => number;
+  /** Server-side turn timeout. Defaults to 30s. */
+  turnTimeoutSeconds?: number;
 }
 
 export const IDEMPOTENCY_TTL_SECONDS = 600;
 export const ROUND_TTL_SECONDS = 86_400;
+const DEFAULT_TURN_TIMEOUT_SECONDS = 30;
 
 export async function handleMove(
   req: Request,
@@ -128,7 +138,7 @@ export async function handleMove(
     envelope.version
   );
 
-  // ── Persist + commit ────────────────────────────────────────────────────
+  // ── Persist + publish + commit ──────────────────────────────────────────
   if (response.ok) {
     await deps.roundStore.put(
       code,
@@ -139,6 +149,31 @@ export async function handleMove(
       },
       ROUND_TTL_SECONDS
     );
+
+    // Event fanout. Failures here are logged but never propagated — the
+    // move already applied to the durable round state, and SSE replay via
+    // EventLog will catch any clients that miss the live broadcast.
+    const turnTimeoutSeconds =
+      deps.turnTimeoutSeconds ?? DEFAULT_TURN_TIMEOUT_SECONDS;
+    const turnDeadline = new Date(
+      now() + turnTimeoutSeconds * 1000
+    ).toISOString();
+    const authorEvent = deriveMoveEvent(
+      member.id,
+      parsed.value.command,
+      envelope.round,
+      newRound,
+      response.appliedVersion,
+      turnDeadline
+    );
+    if (authorEvent) {
+      try {
+        const gameState = buildGameState(room, newRound);
+        await publishEvent(code, authorEvent, gameState, deps.bus, deps.log);
+      } catch (err) {
+        console.error('[move] publishEvent failed:', err);
+      }
+    }
   }
   await deps.idempotency.commit(
     parsed.value.moveId,

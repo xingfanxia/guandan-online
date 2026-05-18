@@ -30,5 +30,7 @@ export default async function handler(req: Request): Promise<Response> {
     roundStore: infra.roundStore,
     idempotency: infra.idempotency,
     rateLimiter,
+    bus: infra.bus,
+    log: infra.log,
   });
 }

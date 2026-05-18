@@ -18,6 +18,9 @@ import type { IdempotencyCache, ReserveResult } from '@lib/realtime/idempotency'
 import { createSlidingWindowLimiter } from '@lib/security/rateLimit';
 import type { RateLimiter } from '@lib/security/rateLimit';
 import type { MoveResponse } from '@lib/realtime/commands';
+import { createMemoryEventBus } from '@lib/realtime/eventBus';
+import { createMemoryEventLog } from '@lib/realtime/eventLog';
+import type { ServerEvent } from '@lib/realtime/messages';
 import { dealRound, startTrick } from '@lib/game/round';
 import type { GameRound, PlayerSeat } from '@lib/game/round';
 import { shuffleDeck, buildDeck } from '@lib/game/cards';
@@ -51,9 +54,12 @@ interface Fixture {
     roundStore: ReturnType<typeof createMemoryRoundStore>;
     idempotency: IdempotencyCache;
     rateLimiter: RateLimiter;
+    bus: ReturnType<typeof createMemoryEventBus>;
+    log: ReturnType<typeof createMemoryEventLog>;
     now: () => number;
   };
   hostJoinToken: string;
+  hostId: string;
   p1Token: string;
   p2Token: string;
   p3Token: string;
@@ -64,6 +70,8 @@ async function fixture(): Promise<Fixture> {
   const roundStore = createMemoryRoundStore(() => 1_700_000_000_000);
   const idempotency = createMemoryIdempotencyCache(() => 1_700_000_000_000);
   const rateLimiter = createSlidingWindowLimiter({ windowMs: 10_000, max: 30 });
+  const bus = createMemoryEventBus();
+  const log = createMemoryEventLog();
 
   const createDeps = {
     roomStore,
@@ -98,9 +106,12 @@ async function fixture(): Promise<Fixture> {
       roundStore,
       idempotency,
       rateLimiter,
+      bus,
+      log,
       now: () => 1_700_000_000_000,
     },
     hostJoinToken: create.hostJoinToken,
+    hostId: create.hostId,
     p1Token: j1.joinToken,
     p2Token: j2.joinToken,
     p3Token: j3.joinToken,
@@ -425,3 +436,94 @@ describe('handleMove — rate limit', () => {
 // Reference: IDEMPOTENCY_TTL_SECONDS is exported so consumers see the TTL
 // constant. Touch it here so the import isn't tree-shaken.
 expect(IDEMPOTENCY_TTL_SECONDS).toBeGreaterThan(0);
+
+describe('handleMove — publishEvent fanout', () => {
+  it('appends a move_played event to the EventLog on successful play', async () => {
+    const fx = await fixture();
+    const round = buildInitialRound();
+    await fx.deps.roundStore.put(
+      CODE,
+      { round, version: 0, updatedAt: 0 },
+      86_400
+    );
+    const cardId = encodeCards([round.hands['p0']![0]!])[0]!;
+
+    const res = await handleMove(
+      req({
+        body: {
+          moveId: 'm-1',
+          command: { kind: 'play', cards: [cardId], fromVersion: 0 },
+        },
+        bearer: fx.hostJoinToken,
+      }),
+      CODE,
+      fx.deps
+    );
+    const body = (await res.json()) as MoveResponse;
+    expect(body.ok).toBe(true);
+
+    // publishEvent appends one entry per recipient (4 players in 4P).
+    const logged = await fx.deps.log.range(CODE, null);
+    expect(logged.length).toBe(4);
+    for (const entry of logged) {
+      expect(entry.event.type).toBe('move_played');
+      expect(entry.event.version).toBe(1);
+    }
+  });
+
+  it('delivers move_played to the live bus on the actor channel', async () => {
+    const fx = await fixture();
+    const round = buildInitialRound();
+    await fx.deps.roundStore.put(
+      CODE,
+      { round, version: 0, updatedAt: 0 },
+      86_400
+    );
+    const cardId = encodeCards([round.hands['p0']![0]!])[0]!;
+
+    const received: ServerEvent[] = [];
+    await fx.deps.bus.subscribe(`game:${CODE}:player:${fx.hostId}`, (e) => {
+      received.push(e);
+    });
+
+    await handleMove(
+      req({
+        body: {
+          moveId: 'm-2',
+          command: { kind: 'play', cards: [cardId], fromVersion: 0 },
+        },
+        bearer: fx.hostJoinToken,
+      }),
+      CODE,
+      fx.deps
+    );
+
+    expect(received).toHaveLength(1);
+    expect(received[0]?.type).toBe('move_played');
+    if (received[0]?.type === 'move_played') {
+      expect(received[0].player).toBe(fx.hostId);
+      expect(received[0].cards).toEqual([cardId]);
+      expect(received[0].combinationLabel).toBe('single');
+    }
+  });
+
+  it('skips event fanout on a failed (stale_version) move', async () => {
+    const fx = await fixture();
+    const round = buildInitialRound();
+    await fx.deps.roundStore.put(
+      CODE,
+      { round, version: 5, updatedAt: 0 },
+      86_400
+    );
+    await handleMove(
+      req({
+        body: { moveId: 'm-stale', command: { kind: 'pass', fromVersion: 0 } },
+        bearer: fx.hostJoinToken,
+      }),
+      CODE,
+      fx.deps
+    );
+    const logged = await fx.deps.log.range(CODE, null);
+    expect(logged).toEqual([]);
+  });
+});

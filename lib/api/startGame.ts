@@ -21,9 +21,11 @@ import { buildDeck, shuffleDeck } from '../game/cards';
 import { positionCount } from '../game/mode';
 import type { TeamKey } from '../game/mode';
 import type { LevelRank } from '../game/levels';
+import { createSession } from '../game/session';
 import type { RoomState } from '../room/lifecycle';
 import type { RoomStore } from '../storage/roomStore';
 import type { RoundStore } from '../storage/roundStore';
+import type { SessionStore } from '../storage/sessionStore';
 import type { EventBus } from '../realtime/eventBus';
 import type { EventLog } from '../realtime/eventLog';
 import { publishEvent } from '../realtime/publish';
@@ -34,6 +36,7 @@ import type { AuthorDealEvent } from '../realtime/buildClientPayload';
 export interface StartGameDeps {
   roomStore: RoomStore;
   roundStore: RoundStore;
+  sessionStore: SessionStore;
   bus: EventBus;
   log: EventLog;
   /** RNG seed for deck shuffle. Defaults to Math.random. */
@@ -43,6 +46,7 @@ export interface StartGameDeps {
 
 const ROOM_TTL_SECONDS = 86_400;
 const ROUND_TTL_SECONDS = 86_400;
+const SESSION_TTL_SECONDS = 86_400;
 const STARTING_LEVEL: LevelRank = '2';
 
 export async function handleStartGame(
@@ -112,6 +116,13 @@ export async function handleStartGame(
     code,
     { round, version: 0, updatedAt: now() },
     ROUND_TTL_SECONDS
+  );
+  // Persist the session that survives across rounds. Move handler reads this
+  // on each round-end transition to derive round_end + game_end events.
+  await deps.sessionStore.put(
+    code,
+    createSession({ mode: room.mode, rules: room.rules }),
+    SESSION_TTL_SECONDS
   );
   await deps.roomStore.put(updatedRoom, ROOM_TTL_SECONDS);
 

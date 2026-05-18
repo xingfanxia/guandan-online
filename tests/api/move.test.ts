@@ -12,6 +12,7 @@ import {
 import { handleJoinRoom, type JoinRoomResponseBody } from '@lib/api/joinRoom';
 import { createMemoryRoomStore } from '@lib/storage/roomStore';
 import { createMemoryRoundStore } from '@lib/storage/roundStore';
+import { createMemorySessionStore } from '@lib/storage/sessionStore';
 import type { RoundEnvelope } from '@lib/storage/roundStore';
 import { createMemoryIdempotencyCache } from '@lib/realtime/idempotency';
 import type { IdempotencyCache, ReserveResult } from '@lib/realtime/idempotency';
@@ -25,6 +26,7 @@ import { eventLogKey } from '@lib/realtime/publish';
 import { dealRound, startTrick } from '@lib/game/round';
 import type { GameRound, PlayerSeat } from '@lib/game/round';
 import { shuffleDeck, buildDeck } from '@lib/game/cards';
+import { DEFAULT_MODE_RULES } from '@lib/game/mode';
 import { encodeCards } from '@lib/realtime/cardCodec';
 import seedrandom from 'seedrandom';
 
@@ -53,6 +55,7 @@ interface Fixture {
   deps: {
     roomStore: ReturnType<typeof createMemoryRoomStore>;
     roundStore: ReturnType<typeof createMemoryRoundStore>;
+    sessionStore: ReturnType<typeof createMemorySessionStore>;
     idempotency: IdempotencyCache;
     rateLimiter: RateLimiter;
     bus: ReturnType<typeof createMemoryEventBus>;
@@ -69,6 +72,7 @@ interface Fixture {
 async function fixture(): Promise<Fixture> {
   const roomStore = createMemoryRoomStore(() => 1_700_000_000_000);
   const roundStore = createMemoryRoundStore(() => 1_700_000_000_000);
+  const sessionStore = createMemorySessionStore(() => 1_700_000_000_000);
   const idempotency = createMemoryIdempotencyCache(() => 1_700_000_000_000);
   const rateLimiter = createSlidingWindowLimiter({ windowMs: 10_000, max: 30 });
   const bus = createMemoryEventBus();
@@ -105,6 +109,7 @@ async function fixture(): Promise<Fixture> {
     deps: {
       roomStore,
       roundStore,
+      sessionStore,
       idempotency,
       rateLimiter,
       bus,
@@ -528,5 +533,204 @@ describe('handleMove — publishEvent fanout', () => {
     );
     const logged = await fx.deps.log.range(CODE, null);
     expect(logged).toEqual([]);
+  });
+});
+
+// ─── round_end / game_end emission on finished round ─────────────────────────
+
+describe('handleMove — round_end + game_end events on finished round', () => {
+  // Build a near-finished 4P round: p1/p2/p3 already in finishOrder, p0 has
+  // one card left, currentTrick set up with p0 as currentPlayer. Playing
+  // that single card sends p0 going-out, ends the trick, and ends the round.
+  function buildNearFinishedRound(): GameRound {
+    const seats: readonly PlayerSeat[] = [
+      { id: 'p0', team: 't1', position: 0 },
+      { id: 'p1', team: 't2', position: 1 },
+      { id: 'p2', team: 't1', position: 2 },
+      { id: 'p3', team: 't2', position: 3 },
+    ];
+    const hands: Record<string, { suit: 'spades' | 'hearts' | 'clubs' | 'diamonds'; rank: '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | 'J' | 'Q' | 'K' | 'A'; deck: 1 | 2 }[]> = {
+      p0: [{ suit: 'spades', rank: '7', deck: 1 }],
+      p1: [],
+      p2: [],
+      p3: [],
+    };
+    return startTrick({
+      mode: '4',
+      level: '2',
+      owner: null,
+      seats,
+      // p2 went out first (1st place, t1), then p3 (2nd, t2), then p1 (3rd, t2).
+      // Final position for p0 (t1) will be 4th = 1+4 ranks for t1.
+      // calculateUpgrade with ranks [1, 4] on 4P gives the (1,4) upgrade row.
+      hands,
+      leader: 'p0',
+      phase: 'playing',
+      finishOrder: ['p2', 'p3', 'p1'],
+      currentTrick: null,
+    });
+  }
+
+  it('emits round_end at version 1 with correct newLevels when the move closes the round (game continues)', async () => {
+    const fx = await fixture();
+    const round = buildNearFinishedRound();
+    await fx.deps.roundStore.put(
+      CODE,
+      { round, version: 0, updatedAt: 1_700_000_000_000 },
+      86_400
+    );
+    // Fresh session (both teams at '2'). Single-round game-end requires team
+    // already at A; at '2' the game just continues.
+    await fx.deps.sessionStore.put(
+      CODE,
+      {
+        mode: '4',
+        rules: DEFAULT_MODE_RULES,
+        teamLevels: { t1: '2', t2: '2' },
+        teamAFails: { t1: 0, t2: 0 },
+        roundOwner: null,
+        finishedRounds: 0,
+        phase: 'in_progress',
+        winnerTeam: null,
+      },
+      86_400
+    );
+
+    const cardId = encodeCards([round.hands['p0']![0]!])[0]!;
+    const res = await handleMove(
+      req({
+        body: {
+          moveId: 'm-final',
+          command: { kind: 'play', cards: [cardId], fromVersion: 0 },
+        },
+        bearer: fx.hostJoinToken,
+      }),
+      CODE,
+      fx.deps
+    );
+    const body = (await res.json()) as MoveResponse;
+    expect(body.ok).toBe(true);
+
+    // The events log for p0 should now contain: move_played (v1),
+    // trick_won (v2), round_end (v3). No game_end because session continues.
+    const logged = await fx.deps.log.range(eventLogKey(CODE, 'p0'), null);
+    const types = logged.map((e) => e.event.type);
+    expect(types).toContain('move_played');
+    expect(types).toContain('trick_won');
+    expect(types).toContain('round_end');
+    expect(types).not.toContain('game_end');
+
+    const roundEnd = logged.find((e) => e.event.type === 'round_end');
+    if (roundEnd?.event.type === 'round_end') {
+      // Winners are p2 + p0 (team t1, positions 1 and 4).
+      expect(roundEnd.event.winnerTeam).toBe('t1');
+      expect(roundEnd.event.winnerRanks).toEqual([1, 4]);
+      // (1,4) upgrade is 1 level → t1: '2' → '3'.
+      expect(roundEnd.event.newLevels.t1).toBe('3');
+      expect(roundEnd.event.newLevels.t2).toBe('2');
+    }
+
+    // Session was persisted with the new levels.
+    const newSession = await fx.deps.sessionStore.get(CODE);
+    expect(newSession?.teamLevels.t1).toBe('3');
+    expect(newSession?.finishedRounds).toBe(1);
+    expect(newSession?.phase).toBe('in_progress');
+
+    // appliedVersion advances past round_end so client's next fromVersion is correct.
+    if (body.ok) expect(body.appliedVersion).toBeGreaterThanOrEqual(3);
+  });
+
+  // Build a near-finished 4P round where the LAST player to play is on the
+  // losing team — yielding a CLEAN win (winning team has positions [1,2]).
+  // This is the only path to finalWin under strictA, since "winning team
+  // includes last place" is always treated as a dirty win.
+  function buildCleanWinNearFinishedRound(): GameRound {
+    const seats: readonly PlayerSeat[] = [
+      { id: 'p0', team: 't1', position: 0 },
+      { id: 'p1', team: 't2', position: 1 },
+      { id: 'p2', team: 't1', position: 2 },
+      { id: 'p3', team: 't2', position: 3 },
+    ];
+    const hands: Record<string, { suit: 'spades' | 'hearts' | 'clubs' | 'diamonds'; rank: '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | 'J' | 'Q' | 'K' | 'A'; deck: 1 | 2 }[]> = {
+      p0: [],
+      p1: [],
+      p2: [],
+      p3: [{ suit: 'spades', rank: '7', deck: 1 }],
+    };
+    return startTrick({
+      mode: '4',
+      level: 'A',
+      owner: 't1',
+      seats,
+      // finishOrder before final play: [p0, p2, p1] → t1 has 1st + 2nd (clean),
+      // t2 (p1) has 3rd. p3 (t2) plays last → finishOrder = [p0, p2, p1, p3].
+      // Winner t1 ranks = [1, 2]. No partner-at-last. strictA pass.
+      hands,
+      leader: 'p3',
+      phase: 'playing',
+      finishOrder: ['p0', 'p2', 'p1'],
+      currentTrick: null,
+    });
+  }
+
+  it('emits game_end when applyRoundResult closes the session (winning at A)', async () => {
+    const fx = await fixture();
+    const round = buildCleanWinNearFinishedRound();
+    await fx.deps.roundStore.put(
+      CODE,
+      { round, version: 0, updatedAt: 1_700_000_000_000 },
+      86_400
+    );
+    // Pre-state: t1 already at A, and t1 owns the round (per strictA semantics).
+    // With t1 winning cleanly at A on their own round, applyRoundResult sets
+    // phase='finished'.
+    await fx.deps.sessionStore.put(
+      CODE,
+      {
+        mode: '4',
+        rules: DEFAULT_MODE_RULES,
+        teamLevels: { t1: 'A', t2: '2' },
+        teamAFails: { t1: 0, t2: 0 },
+        roundOwner: 't1',
+        finishedRounds: 1,
+        phase: 'in_progress',
+        winnerTeam: null,
+      },
+      86_400
+    );
+
+    const cardId = encodeCards([round.hands['p3']![0]!])[0]!;
+    await handleMove(
+      req({
+        body: {
+          moveId: 'm-final-win',
+          command: { kind: 'play', cards: [cardId], fromVersion: 0 },
+        },
+        bearer: fx.p3Token,
+      }),
+      CODE,
+      fx.deps
+    );
+
+    const logged = await fx.deps.log.range(eventLogKey(CODE, 'p0'), null);
+    const types = logged.map((e) => e.event.type);
+    expect(types).toContain('round_end');
+    expect(types).toContain('game_end');
+
+    const gameEnd = logged.find((e) => e.event.type === 'game_end');
+    if (gameEnd?.event.type === 'game_end') {
+      expect(gameEnd.event.winnerTeam).toBe('t1');
+      expect(gameEnd.event.summary).toMatch(/Team t1 wins/);
+    }
+
+    // round_end version + 1 === game_end version.
+    const roundEnd = logged.find((e) => e.event.type === 'round_end');
+    if (roundEnd?.event.type === 'round_end' && gameEnd?.event.type === 'game_end') {
+      expect(gameEnd.event.version).toBe(roundEnd.event.version + 1);
+    }
+
+    const finalSession = await fx.deps.sessionStore.get(CODE);
+    expect(finalSession?.phase).toBe('finished');
+    expect(finalSession?.winnerTeam).toBe('t1');
   });
 });

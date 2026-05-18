@@ -28,6 +28,7 @@ export default async function handler(req: Request): Promise<Response> {
   return handleMove(req, code, {
     roomStore: infra.roomStore,
     roundStore: infra.roundStore,
+    sessionStore: infra.sessionStore,
     idempotency: infra.idempotency,
     rateLimiter,
     bus: infra.bus,

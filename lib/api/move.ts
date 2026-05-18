@@ -26,15 +26,21 @@ import type { IdempotencyCache } from '../realtime/idempotency';
 import type { RateLimiter } from '../security/rateLimit';
 import type { RoomStore } from '../storage/roomStore';
 import type { RoundStore } from '../storage/roundStore';
+import type { SessionStore } from '../storage/sessionStore';
 import type { EventBus } from '../realtime/eventBus';
 import type { EventLog } from '../realtime/eventLog';
 import { publishEvent } from '../realtime/publish';
 import { buildGameState } from '../realtime/buildGameState';
 import { deriveMoveEvent } from '../realtime/deriveMoveEvent';
+import { deriveRoundEndEvents } from '../realtime/deriveRoundEndEvents';
+import type { AuthorEvent } from '../realtime/buildClientPayload';
+import { applyRoundResult } from '../game/session';
+import { resolveRound } from '../game/resolveRound';
 
 export interface MoveDeps {
   roomStore: RoomStore;
   roundStore: RoundStore;
+  sessionStore: SessionStore;
   idempotency: IdempotencyCache;
   rateLimiter: RateLimiter;
   bus: EventBus;
@@ -46,6 +52,7 @@ export interface MoveDeps {
 
 export const IDEMPOTENCY_TTL_SECONDS = 600;
 export const ROUND_TTL_SECONDS = 86_400;
+export const SESSION_TTL_SECONDS = 86_400;
 const DEFAULT_TURN_TIMEOUT_SECONDS = 30;
 
 export async function handleMove(
@@ -148,12 +155,15 @@ export async function handleMove(
       now() + turnTimeoutSeconds * 1000
     ).toISOString();
 
-    // A single move can emit multiple events (move_played + trick_won).
-    // deriveMoveEvent assigns sequential versions starting from
-    // response.appliedVersion. The final round.version is the LAST event's
-    // version — so the next move's fromVersion check stays aligned with
-    // the per-recipient log seq used for SSE Last-Event-ID resume.
-    const events = deriveMoveEvent(
+    // A single move can emit multiple events (move_played + trick_won, plus
+    // round_end + game_end when the round/game finishes). deriveMoveEvent
+    // assigns sequential versions starting from response.appliedVersion;
+    // session-driven events (round_end / game_end) get the next sequential
+    // versions after the move-derived ones. The final round.version is the
+    // LAST event's version — so the next move's fromVersion check stays
+    // aligned with the per-recipient log seq used for SSE Last-Event-ID
+    // resume.
+    const events: AuthorEvent[] = deriveMoveEvent(
       member.id,
       parsed.value.command,
       envelope.round,
@@ -161,11 +171,49 @@ export async function handleMove(
       response.appliedVersion,
       turnDeadline
     );
+
+    // ── Round / game end fanout ───────────────────────────────────────────
+    // When this move closed the round, resolve the session and emit the
+    // round_end (and game_end if the session also finished) events. Append
+    // them AFTER any move/trick events so per-recipient versions stay
+    // monotonic.
+    if (newRound.phase === 'finished') {
+      const session = await deps.sessionStore.get(code);
+      if (session === null) {
+        // Defensive: startGame always creates a session. Log and skip the
+        // session-driven events rather than crash — the round still
+        // completed durably; clients will catch up via state_resync.
+        console.error(
+          '[move] sessionStore missing for finished round; skipping round_end/game_end',
+          code
+        );
+      } else {
+        try {
+          const result = resolveRound(newRound, session.rules);
+          const newSession = applyRoundResult(session, newRound);
+          await deps.sessionStore.put(code, newSession, SESSION_TTL_SECONDS);
+          const baseVersion =
+            events.length > 0
+              ? Math.max(...events.map((e) => e.version)) + 1
+              : response.appliedVersion + 1;
+          const roundEvents = deriveRoundEndEvents({
+            preSession: session,
+            postSession: newSession,
+            result,
+            baseVersion,
+          });
+          for (const e of roundEvents) events.push(e);
+        } catch (err) {
+          console.error('[move] round-end derivation failed:', err);
+        }
+      }
+    }
+
     const finalVersion =
       events.length > 0
         ? Math.max(...events.map((e) => e.version))
         : response.appliedVersion;
-    if (events.length > 1) {
+    if (finalVersion !== response.appliedVersion) {
       // Update the response so the client sees the LAST event version as
       // their fromVersion baseline for the next move.
       response = {

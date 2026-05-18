@@ -97,6 +97,7 @@ describe('full game flow — create → join → start → move → SSE', () => 
       {
         roomStore: infra.roomStore,
         roundStore: infra.roundStore,
+        sessionStore: infra.sessionStore,
         bus: infra.bus,
         log: infra.log,
         rng: () => rng(),
@@ -164,6 +165,7 @@ describe('full game flow — create → join → start → move → SSE', () => 
       {
         roomStore: infra.roomStore,
         roundStore: infra.roundStore,
+        sessionStore: infra.sessionStore,
         idempotency: infra.idempotency,
         rateLimiter,
         bus: infra.bus,
@@ -189,6 +191,7 @@ describe('full game flow — create → join → start → move → SSE', () => 
       {
         roomStore: infra.roomStore,
         roundStore: infra.roundStore,
+        sessionStore: infra.sessionStore,
         idempotency: infra.idempotency,
         rateLimiter,
         bus: infra.bus,

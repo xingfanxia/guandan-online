@@ -9,6 +9,7 @@ import {
 import { handleJoinRoom, type JoinRoomResponseBody } from '@lib/api/joinRoom';
 import { createMemoryRoomStore } from '@lib/storage/roomStore';
 import { createMemoryRoundStore } from '@lib/storage/roundStore';
+import { createMemorySessionStore } from '@lib/storage/sessionStore';
 import { createMemoryEventBus } from '@lib/realtime/eventBus';
 import { createMemoryEventLog } from '@lib/realtime/eventLog';
 import { eventLogKey } from '@lib/realtime/publish';
@@ -34,6 +35,7 @@ interface Fixture {
   deps: {
     roomStore: ReturnType<typeof createMemoryRoomStore>;
     roundStore: ReturnType<typeof createMemoryRoundStore>;
+    sessionStore: ReturnType<typeof createMemorySessionStore>;
     bus: ReturnType<typeof createMemoryEventBus>;
     log: ReturnType<typeof createMemoryEventLog>;
     rng: () => number;
@@ -48,6 +50,7 @@ interface Fixture {
 async function fixture(seats = 4): Promise<Fixture> {
   const roomStore = createMemoryRoomStore(() => 1_700_000_000_000);
   const roundStore = createMemoryRoundStore(() => 1_700_000_000_000);
+  const sessionStore = createMemorySessionStore(() => 1_700_000_000_000);
   const bus = createMemoryEventBus();
   const log = createMemoryEventLog();
   const rng = seedrandom('start-game-test') as unknown as () => number;
@@ -93,6 +96,7 @@ async function fixture(seats = 4): Promise<Fixture> {
     deps: {
       roomStore,
       roundStore,
+      sessionStore,
       bus,
       log,
       rng: () => rng(),
@@ -175,6 +179,7 @@ describe('handleStartGame — preconditions', () => {
     // Create + only 2 members (host + 1 joiner).
     const roomStore = createMemoryRoomStore(() => 1_700_000_000_000);
     const roundStore = createMemoryRoundStore(() => 1_700_000_000_000);
+    const sessionStore = createMemorySessionStore(() => 1_700_000_000_000);
     const bus = createMemoryEventBus();
     const log = createMemoryEventLog();
 
@@ -206,7 +211,7 @@ describe('handleStartGame — preconditions', () => {
     const res = await handleStartGame(
       req({ bearer: create.hostToken }),
       CODE,
-      { roomStore, roundStore, bus, log, now: () => 1_700_000_000_000 }
+      { roomStore, roundStore, sessionStore, bus, log, now: () => 1_700_000_000_000 }
     );
     expect(res.status).toBe(409);
     const body = (await res.json()) as { error: string; details?: string };

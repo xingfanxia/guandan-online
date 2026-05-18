@@ -23,6 +23,7 @@ export default async function handler(req: Request): Promise<Response> {
   return handleStartGame(req, code, {
     roomStore: infra.roomStore,
     roundStore: infra.roundStore,
+    sessionStore: infra.sessionStore,
     bus: infra.bus,
     log: infra.log,
   });

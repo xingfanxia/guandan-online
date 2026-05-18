@@ -34,6 +34,18 @@ export interface RoomState {
   phase: RoomPhase;
   createdAt: number;
   lastActiveAt: number;
+  /**
+   * Monotonic counter for per-recipient SSE event versions. Lifecycle events
+   * (room_joined / room_left) increment this counter; game-start consumes
+   * the next value as the deal event version, after which the round's
+   * version takes over (RoundEnvelope.version). The lobby phase + game phase
+   * thus share a single monotonic namespace per recipient so clients can
+   * resume with a single Last-Event-ID across phase boundaries.
+   *
+   * Default 0 at creation; the first lifecycle event from joinRoom is at
+   * version 1.
+   */
+  eventVersion: number;
 }
 
 // ─── createRoom ───────────────────────────────────────────────────────────────
@@ -69,6 +81,7 @@ export function createRoom(input: CreateRoomInput): RoomState {
     phase: 'lobby',
     createdAt: input.now,
     lastActiveAt: input.now,
+    eventVersion: 0,
   };
 }
 
@@ -104,6 +117,7 @@ export function joinRoom(
       },
     ],
     lastActiveAt: now,
+    eventVersion: state.eventVersion + 1,
   };
 }
 
@@ -131,6 +145,7 @@ export function leaveRoom(
     ...state,
     members: state.members.filter((m) => m.id !== playerId),
     lastActiveAt: now,
+    eventVersion: state.eventVersion + 1,
   };
 }
 

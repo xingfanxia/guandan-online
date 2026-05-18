@@ -9,10 +9,23 @@ import { leaveRoom } from '../room/lifecycle';
 import { isValidRoomCode } from '../room/code';
 import { extractBearerToken } from '../auth/ownershipToken';
 import type { RoomStore } from '../storage/roomStore';
+import type { EventBus } from '../realtime/eventBus';
+import type { EventLog } from '../realtime/eventLog';
+import { publishEvent } from '../realtime/publish';
+import { deriveRoomLeft } from '../realtime/deriveLifecycleEvents';
+import { buildLobbyGameState } from '../realtime/buildLobbyGameState';
 
 export interface LeaveRoomDeps {
   roomStore: RoomStore;
   now?: () => number;
+  /**
+   * Optional event-fanout transport. When provided, room_left is published
+   * to all REMAINING members (the leaver doesn't receive it). When the host
+   * leaves, the room is dissolved and no event fires — clients learn via
+   * the next request returning 404.
+   */
+  bus?: EventBus;
+  log?: EventLog;
 }
 
 export interface LeaveRoomResponseBody {
@@ -60,6 +73,26 @@ export async function handleLeaveRoom(
   }
 
   await deps.roomStore.put(updated, ROOM_TTL_SECONDS);
+
+  // Lifecycle fanout. Post-leave state OMITS the leaving member, so the
+  // gameState only enumerates remaining recipients — the leaver doesn't
+  // get the event (clean by construction).
+  if (deps.bus && deps.log) {
+    try {
+      const events = deriveRoomLeft({
+        preState: state,
+        postState: updated,
+        reason: 'leave',
+      });
+      const gameState = buildLobbyGameState(updated);
+      for (const event of events) {
+        await publishEvent(updated.code, event, gameState, deps.bus, deps.log);
+      }
+    } catch (err) {
+      console.error('[leaveRoom] publishEvent failed:', err);
+    }
+  }
+
   const responseBody: LeaveRoomResponseBody = { ok: true };
   return json(responseBody, 200);
 }

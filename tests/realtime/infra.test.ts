@@ -91,6 +91,7 @@ describe('createRealtimeInfra — roomStore wiring', () => {
       phase: 'lobby',
       createdAt: 0,
       lastActiveAt: 0,
+      eventVersion: 0,
     };
   }
 

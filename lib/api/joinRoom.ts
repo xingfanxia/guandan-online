@@ -8,11 +8,24 @@ import { joinRoom } from '../room/lifecycle';
 import { isValidRoomCode } from '../room/code';
 import { normalizeHandle, validateHandle } from '../auth/handle';
 import type { RoomStore } from '../storage/roomStore';
+import type { EventBus } from '../realtime/eventBus';
+import type { EventLog } from '../realtime/eventLog';
+import { publishEvent } from '../realtime/publish';
+import { deriveRoomJoined } from '../realtime/deriveLifecycleEvents';
+import { buildLobbyGameState } from '../realtime/buildLobbyGameState';
 
 export interface JoinRoomDeps {
   roomStore: RoomStore;
   tokenGen?: () => string;
   now?: () => number;
+  /**
+   * Optional event-fanout transport. When provided, room_joined is published
+   * to all (post-join) members. Older callers without realtime infra wired
+   * (some test fixtures) pass undefined and the handler skips the publish —
+   * the lifecycle state still updates correctly.
+   */
+  bus?: EventBus;
+  log?: EventLog;
 }
 
 export interface JoinRoomResponseBody {
@@ -68,6 +81,22 @@ export async function handleJoinRoom(
   }
 
   await deps.roomStore.put(updated, ROOM_TTL_SECONDS);
+
+  // Lifecycle fanout. The post-join state INCLUDES the new member, so they
+  // receive room_joined on their own join (the SSE handshake comes next and
+  // will replay this event via backlog). Failures here never propagate —
+  // the state already committed.
+  if (deps.bus && deps.log) {
+    try {
+      const events = deriveRoomJoined({ preState: state, postState: updated });
+      const gameState = buildLobbyGameState(updated);
+      for (const event of events) {
+        await publishEvent(updated.code, event, gameState, deps.bus, deps.log);
+      }
+    } catch (err) {
+      console.error('[joinRoom] publishEvent failed:', err);
+    }
+  }
 
   const newMember = updated.members[updated.members.length - 1]!;
   const responseBody: JoinRoomResponseBody = {

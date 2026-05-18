@@ -150,6 +150,7 @@ describe('handleCreateRoom — code collision retry', () => {
         phase: 'lobby',
         createdAt: 0,
         lastActiveAt: 0,
+        eventVersion: 0,
       },
       ROOM_TTL_SECONDS
     );
@@ -191,6 +192,7 @@ describe('handleCreateRoom — code collision retry', () => {
         phase: 'lobby',
         createdAt: 0,
         lastActiveAt: 0,
+        eventVersion: 0,
       },
       ROOM_TTL_SECONDS
     );

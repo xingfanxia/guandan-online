@@ -106,15 +106,22 @@ export async function handleStartGame(
   );
 
   const now = deps.now ?? Date.now;
+  // Continue the per-recipient SSE event-version namespace established by
+  // lobby-phase lifecycle events (room_joined). Lifecycle bumps room
+  // eventVersion on every join/leave; the deal takes the next value so
+  // clients can resume across the lobby→game boundary with one
+  // Last-Event-ID.
+  const dealVersion = room.eventVersion + 1;
   const updatedRoom: RoomState = {
     ...room,
     phase: 'in_game',
     lastActiveAt: now(),
+    eventVersion: dealVersion,
   };
 
   await deps.roundStore.put(
     code,
-    { round, version: 0, updatedAt: now() },
+    { round, version: dealVersion, updatedAt: now() },
     ROUND_TTL_SECONDS
   );
   // Persist the session that survives across rounds. Move handler reads this
@@ -134,7 +141,7 @@ export async function handleStartGame(
   }
   const dealEvent: AuthorDealEvent = {
     type: 'deal',
-    version: 0,
+    version: dealVersion,
     hands: encodedHands,
     roundOwner: round.seats[0]!.team,
   };
@@ -145,7 +152,7 @@ export async function handleStartGame(
     console.error('[start] publishEvent failed:', err);
   }
 
-  return json({ ok: true, version: 0 }, 200);
+  return json({ ok: true, version: dealVersion }, 200);
 }
 
 /**

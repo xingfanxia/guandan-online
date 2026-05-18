@@ -75,13 +75,20 @@ describe('full game flow — create → join → start → move → SSE', () => 
     expect(create.code).toBe(CODE);
 
     // ── 2. three more players join ─────────────────────────────────────────
+    // Each join publishes a room_joined event (versions 1, 2, 3).
     const joinTokens: string[] = [];
     const playerIds: string[] = [create.hostId];
     for (let i = 1; i < 4; i++) {
       const joinRes = await handleJoinRoom(
         jsonReq('POST', { handle: `@player${i}x` }),
         CODE,
-        { roomStore: infra.roomStore, tokenGen: counter(`jt-${i}`), now }
+        {
+          roomStore: infra.roomStore,
+          tokenGen: counter(`jt-${i}`),
+          now,
+          bus: infra.bus,
+          log: infra.log,
+        }
       );
       expect(joinRes.status).toBe(200);
       const j = (await joinRes.json()) as JoinRoomResponseBody;
@@ -91,6 +98,7 @@ describe('full game flow — create → join → start → move → SSE', () => 
     expect(playerIds).toEqual(['p0', 'p1', 'p2', 'p3']);
 
     // ── 3. host starts the game ────────────────────────────────────────────
+    // Deal version takes room.eventVersion + 1 (= 4 after 3 joins).
     const startRes = await handleStartGame(
       jsonReq('POST', undefined, create.hostToken),
       CODE,
@@ -107,7 +115,7 @@ describe('full game flow — create → join → start → move → SSE', () => 
     expect(startRes.status).toBe(200);
 
     const envelope = await infra.roundStore.get(CODE);
-    expect(envelope?.version).toBe(0);
+    expect(envelope?.version).toBe(4);
     expect(envelope?.round.currentTrick?.currentPlayer).toBe('p0');
 
     // ── 4. p0 opens an SSE stream (will receive backlog + live moves) ─────
@@ -150,6 +158,7 @@ describe('full game flow — create → join → start → move → SSE', () => 
     await new Promise<void>((r) => setTimeout(r, 20));
 
     // ── 5. p0 plays a single card ─────────────────────────────────────────
+    // Deal at version 4; first move bumps round.version to 5.
     const p0Hand = envelope!.round.hands['p0']!;
     const p0Card = encodeCards([p0Hand[0]!])[0]!;
     const playRes = await handleMove(
@@ -157,7 +166,7 @@ describe('full game flow — create → join → start → move → SSE', () => 
         'POST',
         {
           moveId: 'move-1',
-          command: { kind: 'play', cards: [p0Card], fromVersion: 0 },
+          command: { kind: 'play', cards: [p0Card], fromVersion: 4 },
         },
         create.hostJoinToken
       ),
@@ -175,7 +184,7 @@ describe('full game flow — create → join → start → move → SSE', () => 
     );
     const playBody = (await playRes.json()) as MoveResponse;
     expect(playBody.ok).toBe(true);
-    if (playBody.ok) expect(playBody.appliedVersion).toBe(1);
+    if (playBody.ok) expect(playBody.appliedVersion).toBe(5);
 
     // ── 6. p1 passes ──────────────────────────────────────────────────────
     const passRes = await handleMove(
@@ -183,7 +192,7 @@ describe('full game flow — create → join → start → move → SSE', () => 
         'POST',
         {
           moveId: 'move-2',
-          command: { kind: 'pass', fromVersion: 1 },
+          command: { kind: 'pass', fromVersion: 5 },
         },
         joinTokens[0]! // joinTokens[0] is p1's token (joins happen in order)
       ),
@@ -201,7 +210,7 @@ describe('full game flow — create → join → start → move → SSE', () => 
     );
     const passBody = (await passRes.json()) as MoveResponse;
     expect(passBody.ok).toBe(true);
-    if (passBody.ok) expect(passBody.appliedVersion).toBe(2);
+    if (passBody.ok) expect(passBody.appliedVersion).toBe(6);
 
     // ── 7. wait for SSE rotation to close the stream ──────────────────────
     await drainPromise;
@@ -211,9 +220,11 @@ describe('full game flow — create → join → start → move → SSE', () => 
       .filter((f) => !f.startsWith(':') && f.length > 0)
       .map((f) => parseFrame(f + '\n\n').data as ServerEvent);
 
-    // Should include: the initial deal (version 0), move_played (version 1),
-    // move_passed (version 2), and the rotation stream_closing event.
+    // Should include: lobby room_joined backlog (versions 1-3), deal
+    // (version 4), move_played (version 5), move_passed (version 6), and
+    // the rotation stream_closing event.
     const types = dataFrames.map((e) => e.type);
+    expect(types).toContain('room_joined');
     expect(types).toContain('deal');
     expect(types).toContain('move_played');
     expect(types).toContain('move_passed');
@@ -223,18 +234,18 @@ describe('full game flow — create → join → start → move → SSE', () => 
     if (movePlayed?.type === 'move_played') {
       expect(movePlayed.player).toBe('p0');
       expect(movePlayed.cards).toEqual([p0Card]);
-      expect(movePlayed.version).toBe(1);
+      expect(movePlayed.version).toBe(5);
     }
 
     const movePassed = dataFrames.find((e) => e.type === 'move_passed');
     if (movePassed?.type === 'move_passed') {
       expect(movePassed.player).toBe('p1');
-      expect(movePassed.version).toBe(2);
+      expect(movePassed.version).toBe(6);
     }
 
     // ── 9. final state checks ─────────────────────────────────────────────
     const finalEnvelope = await infra.roundStore.get(CODE);
-    expect(finalEnvelope?.version).toBe(2);
+    expect(finalEnvelope?.version).toBe(6);
     expect(finalEnvelope?.round.hands['p0']?.length).toBe(p0Hand.length - 1);
   });
 });

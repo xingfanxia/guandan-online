@@ -229,8 +229,12 @@ describe('handleStartGame — preconditions', () => {
 });
 
 describe('handleStartGame — happy path (4P)', () => {
-  it('persists a RoundEnvelope at version 0 with 27-card hands', async () => {
+  it('persists a RoundEnvelope at room.eventVersion+1 with 27-card hands', async () => {
     const fx = await fixture();
+    // After 3 joins from the fixture, room.eventVersion is 3; deal takes 4.
+    const preRoom = await fx.deps.roomStore.get(CODE);
+    const expectedDealVersion = (preRoom?.eventVersion ?? 0) + 1;
+
     const res = await handleStartGame(
       req({ bearer: fx.hostToken }),
       CODE,
@@ -238,16 +242,21 @@ describe('handleStartGame — happy path (4P)', () => {
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as { ok: true; version: number };
-    expect(body.version).toBe(0);
+    expect(body.version).toBe(expectedDealVersion);
 
     const envelope = await fx.deps.roundStore.get(CODE);
     expect(envelope).not.toBeNull();
-    expect(envelope?.version).toBe(0);
+    expect(envelope?.version).toBe(expectedDealVersion);
     expect(envelope?.round.phase).toBe('playing');
     expect(envelope?.round.currentTrick).not.toBeNull();
     for (const hand of Object.values(envelope?.round.hands ?? {})) {
       expect(hand).toHaveLength(27); // 108 cards / 4 players
     }
+
+    // room.eventVersion advanced to match the deal version so it stays the
+    // monotonic source-of-truth across lobby → game boundary.
+    const postRoom = await fx.deps.roomStore.get(CODE);
+    expect(postRoom?.eventVersion).toBe(expectedDealVersion);
   });
 
   it('transitions room.phase from lobby to in_game', async () => {
@@ -267,6 +276,9 @@ describe('handleStartGame — happy path (4P)', () => {
 
   it('publishes a deal event to each per-recipient log key', async () => {
     const fx = await fixture();
+    const preRoom = await fx.deps.roomStore.get(CODE);
+    const expectedDealVersion = (preRoom?.eventVersion ?? 0) + 1;
+
     await handleStartGame(req({ bearer: fx.hostToken }), CODE, fx.deps);
     for (const playerId of ['p0', 'p1', 'p2', 'p3']) {
       const logged = await fx.deps.log.range(
@@ -275,7 +287,7 @@ describe('handleStartGame — happy path (4P)', () => {
       );
       expect(logged).toHaveLength(1);
       expect(logged[0]?.event.type).toBe('deal');
-      expect(logged[0]?.event.version).toBe(0);
+      expect(logged[0]?.event.version).toBe(expectedDealVersion);
     }
   });
 });

@@ -47,6 +47,7 @@ function buildRoom(): RoomState {
     phase: 'in_game',
     createdAt: 0,
     lastActiveAt: 0,
+    eventVersion: 0,
   };
 }
 

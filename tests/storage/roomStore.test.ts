@@ -25,6 +25,7 @@ function sampleRoom(code: string, now = 1_700_000_000_000): RoomState {
     phase: 'lobby',
     createdAt: now,
     lastActiveAt: now,
+    eventVersion: 0,
   };
 }
 

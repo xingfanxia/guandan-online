@@ -20,5 +20,9 @@ export default async function handler(req: Request): Promise<Response> {
   const segments = url.pathname.split('/').filter(Boolean);
   const code = segments[2] ?? '';
   const infra = getInfra();
-  return handleLeaveRoom(req, code, { roomStore: infra.roomStore });
+  return handleLeaveRoom(req, code, {
+    roomStore: infra.roomStore,
+    bus: infra.bus,
+    log: infra.log,
+  });
 }

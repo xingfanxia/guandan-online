@@ -1,0 +1,256 @@
+/* Tribute UI — overlay covers the game table during 进贡 / 还贡 / 抗贡 phases.
+ * Ports demos/index.html S04 / S11 / S12 / S13.
+ *
+ * Tokens via tokens.css. Card primitive (.card) reused from components.css.
+ */
+
+.tribute-veil {
+  position: absolute;
+  inset: 0;
+  background: oklch(0% 0 0 / 0.65);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.tribute-veil--solid {
+  background: oklch(0% 0 0 / 0.85);
+}
+
+.tribute-panel {
+  width: min(560px, 92vw);
+  padding: 24px 28px;
+  background: var(--surface-1);
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r-3);
+  box-shadow: 0 30px 80px oklch(0% 0 0 / 0.7);
+}
+
+.tribute-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  gap: 16px;
+}
+
+.tribute-eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--accent);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.tribute-eyebrow--info { color: var(--info); }
+.tribute-eyebrow--gold { color: var(--gold); }
+
+.tribute-title {
+  font-size: var(--t-xl);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  color: var(--ink-1);
+}
+.tribute-title em { font-style: normal; color: var(--accent); }
+.tribute-title em.info { color: var(--info); }
+
+/* ── Auto-pick animation (S04) — loser → winner card travel ───────────────── */
+
+.tribute-anim {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 16px;
+  align-items: center;
+  padding: 16px 0;
+}
+
+.tribute-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.tribute-side-label {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--ink-3);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.tribute-arrow {
+  font-family: var(--font-mono);
+  font-size: var(--t-lg);
+  color: var(--accent);
+  text-align: center;
+}
+
+/* Card travel — single card animates across the panel via CSS transform.
+ * Pure transform/opacity (GPU-accelerated per anti-AI-slop rule). */
+@keyframes tribute-travel {
+  0% { transform: translateX(-130px) rotate(-6deg); opacity: 0; }
+  20% { opacity: 1; }
+  85% { transform: translateX(0) rotate(0); opacity: 1; }
+  100% { transform: translateX(0) rotate(0); opacity: 1; }
+}
+
+.tribute-flyer {
+  animation: tribute-travel 600ms var(--ease-out) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tribute-flyer { animation: none; }
+}
+
+.tribute-rule {
+  padding: 12px;
+  background: var(--surface-2);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--r-1);
+  font-size: var(--t-xs);
+  color: var(--ink-2);
+  line-height: 1.5;
+  margin-top: 8px;
+}
+.tribute-rule em {
+  font-style: normal;
+  color: var(--ink-1);
+  font-weight: 500;
+}
+
+/* ── Pending player-pick (S11) — tap-to-select among candidate cards ──────── */
+
+.tribute-lede {
+  font-size: var(--t-xs);
+  color: var(--ink-2);
+  margin: 8px 0 12px;
+  line-height: 1.5;
+}
+
+.tribute-pick-shelf {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 14px 18px;
+  background: var(--surface-2);
+  border-radius: var(--r-2);
+  overflow-x: auto;
+}
+
+.tribute-pick-card {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: transform var(--dur-base) var(--ease-out);
+}
+.tribute-pick-card:disabled { cursor: not-allowed; opacity: 0.3; }
+.tribute-pick-card:hover:not(:disabled) { transform: translateY(-4px); }
+
+.tribute-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 12px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.tribute-actions__hint {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--ink-3);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+/* ── Return phase (S13) — show received card up top, hand grid below ──────── */
+
+.tribute-received {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  background: var(--surface-2);
+  border-radius: var(--r-2);
+  margin: 8px 0;
+}
+
+.tribute-received__label {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--ink-3);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.tribute-received__from {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+}
+
+.btn--info {
+  background: var(--info);
+  color: oklch(15% 0.04 230);
+  font-weight: 600;
+}
+.btn--info:hover { background: oklch(74% 0.13 230); }
+
+/* ── Anti-tribute (S12) — fullscreen gold banner ──────────────────────────── */
+
+.anti-tribute {
+  text-align: center;
+  max-width: 560px;
+  padding: 24px;
+}
+
+.anti-tribute__rune {
+  font-size: var(--t-3xl);
+  font-weight: 700;
+  letter-spacing: var(--tracking-tight);
+  line-height: 1;
+  margin-bottom: 18px;
+  color: var(--gold);
+}
+
+.anti-tribute__row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 24px;
+  font-family: var(--font-mono);
+  font-size: var(--t-md);
+  color: var(--ink-1);
+}
+
+.anti-tribute__holder { color: var(--gold); font-weight: 600; }
+
+.anti-tribute__cards {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+.anti-tribute__cards .card {
+  background: linear-gradient(135deg, var(--card-face), oklch(86% 0.05 0));
+  outline: 2px solid var(--gold);
+}
+.anti-tribute__cards .card .card__suit { color: var(--gold); }
+
+.anti-tribute__footer {
+  padding: 12px 18px;
+  background: var(--gold-tint);
+  border: 1px solid oklch(82% 0.15 95 / 0.4);
+  border-radius: var(--r-2);
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--gold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}

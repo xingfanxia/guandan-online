@@ -4,6 +4,8 @@ import App from './App';
 import './styles/tokens.css';
 import './styles/components.css';
 import './styles/screens.css';
+import './styles/tribute.css';
+import './styles/round-end.css';
 import './styles/game-table.css';
 
 const rootEl = document.getElementById('root');

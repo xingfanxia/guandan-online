@@ -1,0 +1,255 @@
+/* Round-end + A-level final + Victory — ported from demos S06 / S07 + scratch.
+ * Tokens via tokens.css. */
+
+/* ============ Round-end (S06) ============ */
+
+.end-stage {
+  width: 100%;
+  height: 100%;
+  min-height: 100dvh;
+  background: radial-gradient(ellipse at center, oklch(15% 0.05 30 / 0.35), var(--surface-0) 70%);
+  display: grid;
+  place-items: center;
+  padding: 24px 64px 24px 96px;
+}
+
+.end-card {
+  width: 100%;
+  max-width: 660px;
+}
+
+.end-eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--accent);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.end-head {
+  font-size: var(--t-3xl);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  line-height: 1.05;
+  text-align: center;
+  margin-bottom: 6px;
+}
+.end-head em {
+  font-style: normal;
+  color: var(--accent);
+  font-family: var(--font-mono);
+}
+
+.end-sub {
+  font-size: var(--t-sm);
+  color: var(--ink-2);
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.end-detail {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--surface-1);
+  border: 1px solid var(--rule-1);
+  border-radius: var(--r-2);
+}
+
+.end-detail__key {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--ink-3);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+
+.end-detail__val {
+  font-family: var(--font-mono);
+  font-size: var(--t-sm);
+  color: var(--ink-1);
+}
+.end-detail__val em {
+  font-style: normal;
+  color: var(--accent);
+}
+
+/* ============ LevelLadder ============ */
+
+.ladder {
+  display: grid;
+  grid-template-columns: repeat(13, 1fr);
+  gap: 4px;
+  margin-bottom: 18px;
+}
+
+.ladder__rung {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--rule-1);
+  border-radius: var(--r-1);
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--ink-3);
+  letter-spacing: 0;
+  background: transparent;
+  position: relative;
+}
+
+.ladder__rung--was {
+  background: oklch(20% 0.06 230 / 0.4);
+  border-color: oklch(50% 0.10 230 / 0.5);
+  color: var(--info);
+}
+
+.ladder__rung--passed {
+  background: oklch(15% 0.02 30 / 0.5);
+  color: oklch(50% 0.10 30);
+}
+
+.ladder__rung--now {
+  background: var(--accent-tint);
+  border-color: var(--accent-border);
+  color: var(--accent);
+  font-weight: 600;
+  box-shadow: 0 0 16px oklch(68% 0.20 30 / 0.4);
+}
+
+/* ============ A-Level Final banner (S07) ============ */
+
+.a-final {
+  position: relative;
+  background: radial-gradient(ellipse at center, oklch(22% 0.10 25 / 0.5), oklch(8% 0.01 25) 80%);
+}
+.a-final::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent 0,
+    transparent 80px,
+    oklch(64% 0.22 25 / 0.04) 80px,
+    oklch(64% 0.22 25 / 0.04) 81px
+  );
+  pointer-events: none;
+}
+
+.a-final-banner {
+  position: absolute;
+  top: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  text-align: center;
+}
+
+.a-final-banner__eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--danger);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.a-final-banner__title {
+  font-size: var(--t-2xl);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  color: var(--ink-1);
+}
+.a-final-banner__title em {
+  font-style: normal;
+  color: var(--danger);
+  font-family: var(--font-mono);
+  padding: 0 4px;
+}
+
+.a-final-banner__counter {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--danger);
+  letter-spacing: var(--tracking-wide);
+  margin-top: 6px;
+}
+
+/* ============ Victory (game-end) ============ */
+
+.victory {
+  width: 100%;
+  min-height: 100dvh;
+  background:
+    radial-gradient(ellipse at center, oklch(35% 0.18 95 / 0.25), transparent 60%),
+    var(--surface-0);
+  display: grid;
+  place-items: center;
+  padding: 32px 64px 32px 96px;
+}
+
+.victory__card {
+  width: 100%;
+  max-width: 720px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  align-items: center;
+}
+
+.victory__eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--gold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.victory__rune {
+  font-size: var(--t-4xl);
+  font-weight: 700;
+  color: var(--gold);
+  letter-spacing: 0.12em;
+  line-height: 1;
+}
+
+.victory__sub {
+  font-size: var(--t-lg);
+  color: var(--ink-1);
+  font-family: var(--font-mono);
+}
+.victory__sub em {
+  font-style: normal;
+  color: var(--gold);
+  font-weight: 600;
+}
+
+.victory__roster {
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.victory__roster-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--ink-2);
+}
+
+.victory__actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}

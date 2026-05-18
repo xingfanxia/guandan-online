@@ -4,15 +4,17 @@ Real online multiplayer **Guandan** (掼蛋) — landscape-first web game for 4 
 
 ## Status
 
-🚧 **Backend wire-complete end-to-end** (2026-05-18). **629/629 tests**, TS strict clean, grep-no-leak gate green. Beyond the P0 logic layer (Guandan rules engine, round/trick/session state machines, tribute, room lifecycle, Easy AI bot, hidden-state filter), the project now ships:
+🚧 **Backend + UI-1/UI-2 + full AI tier ladder shipped** (2026-05-18). **768/768 tests**, TS strict clean, grep-no-leak gate green. Beyond the P0 logic layer (Guandan rules engine, round/trick/session state machines, tribute, room lifecycle, hidden-state filter), the project now ships:
 
 - Live Upstash impls of `IdempotencyCache` / `EventLog` / `EventBus` selected via env-driven `createRealtimeInfra(env)`
-- 8 HTTP/SSE routes — create / read / join / leave / start / move / sse / health
-- Persistence: `roomStore` + `roundStore` (Memory + Upstash)
-- Move handler emits `move_played` / `move_passed` / `trick_won` via the publish gateway with per-recipient log isolation (no SSE backlog leaks)
+- 9 HTTP/SSE routes — create / read / join / leave / start / move / sse / cron-cleanup / health
+- Persistence: `roomStore` + `roundStore` + `sessionStore` (Memory + Upstash)
+- Move handler emits `move_played` / `move_passed` / `trick_won` / `round_end` / `game_end` via the publish gateway with per-recipient log isolation (no SSE backlog leaks). Lifecycle events (`room_joined` / `room_left`) use a shared `RoomState.eventVersion` counter so SSE resume is contiguous across lobby → game.
 - End-to-end integration test driving create → join × 3 → start → SSE → play → pass
+- React 19 game surface: Card / Hand / Trick / Avatar primitives + OrientationLock + GameTable4P that reduces live SSE events through a pure reducer (`#table=<roomId>&token=<t>&me=@handle` in the URL opens a playable table today)
+- Three AI tiers via single `computeBotMove(ctx)` dispatcher: Easy (rule-based + 30% noise), Medium (no noise + partner cooperation — defer/cover/compete), Hard (LLM via Vercel AI Gateway with 5 silent-fallback triggers + monthly budget guardrail)
 
-Remaining: `GameSession` persistence for `round_end` / `game_end` events, lifecycle event fanout, UI-1 / UI-2 landscape gameplay, AUTH-2 sibling KV migration (Critical Decision), AI-2 Medium WASM solver. See [`HANDOFF.md`](HANDOFF.md) for the commit-by-commit map and [`docs/plan/PLAN.md`](docs/plan/PLAN.md) for the full 31-milestone roadmap.
+Remaining: UI-3 / UI-4 / UI-5 / UI-6 (landing / tribute / round-end / 6P-8P), AUTH-2 sibling KV migration (Critical Decision), bot wire-up in `api/room/[code]/move`, `createUpstashBudget()` for production budget persistence. See [`HANDOFF.md`](HANDOFF.md) for the commit-by-commit map and [`docs/plan/PLAN.md`](docs/plan/PLAN.md) for the full 31-milestone roadmap.
 
 ## Stack
 
@@ -29,9 +31,9 @@ Remaining: `GameSession` persistence for `round_end` / `game_end` events, lifecy
 ## Local development
 
 ```bash
-npm install              # ~80 packages
+npm install              # ~150 packages (adds jsdom + @testing-library/react)
 npm run dev              # Vite dev server on :5174
-npm test                 # vitest run (629 tests as of 2026-05-18)
+npm test                 # vitest run (768 tests as of 2026-05-18)
 npm run typecheck        # tsc -b
 npm run test:coverage    # V8 coverage; outputs to coverage/
 npm run security:no-leak # grep-no-leak CI gate (enforces single publish site)

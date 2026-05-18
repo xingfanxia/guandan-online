@@ -10,9 +10,10 @@
 # Exit 1: violation — see stdout for offending file:line.
 #
 # Allowed publishers / appenders (whitelisted via path-suffix match):
-#   - lib/realtime/publish.ts  (the gateway itself)
-#   - lib/realtime/eventBus.ts (in-memory bus impl)
-#   - lib/realtime/eventLog.ts (in-memory log impl)
+#   - lib/realtime/publish.ts    (the gateway itself)
+#   - lib/realtime/eventBus.ts   (in-memory + Upstash bus impls)
+#   - lib/realtime/eventLog.ts   (in-memory + Upstash log impls)
+#   - lib/realtime/redisClient.ts (interface declaration — type-only)
 
 set -euo pipefail
 
@@ -44,6 +45,7 @@ matches="$(grep -rnE --include="*.ts" "$PATTERNS" "${EXISTING[@]}" 2>/dev/null \
   | grep -v "lib/realtime/publish.ts" \
   | grep -v "lib/realtime/eventBus.ts" \
   | grep -v "lib/realtime/eventLog.ts" \
+  | grep -v "lib/realtime/redisClient.ts" \
   | grep -vE ':[[:space:]]*//' \
   | grep -vE ':[[:space:]]*\*' \
   || true)"

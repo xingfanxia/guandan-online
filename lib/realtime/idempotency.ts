@@ -6,11 +6,13 @@
 // commits the response. Retries with the same moveId find either PENDING
 // (caller should poll/wait) or DONE (return cached response — no re-apply).
 //
-// In-memory implementation here is suitable for single-instance dev / tests.
-// Production uses Upstash Redis SETNX with EX (TTL) — same semantics, different
-// transport. Live impl arrives with api/move.ts wiring.
+// Two implementations target this contract:
+//   - createMemoryIdempotencyCache() — in-process Map; used in tests + dev
+//   - createUpstashIdempotencyCache(redis) — backed by Upstash Redis via
+//     SET NX EX. Live impl wired by api/move.ts in production.
 
 import type { MoveResponse } from './commands';
+import type { RedisLike } from './redisClient';
 
 export type ReserveResult =
   | { status: 'reserved' }
@@ -82,6 +84,71 @@ export function createMemoryIdempotencyCache(
         expiresAt: clock() + ttlSeconds * 1000,
       });
       return Promise.resolve();
+    },
+  };
+}
+
+// ─── Upstash Redis implementation ─────────────────────────────────────────────
+//
+// Wire protocol per moveId:
+//   1. tryReserve  → SET key 'PENDING' NX EX <ttl>
+//        - 'OK'  → reservation acquired, return 'reserved'
+//        - null  → key already exists, follow up with GET to disambiguate
+//                  PENDING (status 'pending') vs JSON (status 'done')
+//   2. commit      → SET key JSON.stringify(result) EX <ttl>
+//                    (after a GET to enforce contract: must be in PENDING
+//                    state; not-reserved and already-committed both throw)
+//
+// Upstash GET auto-parses JSON, so a done entry comes back as the parsed
+// MoveResponse object; the PENDING sentinel comes back as the raw string.
+
+const PENDING_SENTINEL = 'PENDING';
+
+export function createUpstashIdempotencyCache(
+  redis: RedisLike,
+  keyPrefix = 'idem:'
+): IdempotencyCache {
+  const k = (moveId: string) => `${keyPrefix}${moveId}`;
+
+  return {
+    async tryReserve(moveId, ttlSeconds) {
+      const reserved = await redis.set(k(moveId), PENDING_SENTINEL, {
+        nx: true,
+        ex: ttlSeconds,
+      });
+      if (reserved === 'OK') {
+        return { status: 'reserved' };
+      }
+      const existing = await redis.get<unknown>(k(moveId));
+      if (existing === null) {
+        // Race: NX failed (entry existed) but a concurrent expiry then
+        // removed it before our follow-up GET. Treat as a fresh reservation.
+        const reserve2 = await redis.set(k(moveId), PENDING_SENTINEL, {
+          nx: true,
+          ex: ttlSeconds,
+        });
+        return reserve2 === 'OK'
+          ? { status: 'reserved' }
+          : { status: 'pending' };
+      }
+      if (existing === PENDING_SENTINEL || typeof existing === 'string') {
+        return { status: 'pending' };
+      }
+      // Existing is the parsed MoveResponse object.
+      return { status: 'done', result: existing as MoveResponse };
+    },
+
+    async commit(moveId, result, ttlSeconds) {
+      const existing = await redis.get<unknown>(k(moveId));
+      if (existing === null) {
+        throw new Error(
+          `commit: ${moveId} not reserved (or expired before commit)`
+        );
+      }
+      if (existing !== PENDING_SENTINEL && typeof existing !== 'string') {
+        throw new Error(`commit: ${moveId} already committed`);
+      }
+      await redis.set(k(moveId), JSON.stringify(result), { ex: ttlSeconds });
     },
   };
 }

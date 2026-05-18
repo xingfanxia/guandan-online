@@ -1,7 +1,7 @@
-# Handoff — guandan-online v0.9 (P0 logic layer substantially complete)
+# Handoff — guandan-online v1.0 (P0 lib + transport layer complete)
 
 **Date**: 2026-05-18
-**Status**: P0 logic layer + most of P1 logic shipped across 25 commits in one autonomous-grind session. Tests 487/487 · TS strict clean · branch `main` is 25 commits ahead of `origin/main`, **unpushed**. Remaining work is infrastructure-bound (Upstash live impl, Vercel api routes, UI components).
+**Status**: P0 lib layer + full realtime transport + all v1 API routes shipped across 34 commits over two sessions. Tests **590/590** · TS strict clean · grep-no-leak gate green · `main` synced to `origin/main`. The system is wire-complete for create-room → join → play → SSE-stream against either in-memory or Upstash backends. Remaining work is event fanout from move handler (API-4 part B) + UI (UI-1/UI-2) + AI-2 Medium + AUTH-2 (Critical Decision).
 **Repo**: https://github.com/xingfanxia/guandan-online
 **Domain (locked)**: `gdo.ax0x.ai` (sibling subdomain to scorer at `gd.ax0x.ai`)
 
@@ -49,13 +49,28 @@
 | `b37d06a` | AI-1 part D | flushStraight enumeration |
 | `9344e86` | AI-1 part E | fullHouse enumeration — enumerator now covers all 10 PatternKinds |
 
-**Stats**: 487/487 tests passing · TS strict clean · grep-no-leak gate green.
+### 2026-05-18 — NET-1C + API routes session (9 commits)
+
+| Commit | Milestone | What |
+|---|---|---|
+| `214d1f4` | NET-1C part 1 | `lib/realtime/redisClient.ts` (RedisLike contract) + `createUpstashIdempotencyCache` via SET NX EX + PENDING sentinel. grep-no-leak whitelist extended for the interface declaration. |
+| `c239252` | NET-1C part 2 | `createUpstashEventLog` — Redis Streams (XADD with INCR-driven `<n>-0` ids, XRANGE with exclusive `(<n>-0` bound for fromId). 24h TTL on both stream + seq keys. |
+| `076bab2` | NET-1C part 3 | `createUpstashEventBus` — XADD `*` to `bus:<channel>` stream + setTimeout poll loop (no real SUBSCRIBE on Upstash REST). Live-only cursor seeded at current stream top. |
+| `d7cabec` | NET-1C part 4 | `createRealtimeInfra(env, opts?)` factory — single entry point selecting memory vs Upstash by env vars. Tests inject RedisLike via `options.redis`. |
+| `02c2fa3` | API-1 | `lib/storage/roomStore.ts` (Memory + Upstash impls) wired into RealtimeInfra. RedisLike gains `del()`. |
+| `eb8f691` | API-2 | `POST /api/room/create` — pure handler `lib/api/createRoom.ts` + Vercel wrapper. Code-collision retry (cap 8) on `roomStore.create()` NX. |
+| `21e24a4` | API-3 | `POST /api/room/[code]/join` + `.../leave` — pure handlers + wrappers. Leave authenticates via Bearer joinToken; host leaving → DEL room. |
+| `4839c07` | API-4 part A | `POST /api/room/[code]/move` — auth + sliding-window rate limit + idempotency reserve/commit + handleMoveCommand dispatch + roundStore persistence. `'applied' → 'replayed'` tag on retries. `lib/storage/roundStore.ts` introduced. Event fanout deferred to API-4 part B. |
+| `e094685` | API-5 | `GET /api/sse/[roomId]` — backlog drain via `eventLog.range` + live `eventBus.subscribe` on `game:<code>:player:<id>` channel + 20s heartbeat + 270s rotation with `stream_closing` event. ReadableStream cancel cleans up timers + unsubscribes. |
+
+**Stats**: **590/590 tests passing** (up from 487; 103 new tests) · TS strict clean · grep-no-leak gate green · 9 commits on `main` pushed to `origin/main`.
 
 **License decision (CORE-1 part 2)**: Ported semantics from the in-repo `docs/research/game-rules.md` spec. No source code copied from `hash-panda/guandan-guide`. `// SYNC:` pins reference spec sections, not external code.
 
-**Outstanding work** (infrastructure-bound — needs Vercel project + Upstash provisioning):
-- **NET-1 part C** — wire the in-memory `EventBus` / `EventLog` / `IdempotencyCache` interfaces to live `@upstash/redis`. The interfaces are stable; this is replace-the-impl work.
-- **API routes** — `api/sse/[roomId].ts`, `api/move.ts`, `api/room/create.ts`, `api/room/[code]/join.ts`, `api/room/[code]/leave.ts`. All the logic exists in `lib/`; routes are 30-50-line wrappers calling `handleMoveCommand` / `publishEvent` / `createRoom` / `joinRoom` / `leaveRoom`.
+**Outstanding work**:
+- **API-4 part B — publishEvent wiring** from the move handler. The plumbing is all there (bus + log via RealtimeInfra, AuthorEvent types in `buildClientPayload.ts`), but `handleMove` doesn't yet derive an AuthorMovePlayedEvent / AuthorMovePassedEvent from `(command, postRound)` nor build a `GameState` from `(RoomState, GameRound)` to drive the per-recipient filter. Adds ~250 LOC + tests. Until this lands, the SSE handler streams nothing for in-flight moves (only backlog from anyone manually appending to the log).
+- **Lifecycle event fanout** — `room_joined` / `room_left` events similarly aren't published from the join/leave routes. Lower urgency than moves (room state changes are infrequent); same wiring pattern.
+- **Game-start transition** — no API exists to move a room from `'lobby'` → `'in_game'` and create the initial GameRound. Probably `POST /api/room/[code]/start` with host-token auth, calling `dealRound()` + `startTrick()` and writing the initial RoundEnvelope.
 - **UI-1 / UI-2** — landscape mobile gameplay screens (demos in `demos/index.html` are pixel refs).
 - **AUTH-2** — sibling scorer key migration `player:*` → `gs:*`. **CRITICAL DECISION TRIGGER — touches production sibling KV. Requires explicit go-ahead.**
 - **AI-2 Medium** — WASM solver + partner cooperation (longest single milestone, 7-10 days per PLAN.md).

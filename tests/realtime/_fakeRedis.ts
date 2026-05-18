@@ -97,6 +97,17 @@ export function createFakeRedis(): FakeRedis {
       return next;
     },
 
+    async del(key: string): Promise<number> {
+      const entry = data.get(key);
+      if (entry && alive(entry)) {
+        data.delete(key);
+        return 1;
+      }
+      if (streams.delete(key)) return 1;
+      if (counters.delete(key)) return 1;
+      return 0;
+    },
+
     async expire(key: string, seconds: number): Promise<number> {
       const entry = data.get(key);
       if (entry) {

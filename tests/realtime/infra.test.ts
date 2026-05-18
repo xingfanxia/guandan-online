@@ -3,6 +3,8 @@
 import { describe, expect, it } from 'vitest';
 import { createRealtimeInfra } from '@lib/realtime/infra';
 import type { ServerEvent } from '@lib/realtime/messages';
+import type { RoomState } from '@lib/room/lifecycle';
+import { DEFAULT_MODE_RULES } from '@lib/game/mode';
 import { createFakeRedis } from './_fakeRedis';
 
 const event = (v: number): ServerEvent => ({
@@ -66,5 +68,43 @@ describe('createRealtimeInfra — upstash backend (injected redis)', () => {
     const { idempotency } = createRealtimeInfra({}, { redis });
     await idempotency.tryReserve('move-x', 300);
     expect(redis.__peek('idem:move-x')).toBe('PENDING');
+  });
+});
+
+describe('createRealtimeInfra — roomStore wiring', () => {
+  function sampleRoom(code: string): RoomState {
+    return {
+      code,
+      mode: '4',
+      rules: DEFAULT_MODE_RULES,
+      hostId: 'p0',
+      hostToken: 't',
+      members: [
+        {
+          id: 'p0',
+          handle: '@h',
+          joinToken: 'j',
+          joinedAt: 0,
+          status: 'connected',
+        },
+      ],
+      phase: 'lobby',
+      createdAt: 0,
+      lastActiveAt: 0,
+    };
+  }
+
+  it('memory backend exposes a working roomStore', async () => {
+    const { roomStore } = createRealtimeInfra({});
+    await roomStore.put(sampleRoom('A2B3C4'), 3600);
+    const fetched = await roomStore.get('A2B3C4');
+    expect(fetched?.code).toBe('A2B3C4');
+  });
+
+  it('upstash backend writes rooms through the injected redis', async () => {
+    const redis = createFakeRedis();
+    const { roomStore } = createRealtimeInfra({}, { redis });
+    await roomStore.put(sampleRoom('A2B3C4'), 3600);
+    expect(redis.__peek('room:A2B3C4')).not.toBeNull();
   });
 });

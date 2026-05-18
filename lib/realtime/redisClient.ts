@@ -45,6 +45,9 @@ export interface RedisLike {
   /** EXPIRE key seconds. Returns 1 on success, 0 if the key didn't exist. */
   expire(key: string, seconds: number): Promise<number>;
 
+  /** DEL key. Returns 1 if the key existed and was deleted, 0 otherwise. */
+  del(key: string): Promise<number>;
+
   /**
    * XADD key &lt;id|*&gt; field1 value1 ...
    *

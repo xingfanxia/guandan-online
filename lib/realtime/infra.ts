@@ -18,11 +18,14 @@ import {
   createUpstashIdempotencyCache,
 } from './idempotency';
 import type { RedisLike } from './redisClient';
+import type { RoomStore } from '../storage/roomStore';
+import { createMemoryRoomStore, createRoomStore } from '../storage/roomStore';
 
 export interface RealtimeInfra {
   bus: EventBus;
   log: EventLog;
   idempotency: IdempotencyCache;
+  roomStore: RoomStore;
   /** Which backing implementation was selected — for logging / health checks. */
   backend: 'memory' | 'upstash';
 }
@@ -62,6 +65,7 @@ export function createRealtimeInfra(
     bus: createMemoryEventBus(),
     log: createMemoryEventLog(),
     idempotency: createMemoryIdempotencyCache(),
+    roomStore: createMemoryRoomStore(),
     backend: 'memory',
   };
 }
@@ -71,6 +75,7 @@ function wireUpstash(redis: RedisLike): RealtimeInfra {
     bus: createUpstashEventBus(redis),
     log: createUpstashEventLog(redis),
     idempotency: createUpstashIdempotencyCache(redis),
+    roomStore: createRoomStore(redis),
     backend: 'upstash',
   };
 }

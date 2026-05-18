@@ -4,7 +4,7 @@ Real online multiplayer **Guandan** (掼蛋) — landscape-first web game for 4 
 
 ## Status
 
-🚧 **P0 Foundation in progress** (week 1-2 of an 8-week plan). Bootstrap + auth bridge + half of the rules engine landed 2026-05-17. See [`HANDOFF.md`](HANDOFF.md) for current progress and [`docs/plan/PLAN.md`](docs/plan/PLAN.md) for the full 31-milestone roadmap.
+🚧 **P0 logic layer + most of P1 logic shipped** (2026-05-18). 487/487 tests, TS strict clean. All pure-functional pieces are in `lib/`: full Guandan rules engine (10 pattern kinds + 7-tier bomb hierarchy + wildcards), round + trick + session state machines, tribute (detect / pick / apply), realtime types + hidden-state filter + single-publish gateway, room lifecycle, Easy AI bot with all-10-PatternKind enumeration. Remaining work is infrastructure-bound: Upstash live impls of `lib/realtime/*` interfaces, Vercel API route handlers, UI components, AUTH-2 sibling KV migration. See [`HANDOFF.md`](HANDOFF.md) for the commit-by-commit map and [`docs/plan/PLAN.md`](docs/plan/PLAN.md) for the full 31-milestone roadmap.
 
 ## Stack
 
@@ -21,11 +21,12 @@ Real online multiplayer **Guandan** (掼蛋) — landscape-first web game for 4 
 ## Local development
 
 ```bash
-npm install              # 81 packages, 0 vulnerabilities
+npm install              # ~80 packages
 npm run dev              # Vite dev server on :5174
-npm test                 # vitest run (111 tests as of P0 kickoff)
+npm test                 # vitest run (487 tests as of 2026-05-18)
 npm run typecheck        # tsc -b
 npm run test:coverage    # V8 coverage; outputs to coverage/
+npm run security:no-leak # grep-no-leak CI gate (enforces single publish site)
 ```
 
 Copy `.env.example` → `.env.local` and fill in Upstash + admin token values for any code path that hits KV.

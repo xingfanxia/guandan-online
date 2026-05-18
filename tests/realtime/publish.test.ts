@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { publishEvent } from '@lib/realtime/publish';
+import { publishEvent, eventLogKey } from '@lib/realtime/publish';
 import { createMemoryEventBus } from '@lib/realtime/eventBus';
 import { createMemoryEventLog } from '@lib/realtime/eventLog';
 import type { AuthorEvent, GameState } from '@lib/realtime/buildClientPayload';
@@ -51,13 +51,39 @@ describe('publishEvent — fans out to every recipient', () => {
     expect(bobPayloadJson).toContain('"K-H-1"'); // bob's own
   });
 
-  it('appends one entry per recipient to the event log (per-player streams)', async () => {
+  it('appends to per-recipient log keys (isolated streams)', async () => {
     const bus = createMemoryEventBus();
     const log = createMemoryEventLog();
     await publishEvent('room42', dealAuthor, STATE, bus, log);
-    // The log is per-room — total appended events equals number of recipients
-    const events = await log.range('room42', null);
-    expect(events).toHaveLength(4);
+
+    // Each recipient has their own per-key log; payload at each key is the
+    // recipient-filtered view.
+    const aliceLog = await log.range(eventLogKey('room42', 'alice'), null);
+    const bobLog = await log.range(eventLogKey('room42', 'bob'), null);
+    const carolLog = await log.range(eventLogKey('room42', 'carol'), null);
+    const daveLog = await log.range(eventLogKey('room42', 'dave'), null);
+    expect(aliceLog).toHaveLength(1);
+    expect(bobLog).toHaveLength(1);
+    expect(carolLog).toHaveLength(1);
+    expect(daveLog).toHaveLength(1);
+
+    // The "raw" room-only key is empty — proves no shared stream that could
+    // leak filtered payloads across players on SSE backlog drain.
+    const sharedLog = await log.range('room42', null);
+    expect(sharedLog).toEqual([]);
+  });
+
+  it('alice cannot read bob payload via her log (security regression guard)', async () => {
+    const bus = createMemoryEventBus();
+    const log = createMemoryEventLog();
+    await publishEvent('room42', dealAuthor, STATE, bus, log);
+
+    const aliceLog = await log.range(eventLogKey('room42', 'alice'), null);
+    const aliceJson = JSON.stringify(aliceLog);
+    // alice's log contains her own card 5-S-1 (yourHand)
+    expect(aliceJson).toContain('5-S-1');
+    // alice's log does NOT contain bob's actual card K-H-1
+    expect(aliceJson).not.toContain('K-H-1');
   });
 });
 

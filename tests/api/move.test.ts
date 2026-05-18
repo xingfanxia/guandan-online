@@ -21,6 +21,7 @@ import type { MoveResponse } from '@lib/realtime/commands';
 import { createMemoryEventBus } from '@lib/realtime/eventBus';
 import { createMemoryEventLog } from '@lib/realtime/eventLog';
 import type { ServerEvent } from '@lib/realtime/messages';
+import { eventLogKey } from '@lib/realtime/publish';
 import { dealRound, startTrick } from '@lib/game/round';
 import type { GameRound, PlayerSeat } from '@lib/game/round';
 import { shuffleDeck, buildDeck } from '@lib/game/cards';
@@ -438,7 +439,7 @@ describe('handleMove — rate limit', () => {
 expect(IDEMPOTENCY_TTL_SECONDS).toBeGreaterThan(0);
 
 describe('handleMove — publishEvent fanout', () => {
-  it('appends a move_played event to the EventLog on successful play', async () => {
+  it('appends a move_played event to each per-recipient log on successful play', async () => {
     const fx = await fixture();
     const round = buildInitialRound();
     await fx.deps.roundStore.put(
@@ -462,12 +463,14 @@ describe('handleMove — publishEvent fanout', () => {
     const body = (await res.json()) as MoveResponse;
     expect(body.ok).toBe(true);
 
-    // publishEvent appends one entry per recipient (4 players in 4P).
-    const logged = await fx.deps.log.range(CODE, null);
-    expect(logged.length).toBe(4);
-    for (const entry of logged) {
-      expect(entry.event.type).toBe('move_played');
-      expect(entry.event.version).toBe(1);
+    for (const playerId of ['p0', 'p1', 'p2', 'p3']) {
+      const logged = await fx.deps.log.range(
+        eventLogKey(CODE, playerId),
+        null
+      );
+      expect(logged).toHaveLength(1);
+      expect(logged[0]?.event.type).toBe('move_played');
+      expect(logged[0]?.event.version).toBe(1);
     }
   });
 

@@ -11,6 +11,7 @@ import { createMemoryRoomStore } from '@lib/storage/roomStore';
 import { createMemoryRoundStore } from '@lib/storage/roundStore';
 import { createMemoryEventBus } from '@lib/realtime/eventBus';
 import { createMemoryEventLog } from '@lib/realtime/eventLog';
+import { eventLogKey } from '@lib/realtime/publish';
 import seedrandom from 'seedrandom';
 
 const CODE = 'A2B3C4';
@@ -259,14 +260,17 @@ describe('handleStartGame — happy path (4P)', () => {
     expect(teams).toEqual(['t1', 't2', 't1', 't2']);
   });
 
-  it('publishes a deal event to the EventLog (one append per recipient)', async () => {
+  it('publishes a deal event to each per-recipient log key', async () => {
     const fx = await fixture();
     await handleStartGame(req({ bearer: fx.hostToken }), CODE, fx.deps);
-    const logged = await fx.deps.log.range(CODE, null);
-    expect(logged).toHaveLength(4);
-    for (const entry of logged) {
-      expect(entry.event.type).toBe('deal');
-      expect(entry.event.version).toBe(0);
+    for (const playerId of ['p0', 'p1', 'p2', 'p3']) {
+      const logged = await fx.deps.log.range(
+        eventLogKey(CODE, playerId),
+        null
+      );
+      expect(logged).toHaveLength(1);
+      expect(logged[0]?.event.type).toBe('deal');
+      expect(logged[0]?.event.version).toBe(0);
     }
   });
 });

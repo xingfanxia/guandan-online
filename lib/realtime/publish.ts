@@ -7,6 +7,13 @@
 // (scripts/security/grep-no-leak.sh) enforces this discipline mechanically:
 // any reference to `.publish(` or `.append(` on bus/log outside this file
 // breaks the build.
+//
+// Per-recipient log keying (security-critical): each filtered payload is
+// appended to a recipient-specific log key — `eventLogKey(roomId, playerId)`.
+// A single per-room log mixing all recipients' filtered payloads would let
+// SSE backlog replay surface another player's "yourHand" view on resume,
+// which IS hidden-state leakage. Per-recipient streams isolate the resume
+// path so each client only re-reads payloads built for them.
 
 import { assertNoOpponentHandLeak, buildClientPayload } from './buildClientPayload';
 import type { AuthorEvent, GameState } from './buildClientPayload';
@@ -15,15 +22,26 @@ import type { EventLog } from './eventLog';
 import type { PlayerId } from '../game/round';
 
 /**
+ * Compose the per-recipient log key. Consumers (handleSse) MUST use this
+ * helper to read backlog rather than concatenating ad-hoc; if the format
+ * here changes, the read side stays in sync via one import.
+ */
+export function eventLogKey(roomId: string, playerId: PlayerId): string {
+  return `${roomId}:${playerId}`;
+}
+
+/**
  * Publish an event to every recipient in the game. Each recipient gets a
  * payload filtered to remove hidden state they shouldn't see. In dev mode,
  * each payload is also scanned for accidental opponent-card leaks and
  * throws HIDDEN_STATE_LEAK on detection.
  *
  * Side effects (per recipient):
- *   1. EventLog append (for SSE Last-Event-ID resume).
- *   2. EventBus publish (immediate SSE fanout via channel
- *      `game:{roomId}:player:{playerId}`).
+ *   1. EventLog append to `eventLogKey(roomId, recipient)` — backs SSE
+ *      Last-Event-ID resume; each recipient has their own monotonic id
+ *      sequence, scoped to their filtered view.
+ *   2. EventBus publish on `game:{roomId}:player:{playerId}` — live SSE
+ *      fanout.
  *
  * Order matters: append-before-publish means a fresh subscriber via XRANGE
  * will see the event before the SSE channel delivery (no missed events).
@@ -47,7 +65,7 @@ export async function publishEvent(
       assertNoOpponentHandLeak(payload, recipient, state);
     }
 
-    await log.append(roomId, payload);
+    await log.append(eventLogKey(roomId, recipient), payload);
     await bus.publish(`game:${roomId}:player:${recipient}`, payload);
   }
 }

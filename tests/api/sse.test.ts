@@ -11,6 +11,7 @@ import { handleJoinRoom, type JoinRoomResponseBody } from '@lib/api/joinRoom';
 import { createMemoryRoomStore } from '@lib/storage/roomStore';
 import { createMemoryEventBus } from '@lib/realtime/eventBus';
 import { createMemoryEventLog } from '@lib/realtime/eventLog';
+import { eventLogKey } from '@lib/realtime/publish';
 import { parseFrame } from '@lib/realtime/sse';
 import type { ServerEvent } from '@lib/realtime/messages';
 
@@ -159,10 +160,11 @@ describe('handleSse — auth + validation', () => {
 describe('handleSse — backlog drain on connect', () => {
   it('replays events with id > lastEventId', async () => {
     const fx = await fixture();
-    // Pre-seed the log with three events.
-    await fx.log.append(CODE, heartbeatEvent(1));
-    await fx.log.append(CODE, heartbeatEvent(2));
-    await fx.log.append(CODE, heartbeatEvent(3));
+    // Pre-seed the per-recipient log for p1 (the requesting player).
+    const logKey = eventLogKey(CODE, fx.p1Id);
+    await fx.log.append(logKey, heartbeatEvent(1));
+    await fx.log.append(logKey, heartbeatEvent(2));
+    await fx.log.append(logKey, heartbeatEvent(3));
 
     const res = await handleSse(
       getReq({ token: fx.p1Token, lastEventId: '1' }),
@@ -185,8 +187,9 @@ describe('handleSse — backlog drain on connect', () => {
 
   it('replays from the beginning when lastEventId is missing', async () => {
     const fx = await fixture();
-    await fx.log.append(CODE, heartbeatEvent(1));
-    await fx.log.append(CODE, heartbeatEvent(2));
+    const logKey = eventLogKey(CODE, fx.p1Id);
+    await fx.log.append(logKey, heartbeatEvent(1));
+    await fx.log.append(logKey, heartbeatEvent(2));
 
     const res = await handleSse(getReq({ token: fx.p1Token }), CODE, {
       ...fx,

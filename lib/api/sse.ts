@@ -22,6 +22,7 @@ import { formatComment, formatEvent } from '../realtime/sse';
 import type { StreamClosingEvent } from '../realtime/messages';
 import type { RoomStore } from '../storage/roomStore';
 import { isValidRoomCode } from '../room/code';
+import { eventLogKey } from '../realtime/publish';
 
 export interface SseDeps {
   roomStore: RoomStore;
@@ -89,10 +90,14 @@ export async function handleSse(
   let closed = false;
   let highestVersion = 0;
 
+  const logKey = eventLogKey(roomId, member.id);
+
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
-      // Backlog drain.
-      const backlog = await deps.log.range(roomId, fromId);
+      // Backlog drain. Per-recipient log key — each player only re-reads
+      // payloads built for them. See publish.ts for why this isolation is
+      // security-critical (preventing yourHand leaks on SSE resume).
+      const backlog = await deps.log.range(logKey, fromId);
       for (const entry of backlog) {
         controller.enqueue(encoder.encode(formatEvent(entry.event)));
         if (entry.event.version > highestVersion) {

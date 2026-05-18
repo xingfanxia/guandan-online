@@ -5,9 +5,9 @@
 //   - same-rank family: single, pair, triple, 4..8-card rank bomb, joker bomb
 //   - sequence family: straight (5), threePairs (3 consecutive pairs),
 //     twoTriples (2 consecutive triples). Wildcards can fill gaps.
+//   - flushStraight (5 consecutive same-suit). Wildcards become any suit.
 //
 // Still out of scope:
-//   - flushStraight (same-suit straight — needs suit-aware iteration)
 //   - fullHouse (3+2) — needs cross-rank pairing
 //   - exhaustive wildcard substitution for same-rank plays at non-level ranks
 //     (e.g., "pair of 7s using one wildcard as 7"). Current same-rank loop
@@ -16,7 +16,7 @@
 //
 // Pure-functional. No state. Caller picks an entry from the returned list.
 
-import type { Card, NaturalRank } from '../game/cards';
+import type { Card, NaturalRank, NaturalSuit } from '../game/cards';
 import { analyzeHand, canBeat } from '../game/patterns';
 import type { Pattern } from '../game/patterns';
 import { partitionWildcards } from '../game/wildcard';
@@ -145,7 +145,56 @@ export function enumerateLegalPlays(
     }
   }
 
+  // flushStraight: 5 consecutive ranks all of one suit (wildcards become any suit).
+  if (hand.length >= 5) {
+    const suits: NaturalSuit[] = ['spades', 'hearts', 'clubs', 'diamonds'];
+    for (const suit of suits) {
+      const suitBuckets = buildSuitRankBuckets(naturals, suit);
+      for (const window of STRAIGHT_WINDOWS) {
+        addIfLegal(tryFlushWindow(window, suitBuckets, wildcards, levelRank));
+      }
+    }
+  }
+
   return plays;
+}
+
+function buildSuitRankBuckets(
+  naturals: readonly Card[],
+  suit: NaturalSuit
+): Map<NaturalRank, Card> {
+  const out = new Map<NaturalRank, Card>();
+  for (const c of naturals) {
+    if (c.suit !== suit) continue;
+    const r = c.rank as NaturalRank;
+    if (!out.has(r)) out.set(r, c);
+  }
+  return out;
+}
+
+function tryFlushWindow(
+  window: readonly NaturalRank[],
+  suitBuckets: Map<NaturalRank, Card>,
+  wildcards: readonly Card[],
+  levelRank: LevelRank
+): Pattern | null {
+  const subset: Card[] = [];
+  let wcIdx = 0;
+  for (const rank of window) {
+    const card = suitBuckets.get(rank);
+    if (card) {
+      subset.push(card);
+    } else {
+      if (wcIdx >= wildcards.length) return null;
+      subset.push(wildcards[wcIdx]!);
+      wcIdx++;
+    }
+  }
+  const pattern = analyzeHand(subset, levelRank);
+  // analyzeHand may resolve same-suit-consecutive as flushStraight; if it
+  // returned a different kind (e.g., the suit-bucket happened to be all the
+  // same rank, impossible here since window has distinct ranks), discard.
+  return pattern?.kind === 'flushStraight' ? pattern : null;
 }
 
 /**

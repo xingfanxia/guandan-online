@@ -165,3 +165,102 @@ export function pickReturnCard(
   }
   return best;
 }
+
+// ─── applyTribute: end-to-end exchange ────────────────────────────────────────
+//
+// Single tribute: loser tributes highest non-wildcard to winner; winner returns
+// a ≤10 card (or smallest if all >10). 末游 leads.
+//
+// Double tribute: same swap for each obligation. 末游 (the one who tributed
+// to 头游) leads — per game-rules.md § "Double tribute" first-trick-leader rule.
+//
+// Resist / none: no exchange. 头游 (1st-place) leads.
+//
+// Returns the new hands + first leader + a record of the exchanges.
+
+export interface TributeExchange {
+  from: PlayerId;
+  to: PlayerId;
+  tribute: Card;
+  return: Card | null;
+}
+
+export interface ApplyTributeResult {
+  newHands: Record<PlayerId, Card[]>;
+  firstLeader: PlayerId;
+  exchanges: TributeExchange[];
+}
+
+export function applyTribute(
+  hands: Readonly<Record<PlayerId, Card[]>>,
+  mode: TributeMode,
+  finishOrder: readonly PlayerId[],
+  levelRank: LevelRank
+): ApplyTributeResult {
+  if (mode.kind === 'none' || mode.kind === 'resist') {
+    return {
+      newHands: cloneHands(hands),
+      firstLeader: finishOrder[0]!,
+      exchanges: [],
+    };
+  }
+
+  const obligations =
+    mode.kind === 'single'
+      ? [{ from: mode.from, to: mode.to }]
+      : mode.obligations;
+
+  // Determine first leader: 末游 (4th place / last in finishOrder) leads in
+  // single and double tribute scenarios.
+  const firstLeader = finishOrder[finishOrder.length - 1]!;
+
+  const working = cloneHands(hands);
+  const exchanges: TributeExchange[] = [];
+
+  for (const obligation of obligations) {
+    const loserHand = working[obligation.from]!;
+    const winnerHand = working[obligation.to]!;
+
+    const tributeCard = pickTributeCard(loserHand, levelRank);
+    if (tributeCard === null) {
+      throw new Error(
+        `applyTribute: ${obligation.from} has no tributable card (only wildcards in hand)`
+      );
+    }
+
+    // Remove tribute card from loser; add to winner.
+    removeCard(loserHand, tributeCard);
+    winnerHand.push(tributeCard);
+
+    // Pick return card from winner's NEW hand (which now includes the tribute).
+    const returnCard = pickReturnCard(winnerHand, levelRank);
+    if (returnCard !== null) {
+      removeCard(winnerHand, returnCard);
+      loserHand.push(returnCard);
+    }
+
+    exchanges.push({
+      from: obligation.from,
+      to: obligation.to,
+      tribute: tributeCard,
+      return: returnCard,
+    });
+  }
+
+  return { newHands: working, firstLeader, exchanges };
+}
+
+function cloneHands(hands: Readonly<Record<PlayerId, Card[]>>): Record<PlayerId, Card[]> {
+  const out: Record<PlayerId, Card[]> = {};
+  for (const [id, hand] of Object.entries(hands)) {
+    out[id] = [...hand];
+  }
+  return out;
+}
+
+function removeCard(hand: Card[], card: Card): void {
+  const idx = hand.findIndex(
+    (c) => c.suit === card.suit && c.rank === card.rank && c.deck === card.deck
+  );
+  if (idx >= 0) hand.splice(idx, 1);
+}

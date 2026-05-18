@@ -1,7 +1,7 @@
-# Handoff — guandan-online v0.8 (P0 in progress)
+# Handoff — guandan-online v0.9 (P0 logic layer substantially complete)
 
-**Date**: 2026-05-17
-**Status**: Implementation continuing. P0 foundation + card-play engine shipped (bootstrap + AUTH-1 + CORE-1). See [Progress](#progress) below.
+**Date**: 2026-05-18
+**Status**: P0 logic layer + most of P1 logic shipped across 25 commits in one autonomous-grind session. Tests 487/487 · TS strict clean · branch `main` is 25 commits ahead of `origin/main`, **unpushed**. Remaining work is infrastructure-bound (Upstash live impl, Vercel api routes, UI components).
 **Repo**: https://github.com/xingfanxia/guandan-online
 **Domain (locked)**: `gdo.ax0x.ai` (sibling subdomain to scorer at `gd.ax0x.ai`)
 
@@ -9,25 +9,56 @@
 
 ## Progress
 
-### 2026-05-17 — P0 kick-off session
+### 2026-05-17 — P0 kick-off session (4 commits)
 
 | Commit | Milestone | What |
 |---|---|---|
 | `1672b4c` | Bootstrap | Vite 8 + TS 6 + React 19 + Vitest 4 scaffold, Vercel Fluid Compute config, dir skeleton, smoke test |
-| `c4310a4` | AUTH-1 | `lib/auth/` — `validateOwnershipToken` + `extractBearerToken` + handle normalization, ported verbatim from sibling scorer's `api/players/_utils.js:247-285` with `// SYNC:` pins. 32 tests |
-| `af9c409` | CORE-1 part 1 | `lib/game/` foundation — `mode.ts` / `levels.ts` / `cards.ts` / `upgrade.ts` / `aLevel.ts`. Pure-functional ports of sibling scorer's well-tested logic. 79 tests |
-| _next_ | CORE-1 part 2 | `lib/game/` card-play layer — `wildcard.ts` (逢人配 partition helpers) / `bomb.ts` (7-tier power hierarchy + flush-straight detection + joker bomb) / `patterns.ts` (all 10 hand kinds + `analyzeHand` + `canBeat`). Port-semantics from `docs/research/game-rules.md` (license-safe; no external source copied). 115 new tests |
+| `c4310a4` | AUTH-1 | `lib/auth/` — `validateOwnershipToken` + `extractBearerToken` + handle normalization. 32 tests |
+| `af9c409` | CORE-1 part 1 | `lib/game/` foundation — `mode.ts` / `levels.ts` / `cards.ts` / `upgrade.ts` / `aLevel.ts`. 79 tests |
+| `ee10818` | Docs sync | HANDOFF / CLAUDE / README aligned for P0 kickoff |
 
-**Stats**: 226/226 tests passing · 94.93% statements · 100% functions · 98.75% lines · TS strict mode clean.
+### 2026-05-18 — Autonomous-grind push (25 commits)
 
-**License decision (CORE-1 part 2)**: Ported semantics from the in-repo `docs/research/game-rules.md` spec (authoritative World 2025 ruleset, multi-source attributed). No source code copied from `hash-panda/guandan-guide` — the spec is self-sufficient and avoids license risk. `// SYNC:` pins reference the spec section, not external code.
+| Commit | Milestone | Lib paths |
+|---|---|---|
+| `680235a` | CORE-1 part 2 | `wildcard.ts` / `bomb.ts` (7-tier power) / `patterns.ts` (all 10 kinds + `analyzeHand` + `canBeat`) |
+| `c86a7fc` | CORE-2 part A | `round.ts` — `GameRound` + `Trick` types, deal, startTrick / playCards / pass, going-out, 接风, round-end at N-1 |
+| `3db01cf` | CORE-2 part B | `resolveRound.ts` — bridge finished round → `calculateUpgrade` |
+| `2e62966` | NET-1 part A | `realtime/messages.ts` (15-kind ServerEvent union) + `realtime/sse.ts` (wire format) |
+| `858b68f` | NET-1 part B | `realtime/commands.ts` (6 MoveCommand variants) + `realtime/eventBus.ts` (in-memory) |
+| `1f53452` | NET-2 part A | `realtime/idempotency.ts` (reserve / commit) + `realtime/eventLog.ts` (append / range) |
+| `d518bf6` | NET-3 part A | `realtime/buildClientPayload.ts` — hidden-state filter + leak detector |
+| `991541f` | NET-3 part B | `realtime/publish.ts` (single gateway) + `scripts/security/grep-no-leak.sh` |
+| `0737db5` | CORE-3 | `game/session.ts` — multi-round orchestrator + game-end detection |
+| `ae55815` | ROOM-1 part A | `room/code.ts` — 6-char alternating L/D ambiguity-safe code generator |
+| `88adffe` | AI-1 part A | `ai/enumerate.ts` — same-rank family enumeration |
+| `eaa1acb` | AI-1 part B | `ai/easy.ts` — Easy bot move selector (30% noise) |
+| `0279ba5` | Realtime | `realtime/cardCodec.ts` — CardId ↔ Card |
+| `886163c` | Realtime | `realtime/handleMove.ts` — POST /move dispatcher (version / turn / pattern checks) |
+| `fad1e6b` | ROOM-1 part B | `room/lifecycle.ts` — RoomState + create / join / leave / isStale |
+| `5e61fd9` | Game util | `game/handSort.ts` — canonical 理牌 ordering |
+| `a30f4db` | AI-1 part C | sequence enumeration (straight / threePairs / twoTriples) |
+| `8c3f660` | Integration | `tests/integration/easy-bot-game.test.ts` — full 4P round with 4 Easy bots |
+| `318d35e` | TRIBUTE-1 part A | `game/tribute.ts` — `detectTributeMode4P` (single / double / 抗贡) |
+| `10b9671` | TRIBUTE-1 part B | `pickTributeCard` + `pickReturnCard` (wildcard exemption, ≤10 cap) |
+| `a1cbac2` | TRIBUTE-1 part C | `applyTribute` — end-to-end exchange + first-leader determination |
+| `a0514bf` | AI utility | `ai/timing.ts` — Beta(2,5) bot move delay |
+| `b5f4da1` | AI utility | `ai/names.ts` — Chinese bot handle + tier badge |
+| `018c908` | SEC-1 part A | `security/rateLimit.ts` — sliding-window limiter |
+| `b37d06a` | AI-1 part D | flushStraight enumeration |
+| `9344e86` | AI-1 part E | fullHouse enumeration — enumerator now covers all 10 PatternKinds |
 
-**Outstanding P0 work** (per dependency graph in `docs/plan/PLAN.md`):
-- CORE-2 — game state machine (deal → trick → round-end). Depends on CORE-1 complete (NOW UNBLOCKED). 4-5 days.
-- NET-1 — SSE+POST + Upstash Redis transport. Independent of CORE work. 3-4 days.
-- NET-2 — idempotency + Last-Event-ID resume + 270s rotation. Depends on NET-1. 2-3 days.
-- NET-3 — `buildClientPayload` + grep-no-leak CI gate. **SECURITY-CRITICAL.** Depends on CORE-2 + NET-1. 2-3 days.
-- AUTH-2 — sibling scorer key migration `player:*` → `gs:*`. **PAUSE BEFORE PROD DEPLOY.** 1-2 days.
+**Stats**: 487/487 tests passing · TS strict clean · grep-no-leak gate green.
+
+**License decision (CORE-1 part 2)**: Ported semantics from the in-repo `docs/research/game-rules.md` spec. No source code copied from `hash-panda/guandan-guide`. `// SYNC:` pins reference spec sections, not external code.
+
+**Outstanding work** (infrastructure-bound — needs Vercel project + Upstash provisioning):
+- **NET-1 part C** — wire the in-memory `EventBus` / `EventLog` / `IdempotencyCache` interfaces to live `@upstash/redis`. The interfaces are stable; this is replace-the-impl work.
+- **API routes** — `api/sse/[roomId].ts`, `api/move.ts`, `api/room/create.ts`, `api/room/[code]/join.ts`, `api/room/[code]/leave.ts`. All the logic exists in `lib/`; routes are 30-50-line wrappers calling `handleMoveCommand` / `publishEvent` / `createRoom` / `joinRoom` / `leaveRoom`.
+- **UI-1 / UI-2** — landscape mobile gameplay screens (demos in `demos/index.html` are pixel refs).
+- **AUTH-2** — sibling scorer key migration `player:*` → `gs:*`. **CRITICAL DECISION TRIGGER — touches production sibling KV. Requires explicit go-ahead.**
+- **AI-2 Medium** — WASM solver + partner cooperation (longest single milestone, 7-10 days per PLAN.md).
 
 ---
 

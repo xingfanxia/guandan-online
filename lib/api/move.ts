@@ -36,6 +36,7 @@ import { deriveRoundEndEvents } from '../realtime/deriveRoundEndEvents';
 import type { AuthorEvent } from '../realtime/buildClientPayload';
 import { applyRoundResult } from '../game/session';
 import { resolveRound } from '../game/resolveRound';
+import { runBots } from '../ai/runBots';
 
 export interface MoveDeps {
   roomStore: RoomStore;
@@ -172,12 +173,32 @@ export async function handleMove(
       turnDeadline
     );
 
+    // ── Bot run-loop ──────────────────────────────────────────────────────
+    // If the next player is a bot, computeBotMove + apply + derive events
+    // until we land on a human (or the round finishes). The round-end fanout
+    // below still runs once at the end based on the FINAL round after bots.
+    let advancedRound = newRound;
+    if (advancedRound.phase === 'playing') {
+      const lastEventVersion =
+        events.length > 0
+          ? Math.max(...events.map((e) => e.version))
+          : response.appliedVersion;
+      const botResult = runBots({
+        room,
+        round: advancedRound,
+        startVersion: lastEventVersion,
+        turnDeadline,
+      });
+      advancedRound = botResult.round;
+      for (const e of botResult.events) events.push(e);
+    }
+
     // ── Round / game end fanout ───────────────────────────────────────────
-    // When this move closed the round, resolve the session and emit the
-    // round_end (and game_end if the session also finished) events. Append
-    // them AFTER any move/trick events so per-recipient versions stay
-    // monotonic.
-    if (newRound.phase === 'finished') {
+    // When this move (human + any subsequent bots) closed the round, resolve
+    // the session and emit the round_end (and game_end if the session also
+    // finished) events. Append them AFTER all move/trick events so per-
+    // recipient versions stay monotonic.
+    if (advancedRound.phase === 'finished') {
       const session = await deps.sessionStore.get(code);
       if (session === null) {
         // Defensive: startGame always creates a session. Log and skip the
@@ -189,8 +210,8 @@ export async function handleMove(
         );
       } else {
         try {
-          const result = resolveRound(newRound, session.rules);
-          const newSession = applyRoundResult(session, newRound);
+          const result = resolveRound(advancedRound, session.rules);
+          const newSession = applyRoundResult(session, advancedRound);
           await deps.sessionStore.put(code, newSession, SESSION_TTL_SECONDS);
           const baseVersion =
             events.length > 0
@@ -226,7 +247,7 @@ export async function handleMove(
     await deps.roundStore.put(
       code,
       {
-        round: newRound,
+        round: advancedRound,
         version: finalVersion,
         updatedAt: now(),
       },
@@ -238,7 +259,7 @@ export async function handleMove(
     // EventLog will catch any clients that miss the live broadcast.
     if (events.length > 0) {
       try {
-        const gameState = buildGameState(room, newRound);
+        const gameState = buildGameState(room, advancedRound);
         for (const event of events) {
           await publishEvent(code, event, gameState, deps.bus, deps.log);
         }

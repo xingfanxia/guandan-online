@@ -8,5 +8,11 @@
       "runtime": "nodejs22.x",
       "maxDuration": 300
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/cleanup-rooms",
+      "schedule": "0 * * * *"
+    }
+  ]
 }

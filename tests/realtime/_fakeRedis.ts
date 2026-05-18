@@ -32,6 +32,7 @@ export function createFakeRedis(): FakeRedis {
   const data = new Map<string, Entry>();
   const streams = new Map<string, Array<[string, Record<string, string>]>>();
   const counters = new Map<string, number>();
+  const sets = new Map<string, Set<string>>();
   let now = 1_700_000_000_000; // arbitrary fixed epoch; tests advance it explicitly
 
   function alive(entry: Entry | undefined): entry is Entry {
@@ -105,6 +106,7 @@ export function createFakeRedis(): FakeRedis {
       }
       if (streams.delete(key)) return 1;
       if (counters.delete(key)) return 1;
+      if (sets.delete(key)) return 1;
       return 0;
     },
 
@@ -148,6 +150,35 @@ export function createFakeRedis(): FakeRedis {
       stream.push([assigned, { ...fields }]);
       streams.set(key, stream);
       return assigned;
+    },
+
+    async sadd(key: string, ...members: string[]): Promise<number> {
+      const set = sets.get(key) ?? new Set<string>();
+      let added = 0;
+      for (const m of members) {
+        if (!set.has(m)) {
+          set.add(m);
+          added += 1;
+        }
+      }
+      sets.set(key, set);
+      return added;
+    },
+
+    async srem(key: string, ...members: string[]): Promise<number> {
+      const set = sets.get(key);
+      if (!set) return 0;
+      let removed = 0;
+      for (const m of members) {
+        if (set.delete(m)) removed += 1;
+      }
+      return removed;
+    },
+
+    async smembers(key: string): Promise<string[]> {
+      const set = sets.get(key);
+      if (!set) return [];
+      return [...set];
     },
 
     async xrange(

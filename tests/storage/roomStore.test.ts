@@ -1,7 +1,7 @@
 // Behavior tests for createRoomStore against the in-memory RedisLike fake.
 
 import { describe, expect, it } from 'vitest';
-import { createRoomStore } from '@lib/storage/roomStore';
+import { createRoomStore, createMemoryRoomStore } from '@lib/storage/roomStore';
 import type { RoomState } from '@lib/room/lifecycle';
 import { DEFAULT_MODE_RULES } from '@lib/game/mode';
 import { createFakeRedis } from '../realtime/_fakeRedis';
@@ -105,5 +105,40 @@ describe('createRoomStore — TTL', () => {
     await store.put(sampleRoom('A2B3C4'), 60);
     redis.advanceTime(61_000);
     expect(await store.get('A2B3C4')).toBeNull();
+  });
+});
+
+describe('createRoomStore — active-codes index (CRON-1)', () => {
+  it('listCodes returns codes added via create', async () => {
+    const store = createRoomStore(createFakeRedis());
+    await store.create(sampleRoom('A2B3C4'), 3600);
+    await store.create(sampleRoom('D5E6F7'), 3600);
+    const codes = (await store.listCodes()).sort();
+    expect(codes).toEqual(['A2B3C4', 'D5E6F7']);
+  });
+
+  it('delete removes the code from the index', async () => {
+    const store = createRoomStore(createFakeRedis());
+    await store.create(sampleRoom('A2B3C4'), 3600);
+    await store.create(sampleRoom('D5E6F7'), 3600);
+    await store.delete('A2B3C4');
+    expect(await store.listCodes()).toEqual(['D5E6F7']);
+  });
+
+  it('failed create (collision) does not add to the index', async () => {
+    const store = createRoomStore(createFakeRedis());
+    await store.create(sampleRoom('A2B3C4'), 3600);
+    expect(await store.create(sampleRoom('A2B3C4'), 3600)).toBe(false);
+    expect(await store.listCodes()).toEqual(['A2B3C4']);
+  });
+
+  it('memory impl: listCodes returns active codes', async () => {
+    const store = createMemoryRoomStore();
+    await store.create(sampleRoom('A2B3C4'), 3600);
+    await store.create(sampleRoom('D5E6F7'), 3600);
+    const codes = (await store.listCodes()).sort();
+    expect(codes).toEqual(['A2B3C4', 'D5E6F7']);
+    await store.delete('A2B3C4');
+    expect(await store.listCodes()).toEqual(['D5E6F7']);
   });
 });

@@ -78,4 +78,13 @@ export interface RedisLike {
     end: string,
     count?: number
   ): Promise<Record<string, Record<string, string>>>;
+
+  /** SADD key member [member ...]. Returns count of newly-added members. */
+  sadd(key: string, ...members: string[]): Promise<number>;
+
+  /** SREM key member [member ...]. Returns count of removed members. */
+  srem(key: string, ...members: string[]): Promise<number>;
+
+  /** SMEMBERS key. Returns all members of the set (empty array if missing). */
+  smembers(key: string): Promise<string[]>;
 }

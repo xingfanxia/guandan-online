@@ -25,7 +25,7 @@ const EMPTY = {
 
 describe('GameTableMP reducer', () => {
   it('snapshot populates seatOrder + players + my identity', () => {
-    const snap: ServerEvent = {
+    const snap = {
       type: 'snapshot',
       version: 1,
       players: PLAYERS_6P,
@@ -33,8 +33,10 @@ describe('GameTableMP reducer', () => {
         teamLevels: { t1: '5', t2: '4' },
         currentTurn: 'p0',
         roundOwner: 't1',
-        levelRank: '5',
-        roundNumber: 1,
+        currentTrick: [],
+        lastTrick: null,
+        phase: 'in_game',
+        turnDeadline: '2026-05-18T01:00:00.000Z',
       },
       you: {
         playerId: 'p0',
@@ -43,7 +45,7 @@ describe('GameTableMP reducer', () => {
         hand: [],
         rank: null,
       },
-    } as ServerEvent;
+    } as unknown as ServerEvent;
     const result = reduceEvent(EMPTY as Parameters<typeof reduceEvent>[0], snap, '@阿祥');
     expect(result.seatOrder).toEqual(['p0', 'p1', 'p2', 'p3', 'p4', 'p5']);
     expect(result.myPlayerId).toBe('p0');
@@ -68,7 +70,7 @@ describe('GameTableMP reducer', () => {
       combinationLabel: 'single',
       nextTurn: 'p2',
       turnDeadline: '2026-05-18T01:00:00.000Z',
-    } as ServerEvent;
+    } as unknown as ServerEvent;
     const result = reduceEvent(seeded as Parameters<typeof reduceEvent>[0], evt, '@阿祥');
     expect(result.currentTurn).toBe('p2');
     expect(result.lastPlayed?.combinationLabel).toBe('single');
@@ -90,7 +92,7 @@ describe('GameTableMP reducer', () => {
       player: 'p1',
       nextTurn: 'p2',
       turnDeadline: '2026-05-18T01:00:01.000Z',
-    } as ServerEvent;
+    } as unknown as ServerEvent;
     const result = reduceEvent(seeded as Parameters<typeof reduceEvent>[0], evt, '@阿祥');
     expect(result.currentTurn).toBe('p2');
     expect(result.lastPlayed).toBeNull();
@@ -107,7 +109,7 @@ describe('GameTableMP reducer', () => {
       version: 7,
       winner: 'p1',
       nextLeader: 'p1',
-    } as ServerEvent;
+    } as unknown as ServerEvent;
     const result = reduceEvent(seeded as Parameters<typeof reduceEvent>[0], evt, '@阿祥');
     expect(result.currentTurn).toBe('p1');
     expect(result.lastPlayed).toBeNull();
@@ -123,7 +125,7 @@ describe('GameTableMP reducer', () => {
       type: 'room_joined',
       version: 2,
       player: PLAYERS_6P[3]!,
-    } as ServerEvent;
+    } as unknown as ServerEvent;
     const result = reduceEvent(seeded as Parameters<typeof reduceEvent>[0], evt, '@阿祥');
     expect(result.seatOrder).toContain('p3');
     expect(result.players.get('p3')?.handle).toBe('@豆豆');
@@ -140,7 +142,7 @@ describe('GameTableMP reducer', () => {
       version: 3,
       playerId: 'p3',
       reason: 'leave',
-    } as ServerEvent;
+    } as unknown as ServerEvent;
     const result = reduceEvent(seeded as Parameters<typeof reduceEvent>[0], evt, '@阿祥');
     expect(result.seatOrder).not.toContain('p3');
     expect(result.players.has('p3')).toBe(false);

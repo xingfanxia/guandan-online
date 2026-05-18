@@ -1,7 +1,7 @@
-# Handoff — guandan-online v1.0 (P0 lib + transport layer complete)
+# Handoff — guandan-online v1.0 (backend wire-complete end-to-end)
 
 **Date**: 2026-05-18
-**Status**: P0 lib layer + full realtime transport + all v1 API routes shipped across 34 commits over two sessions. Tests **590/590** · TS strict clean · grep-no-leak gate green · `main` synced to `origin/main`. The system is wire-complete for create-room → join → play → SSE-stream against either in-memory or Upstash backends. Remaining work is event fanout from move handler (API-4 part B) + UI (UI-1/UI-2) + AI-2 Medium + AUTH-2 (Critical Decision).
+**Status**: backend is end-to-end wire-complete. 8 HTTP/SSE routes shipped, publishEvent fanout closes the loop on move + game-start, per-recipient log keying isolates SSE backlog from cross-player leaks, trick_won events derive automatically. Tests **629/629** · TS strict clean · grep-no-leak gate green · `main` synced to `origin/main`. The end-to-end integration test (`tests/integration/full-game-flow.test.ts`) drives create → join × 3 → start → SSE-subscribe → play → pass and asserts SSE delivers deal + move_played + move_passed + stream_closing with correct payloads. Remaining substantive work: GameSession persistence for round_end / game_end events, lifecycle event fanout (room_joined / room_left — has version-namespace design note below), UI-1/UI-2, AUTH-2 (Critical Decision), AI-2 Medium.
 **Repo**: https://github.com/xingfanxia/guandan-online
 **Domain (locked)**: `gdo.ax0x.ai` (sibling subdomain to scorer at `gd.ax0x.ai`)
 
@@ -65,15 +65,28 @@
 
 **Stats**: **590/590 tests passing** (up from 487; 103 new tests) · TS strict clean · grep-no-leak gate green · 9 commits on `main` pushed to `origin/main`.
 
+### 2026-05-18 — extension session (7 commits)
+
+| Commit | Milestone | What |
+|---|---|---|
+| `d4178ff` | API-4 part B | publishEvent wiring from move handler. `lib/realtime/buildGameState.ts` derives GameState from (RoomState, GameRound); `lib/realtime/deriveMoveEvent.ts` produces AuthorEvent[] from (command, preRound, postRound). Move handler emits `move_played` / `move_passed` after successful dispatch. `combinationLabel` filled from `analyzeHand().kind`. |
+| `7398610` | API-6 | `POST /api/room/[code]/start` — host-authenticated game-start. Alternating-team seat assignment, deterministic shuffle, dealRound + startTrick, RoundEnvelope persisted at version 0, AuthorDealEvent fanned out. |
+| `941fa1a` | INT-1 | End-to-end integration test walking createRoom → 3× join → startGame → handleSse → handleMove × 2. Asserts SSE delivers deal + move_played + move_passed + stream_closing with correct payloads. |
+| `75424ee` | SEC-2 | Per-recipient EventLog keys (`eventLogKey(roomId, playerId)`) close a backlog leak: previously `log.append(roomId, ...)` mixed all recipients' filtered payloads under one key, so SSE resume to player A would replay player B's "yourHand". Regression guard test added. |
+| `e49c480` | API-7 | `GET /api/room/[code]` — public room view. Explicit allow-list shape strips hostToken + joinTokens. Lets clients render lobby UI on initial page load. |
+| `3f79e4c` | EVT-1 | `deriveMoveEvent` now returns AuthorEvent[]. Appends `trick_won` event when preRound.currentTrick → null transition. Move handler advances roundEnvelope.version to the LAST emitted event so optimistic-concurrency stays aligned with per-recipient SSE log seq. |
+
+**Stats**: **629/629 tests passing** · TS strict clean · grep-no-leak gate green · 7 commits pushed.
+
 **License decision (CORE-1 part 2)**: Ported semantics from the in-repo `docs/research/game-rules.md` spec. No source code copied from `hash-panda/guandan-guide`. `// SYNC:` pins reference spec sections, not external code.
 
 **Outstanding work**:
-- **API-4 part B — publishEvent wiring** from the move handler. The plumbing is all there (bus + log via RealtimeInfra, AuthorEvent types in `buildClientPayload.ts`), but `handleMove` doesn't yet derive an AuthorMovePlayedEvent / AuthorMovePassedEvent from `(command, postRound)` nor build a `GameState` from `(RoomState, GameRound)` to drive the per-recipient filter. Adds ~250 LOC + tests. Until this lands, the SSE handler streams nothing for in-flight moves (only backlog from anyone manually appending to the log).
-- **Lifecycle event fanout** — `room_joined` / `room_left` events similarly aren't published from the join/leave routes. Lower urgency than moves (room state changes are infrequent); same wiring pattern.
-- **Game-start transition** — no API exists to move a room from `'lobby'` → `'in_game'` and create the initial GameRound. Probably `POST /api/room/[code]/start` with host-token auth, calling `dealRound()` + `startTrick()` and writing the initial RoundEnvelope.
+- **GameSession persistence + round_end / game_end events** — `lib/game/session.ts` defines `GameSession { teamLevels, teamAFails, roundOwner, finishedRounds, phase, winnerTeam }` but nothing in the API layer persists it. Without it, `round_end` (which needs newLevels per team) and `game_end` (which needs winnerTeam) can't be derived. Adds: `lib/storage/sessionStore.ts`, wiring into startGame (create session), wiring into move handler (call resolveRound on round-end transition, update session, emit round_end + maybe game_end). ~300 LOC including tests.
+- **Lifecycle event fanout** — `room_joined` / `room_left` from join/leave routes. Design note: with per-recipient log keys (SEC-2), each recipient has their own monotonic seq. `event.version` doubles as the SSE `id:`. For the alignment to hold across lifecycle + game phases, lifecycle events need to draw from a shared monotonic counter (probably `RoomState.eventVersion: number = 0`, bumped on every publish). Game-start would init `RoundEnvelope.version` from `room.eventVersion + 1` so the deal continues the namespace. Late-joiners have a gap (events published before their join aren't on their key) which is fine as long as their Last-Event-ID starts at 0 — they only resume from events published after they joined. Lower urgency than moves; same wiring pattern once the counter design lands.
 - **UI-1 / UI-2** — landscape mobile gameplay screens (demos in `demos/index.html` are pixel refs).
 - **AUTH-2** — sibling scorer key migration `player:*` → `gs:*`. **CRITICAL DECISION TRIGGER — touches production sibling KV. Requires explicit go-ahead.**
 - **AI-2 Medium** — WASM solver + partner cooperation (longest single milestone, 7-10 days per PLAN.md).
+- **Cron cleanup of stale rooms** — `isStale(room, now, ttlMs)` exists in `lib/room/lifecycle.ts` but no scanning surface; would need a room-code index (set of active codes per Redis key) and a `api/cron/cleanup-rooms.ts` Vercel cron handler. ~150 LOC.
 
 ---
 

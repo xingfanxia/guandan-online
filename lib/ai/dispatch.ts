@@ -15,6 +15,9 @@ import type { Pattern } from '../game/patterns';
 import type { PlayerId } from '../game/round';
 import { chooseEasyMove } from './easy';
 import { chooseMediumMove } from './medium';
+import { chooseHardMove, type GenerateInput, type GenerateResult } from './hard';
+import type { BudgetClient } from './budget';
+import { createMemoryBudgetClient } from './budget';
 
 export type BotTier = 'easy' | 'medium' | 'hard';
 
@@ -43,7 +46,7 @@ export interface BotContext {
 
 /**
  * Synchronous dispatch for easy + medium tiers. Hard tier is async — call
- * `computeHardBotMove()` directly from `lib/ai/hard.ts` instead.
+ * `computeBotMoveAsync` instead when the caller supports awaits.
  */
 export function computeBotMove(ctx: BotContext): BotDecision {
   switch (ctx.tier) {
@@ -62,7 +65,82 @@ export function computeBotMove(ctx: BotContext): BotDecision {
       });
     case 'hard':
       throw new Error(
-        'computeBotMove: hard tier is async — call computeHardBotMove() from lib/ai/hard.ts'
+        'computeBotMove: hard tier is async — call computeBotMoveAsync instead'
       );
   }
+}
+
+export interface BotContextAsync extends BotContext {
+  /** LLM client. When omitted, hard tier degrades to medium silently. */
+  generate?: (input: GenerateInput) => Promise<GenerateResult>;
+  /** Budget guardrail. Defaults to an in-memory client (no persistence). */
+  budget?: BudgetClient;
+  /** Override `FEATURE_AI_HARD` env var. Tests pass true. */
+  featureEnabled?: boolean;
+  /** Hard-tier LLM timeout ms. Default 3000. */
+  timeoutMs?: number;
+}
+
+/**
+ * Async dispatch — handles all three tiers including hard.
+ *
+ * Hard tier path:
+ *   - When `ctx.generate` is provided, defers to `chooseHardMove` (LLM with
+ *     5 silent-fallback triggers including FEATURE_AI_HARD env, budget, and
+ *     timeout).
+ *   - When `ctx.generate` is missing, falls back to medium synchronously
+ *     (matches the pre-async-wiring behavior in runBots).
+ */
+export async function computeBotMoveAsync(ctx: BotContextAsync): Promise<BotDecision> {
+  if (ctx.tier !== 'hard') return computeBotMove(ctx);
+  if (ctx.generate === undefined) {
+    // No LLM client wired — fall back to medium-tier deterministic play.
+    return chooseMediumMove(ctx.hand, {
+      target: ctx.target,
+      lastPlayer: ctx.lastPlayer,
+      me: ctx.me,
+      partner: ctx.partner,
+      partnerHandCount: ctx.partnerHandCount,
+      opponentHandCounts: ctx.opponentHandCounts,
+      levelRank: ctx.levelRank,
+      myHandCount: ctx.hand.length,
+    });
+  }
+
+  // Build a synthetic UserPromptContext from BotContext fields. Production
+  // callers can provide richer prompt context by threading the round + seats
+  // explicitly through a dedicated dispatcher — this default preserves the
+  // hard-tier fallback path while degrading prompt fidelity gracefully.
+  const opp1Cards = ctx.opponentHandCounts[0] ?? 0;
+  const opp2Cards = ctx.opponentHandCounts[1] ?? 0;
+  const prompt = {
+    seat: 0,
+    teamName: '红' as const,
+    myLevel: ctx.levelRank,
+    oppLevel: ctx.levelRank,
+    isALevel: ctx.levelRank === 'A',
+    partnerSeat: 0,
+    partnerCards: ctx.partnerHandCount,
+    opp1Seat: 0,
+    opp1Cards,
+    opp2Seat: 0,
+    opp2Cards,
+  };
+
+  const hardArgs: Parameters<typeof chooseHardMove>[0] = {
+    hand: ctx.hand,
+    target: ctx.target,
+    levelRank: ctx.levelRank,
+    lastPlayer: ctx.lastPlayer,
+    me: ctx.me,
+    partner: ctx.partner,
+    partnerHandCount: ctx.partnerHandCount,
+    opponentHandCounts: ctx.opponentHandCounts,
+    prompt,
+    budget: ctx.budget ?? createMemoryBudgetClient(),
+    generate: ctx.generate,
+  };
+  if (ctx.featureEnabled !== undefined) hardArgs.featureEnabled = ctx.featureEnabled;
+  if (ctx.timeoutMs !== undefined) hardArgs.timeoutMs = ctx.timeoutMs;
+  return chooseHardMove(hardArgs);
 }

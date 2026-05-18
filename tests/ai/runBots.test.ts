@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import seedrandom from 'seedrandom';
-import { runBots } from '@lib/ai/runBots';
+import { runBots, runBotsAsync } from '@lib/ai/runBots';
+import { createMemoryBudgetClient } from '@lib/ai/budget';
 import type { RoomState, RoomMember } from '@lib/room/lifecycle';
 import { dealRound, startTrick } from '@lib/game/round';
 import type { PlayerSeat } from '@lib/game/round';
@@ -228,5 +229,146 @@ describe('runBots', () => {
     });
     expect(result.events).toHaveLength(0);
     expect(result.round).toBe(round);
+  });
+});
+
+describe('runBotsAsync', () => {
+  it('behaves identically to runBots when no Hard bots are present', async () => {
+    const room = makeRoom([
+      makeMember('p0', 'bot', 'easy'),
+      makeMember('p1', 'bot', 'easy'),
+      makeMember('p2', 'bot', 'easy'),
+      makeMember('p3', 'bot', 'easy'),
+    ]);
+    const round = freshRound();
+    const syncResult = runBots({
+      room,
+      round,
+      startVersion: 1,
+      turnDeadline: '2026-05-18T00:00:00.000Z',
+      maxIterations: 20,
+    });
+    const asyncResult = await runBotsAsync({
+      room,
+      round,
+      startVersion: 1,
+      turnDeadline: '2026-05-18T00:00:00.000Z',
+      maxIterations: 20,
+    });
+    expect(asyncResult.events.length).toBe(syncResult.events.length);
+    expect(asyncResult.version).toBe(syncResult.version);
+  });
+
+  it('Hard tier falls back to Medium when no generate fn is provided', async () => {
+    const room = makeRoom([
+      makeMember('p0', 'bot', 'hard'),
+      makeMember('p1', 'connected'),
+      makeMember('p2', 'bot', 'hard'),
+      makeMember('p3', 'connected'),
+    ]);
+    const round = freshRound();
+    const result = await runBotsAsync({
+      room,
+      round,
+      startVersion: 1,
+      turnDeadline: '2026-05-18T00:00:00.000Z',
+    });
+    // p0 plays (Hard→Medium fallback), then p1 (human) is up — loop exits.
+    expect(result.events.length).toBeGreaterThanOrEqual(1);
+    expect(result.round.currentTrick?.currentPlayer).toBe('p1');
+  });
+
+  it('Hard tier invokes the injected generate fn when featureEnabled', async () => {
+    const room = makeRoom([
+      makeMember('p0', 'bot', 'hard'),
+      makeMember('p1', 'connected'),
+      makeMember('p2', 'bot', 'easy'),
+      makeMember('p3', 'connected'),
+    ]);
+    const round = freshRound();
+    const generate = vi.fn(async () => ({ text: '选择: 1', costUsd: 0.0001 }));
+    const result = await runBotsAsync({
+      room,
+      round,
+      startVersion: 1,
+      turnDeadline: '2026-05-18T00:00:00.000Z',
+      generate,
+      budget: createMemoryBudgetClient(),
+      featureEnabled: true,
+    });
+    // Exactly one Hard turn → generate called once before landing on human p1.
+    expect(generate).toHaveBeenCalledTimes(1);
+    const firstCall = generate.mock.calls[0] as unknown as [{ system: string; prompt: string; signal: AbortSignal }];
+    expect(firstCall[0]).toMatchObject({
+      system: expect.any(String),
+      prompt: expect.any(String),
+      signal: expect.any(AbortSignal),
+    });
+    expect(result.events.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('Hard tier silently falls back when generate throws', async () => {
+    const room = makeRoom([
+      makeMember('p0', 'bot', 'hard'),
+      makeMember('p1', 'connected'),
+      makeMember('p2', 'bot', 'easy'),
+      makeMember('p3', 'connected'),
+    ]);
+    const round = freshRound();
+    const generate = vi.fn(async () => {
+      throw new Error('LLM down');
+    });
+    const result = await runBotsAsync({
+      room,
+      round,
+      startVersion: 1,
+      turnDeadline: '2026-05-18T00:00:00.000Z',
+      generate,
+      featureEnabled: true,
+    });
+    // Despite the throw, the bot still emits a move (fallback to Medium).
+    expect(generate).toHaveBeenCalled();
+    expect(result.events.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('Hard tier skips LLM when featureEnabled is false', async () => {
+    const room = makeRoom([
+      makeMember('p0', 'bot', 'hard'),
+      makeMember('p1', 'connected'),
+      makeMember('p2', 'bot', 'easy'),
+      makeMember('p3', 'connected'),
+    ]);
+    const round = freshRound();
+    const generate = vi.fn(async () => ({ text: '选择: 1' }));
+    await runBotsAsync({
+      room,
+      round,
+      startVersion: 1,
+      turnDeadline: '2026-05-18T00:00:00.000Z',
+      generate,
+      featureEnabled: false,
+    });
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it('returns early when next player is human (no events, no generate calls)', async () => {
+    const room = makeRoom([
+      makeMember('p0', 'connected'),
+      makeMember('p1', 'bot', 'hard'),
+      makeMember('p2', 'connected'),
+      makeMember('p3', 'bot', 'hard'),
+    ]);
+    const round = freshRound(); // p0 (human) leads
+    const generate = vi.fn(async () => ({ text: '选择: 1' }));
+    const result = await runBotsAsync({
+      room,
+      round,
+      startVersion: 1,
+      turnDeadline: '2026-05-18T00:00:00.000Z',
+      generate,
+      featureEnabled: true,
+    });
+    expect(result.events).toHaveLength(0);
+    expect(generate).not.toHaveBeenCalled();
   });
 });

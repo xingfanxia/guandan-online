@@ -36,7 +36,9 @@ import { deriveRoundEndEvents } from '../realtime/deriveRoundEndEvents';
 import type { AuthorEvent } from '../realtime/buildClientPayload';
 import { applyRoundResult } from '../game/session';
 import { resolveRound } from '../game/resolveRound';
-import { runBots } from '../ai/runBots';
+import { runBotsAsync } from '../ai/runBots';
+import type { GenerateInput, GenerateResult } from '../ai/hard';
+import type { BudgetClient } from '../ai/budget';
 import { dealNextRound } from '../game/nextRound';
 import { deriveTributeEvents } from '../realtime/deriveTributeEvents';
 import { encodeCards } from '../realtime/cardCodec';
@@ -55,6 +57,10 @@ export interface MoveDeps {
   turnTimeoutSeconds?: number;
   /** RNG for next-round deck shuffle. Defaults to Math.random. */
   rng?: () => number;
+  /** LLM client for Hard tier bots. When omitted, Hard degrades to Medium. */
+  generate?: (input: GenerateInput) => Promise<GenerateResult>;
+  /** Budget client for Hard tier cost tracking. Defaults to in-memory. */
+  budget?: BudgetClient;
 }
 
 export const IDEMPOTENCY_TTL_SECONDS = 600;
@@ -189,12 +195,15 @@ export async function handleMove(
         events.length > 0
           ? Math.max(...events.map((e) => e.version))
           : response.appliedVersion;
-      const botResult = runBots({
+      const botArgs: Parameters<typeof runBotsAsync>[0] = {
         room,
         round: advancedRound,
         startVersion: lastEventVersion,
         turnDeadline,
-      });
+      };
+      if (deps.generate !== undefined) botArgs.generate = deps.generate;
+      if (deps.budget !== undefined) botArgs.budget = deps.budget;
+      const botResult = await runBotsAsync(botArgs);
       advancedRound = botResult.round;
       for (const e of botResult.events) events.push(e);
     }
@@ -326,12 +335,15 @@ export async function handleMove(
         events.length > 0
           ? Math.max(...events.map((e) => e.version))
           : response.appliedVersion;
-      const newRoundBots = runBots({
+      const newRoundArgs: Parameters<typeof runBotsAsync>[0] = {
         room,
         round: nextRoundForBots,
         startVersion: startVersionForBots,
         turnDeadline,
-      });
+      };
+      if (deps.generate !== undefined) newRoundArgs.generate = deps.generate;
+      if (deps.budget !== undefined) newRoundArgs.budget = deps.budget;
+      const newRoundBots = await runBotsAsync(newRoundArgs);
       advancedRound = newRoundBots.round;
       for (const e of newRoundBots.events) events.push(e);
     }

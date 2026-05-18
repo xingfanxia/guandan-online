@@ -156,6 +156,49 @@ export function enumerateLegalPlays(
     }
   }
 
+  // fullHouse: triple + pair (different ranks). Iterate pairs of natural ranks,
+  // top up with wildcards.
+  if (hand.length >= 5) {
+    const seenTripleRanks = new Set<NaturalRank>();
+    const naturalRanks = Array.from(naturalsByRank.keys());
+    for (const T of naturalRanks) {
+      if (seenTripleRanks.has(T)) continue;
+      const tBucket = naturalsByRank.get(T)!;
+      const natT = tBucket.length;
+      const wcForT = Math.max(0, 3 - natT);
+      if (wcForT > wildcards.length) continue;
+      for (const P of naturalRanks) {
+        if (P === T) continue;
+        const pBucket = naturalsByRank.get(P)!;
+        const natP = pBucket.length;
+        const wcForP = Math.max(0, 2 - natP);
+        if (wcForT + wcForP > wildcards.length) continue;
+
+        const subset: Card[] = [];
+        let wcIdx = 0;
+        for (let i = 0; i < Math.min(3, natT); i++) subset.push(tBucket[i]!);
+        for (let i = 0; i < wcForT; i++) subset.push(wildcards[wcIdx++]!);
+        for (let i = 0; i < Math.min(2, natP); i++) subset.push(pBucket[i]!);
+        for (let i = 0; i < wcForP; i++) subset.push(wildcards[wcIdx++]!);
+
+        // Construct the pattern directly: subset is provably (3, 2) shaped
+        // because of the loop invariants above. analyzeHand would pick a
+        // valid interpretation but might choose the OTHER rank as the triple
+        // (if naturals happen to be 2+2 with wildcards reachable either way).
+        // We declare T as the triple explicitly.
+        const pattern: Pattern = {
+          kind: 'fullHouse',
+          rank: T,
+          length: 5,
+          cards: subset,
+        };
+        addIfLegal(pattern);
+        seenTripleRanks.add(T);
+        break;
+      }
+    }
+  }
+
   return plays;
 }
 

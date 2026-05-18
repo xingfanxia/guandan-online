@@ -126,6 +126,144 @@ describe('handleCreateRoom — rejects invalid input', () => {
   });
 });
 
+describe('handleCreateRoom — bot fill at create-time', () => {
+  // Deterministic bot-name RNG → first index of the pool ('小李').
+  const detBotRng = () => 0;
+
+  it('seats 3 bots in 4P mode (host + 3 = 4 seats)', async () => {
+    const deps = { ...DEPS_OK(), botNameRng: detBotRng };
+    const res = await handleCreateRoom(
+      req('POST', {
+        mode: '4',
+        host: { handle: '@fufu' },
+        bots: [{ tier: 'easy' }, { tier: 'medium' }, { tier: 'hard' }],
+      }),
+      deps
+    );
+    expect(res.status).toBe(201);
+    const persisted = await deps.roomStore.get('CODE-1');
+    expect(persisted?.members).toHaveLength(4);
+    // Host
+    expect(persisted?.members[0]?.id).toBe('p0');
+    expect(persisted?.members[0]?.status).toBe('connected');
+    // Bots
+    expect(persisted?.members[1]?.status).toBe('bot');
+    expect(persisted?.members[1]?.difficulty).toBe('easy');
+    expect(persisted?.members[2]?.status).toBe('bot');
+    expect(persisted?.members[2]?.difficulty).toBe('medium');
+    expect(persisted?.members[3]?.status).toBe('bot');
+    expect(persisted?.members[3]?.difficulty).toBe('hard');
+  });
+
+  it('assigns bot IDs as p1, p2, ... matching joinRoom convention', async () => {
+    const deps = { ...DEPS_OK(), botNameRng: detBotRng };
+    await handleCreateRoom(
+      req('POST', {
+        mode: '6',
+        host: { handle: '@fufu' },
+        bots: [{ tier: 'easy' }, { tier: 'easy' }],
+      }),
+      deps
+    );
+    const persisted = await deps.roomStore.get('CODE-1');
+    expect(persisted?.members.map((m) => m.id)).toEqual(['p0', 'p1', 'p2']);
+  });
+
+  it('picks unique bot handles even when RNG always hits the same pool index', async () => {
+    // RNG returns 0 every time → without uniqueness guard, all bots would
+    // pick the same handle '@小李'. Verify the unique-handle pick path runs.
+    const deps = { ...DEPS_OK(), botNameRng: detBotRng };
+    await handleCreateRoom(
+      req('POST', {
+        mode: '4',
+        host: { handle: '@fufu' },
+        bots: [{ tier: 'easy' }, { tier: 'easy' }, { tier: 'easy' }],
+      }),
+      deps
+    );
+    const persisted = await deps.roomStore.get('CODE-1');
+    const handles = persisted!.members.map((m) => m.handle);
+    expect(new Set(handles).size).toBe(handles.length);
+  });
+
+  it('accepts no bots field — backward compatible', async () => {
+    const deps = DEPS_OK();
+    const res = await handleCreateRoom(
+      req('POST', { mode: '4', host: { handle: '@fufu' } }),
+      deps
+    );
+    expect(res.status).toBe(201);
+    const persisted = await deps.roomStore.get('CODE-1');
+    expect(persisted?.members).toHaveLength(1);
+  });
+
+  it('accepts empty bots array', async () => {
+    const deps = DEPS_OK();
+    const res = await handleCreateRoom(
+      req('POST', { mode: '4', host: { handle: '@fufu' }, bots: [] }),
+      deps
+    );
+    expect(res.status).toBe(201);
+    const persisted = await deps.roomStore.get('CODE-1');
+    expect(persisted?.members).toHaveLength(1);
+  });
+
+  it('rejects when bots array exceeds (seatCount - 1)', async () => {
+    const deps = DEPS_OK();
+    const res = await handleCreateRoom(
+      req('POST', {
+        mode: '4',
+        host: { handle: '@fufu' },
+        // 4P can hold 3 bots; 4 bots overflows.
+        bots: [
+          { tier: 'easy' },
+          { tier: 'easy' },
+          { tier: 'easy' },
+          { tier: 'easy' },
+        ],
+      }),
+      deps
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string; details?: string };
+    expect(body.error).toBe('invalid_request');
+    expect(body.details).toMatch(/4 seats/);
+  });
+
+  it('rejects unknown bot tier', async () => {
+    const deps = DEPS_OK();
+    const res = await handleCreateRoom(
+      req('POST', {
+        mode: '4',
+        host: { handle: '@fufu' },
+        bots: [{ tier: 'godlike' }],
+      }),
+      deps
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe('invalid_request');
+  });
+
+  it('rejects non-array bots', async () => {
+    const deps = DEPS_OK();
+    const res = await handleCreateRoom(
+      req('POST', { mode: '4', host: { handle: '@fufu' }, bots: 'easy' }),
+      deps
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects bot entry that is not an object', async () => {
+    const deps = DEPS_OK();
+    const res = await handleCreateRoom(
+      req('POST', { mode: '4', host: { handle: '@fufu' }, bots: ['easy'] }),
+      deps
+    );
+    expect(res.status).toBe(400);
+  });
+});
+
 describe('handleCreateRoom — code collision retry', () => {
   it('retries on collision and succeeds with a different code', async () => {
     const roomStore = createMemoryRoomStore(() => 1_700_000_000_000);

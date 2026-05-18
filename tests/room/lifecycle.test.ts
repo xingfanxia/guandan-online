@@ -4,6 +4,7 @@ import {
   joinRoom,
   leaveRoom,
   isStale,
+  addBotToRoom,
 } from '@lib/room/lifecycle';
 import type { RoomState } from '@lib/room/lifecycle';
 import { DEFAULT_MODE_RULES } from '@lib/game/mode';
@@ -115,6 +116,120 @@ describe('joinRoom', () => {
     expect(() =>
       joinRoom(inGame, { id: 'bob', handle: '@bob' }, T0, tokenGen())
     ).toThrow(/lobby|in_game|started/i);
+  });
+});
+
+// ─── addBotToRoom ─────────────────────────────────────────────────────────────
+
+describe('addBotToRoom', () => {
+  function freshRoom(mode: '4' | '6' | '8' = '4'): RoomState {
+    return createRoom({
+      code: 'A2B3C4',
+      mode,
+      rules: DEFAULT_MODE_RULES,
+      host: { id: 'alice', handle: '@alice' },
+      now: T0,
+      tokenGen: tokenGen(),
+    });
+  }
+
+  it('appends a bot member with status="bot" and difficulty', () => {
+    const r0 = freshRoom();
+    const r1 = addBotToRoom({
+      state: r0,
+      id: 'p1',
+      handle: '@小李',
+      difficulty: 'easy',
+      now: T0 + 100,
+      tokenGen: tokenGen(),
+    });
+    expect(r1.members).toHaveLength(2);
+    expect(r1.members[1]?.id).toBe('p1');
+    expect(r1.members[1]?.handle).toBe('@小李');
+    expect(r1.members[1]?.status).toBe('bot');
+    expect(r1.members[1]?.difficulty).toBe('easy');
+    expect(r1.lastActiveAt).toBe(T0 + 100);
+  });
+
+  it('bumps eventVersion (lifecycle counter symmetric with joinRoom)', () => {
+    const r0 = freshRoom();
+    const r1 = addBotToRoom({
+      state: r0,
+      id: 'p1',
+      handle: '@豆豆',
+      difficulty: 'medium',
+      now: T0,
+      tokenGen: tokenGen(),
+    });
+    expect(r1.eventVersion).toBe(r0.eventVersion + 1);
+  });
+
+  it('rejects when room is full', () => {
+    let r = freshRoom('4');
+    r = addBotToRoom({ state: r, id: 'p1', handle: '@b1', difficulty: 'easy', now: T0, tokenGen: tokenGen() });
+    r = addBotToRoom({ state: r, id: 'p2', handle: '@b2', difficulty: 'easy', now: T0, tokenGen: tokenGen() });
+    r = addBotToRoom({ state: r, id: 'p3', handle: '@b3', difficulty: 'easy', now: T0, tokenGen: tokenGen() });
+    expect(() =>
+      addBotToRoom({ state: r, id: 'p4', handle: '@b4', difficulty: 'easy', now: T0, tokenGen: tokenGen() })
+    ).toThrow(/full/i);
+  });
+
+  it('rejects duplicate handle against an existing human member', () => {
+    const r0 = freshRoom();
+    expect(() =>
+      addBotToRoom({
+        state: r0,
+        id: 'p1',
+        handle: '@alice',
+        difficulty: 'easy',
+        now: T0,
+        tokenGen: tokenGen(),
+      })
+    ).toThrow(/handle|already/i);
+  });
+
+  it('rejects duplicate id', () => {
+    const r0 = freshRoom();
+    expect(() =>
+      addBotToRoom({
+        state: r0,
+        id: 'alice',
+        handle: '@taken-id',
+        difficulty: 'easy',
+        now: T0,
+        tokenGen: tokenGen(),
+      })
+    ).toThrow(/id|already/i);
+  });
+
+  it('rejects when phase is in_game', () => {
+    const r0 = freshRoom();
+    const inGame: RoomState = { ...r0, phase: 'in_game' };
+    expect(() =>
+      addBotToRoom({
+        state: inGame,
+        id: 'p1',
+        handle: '@小李',
+        difficulty: 'easy',
+        now: T0,
+        tokenGen: tokenGen(),
+      })
+    ).toThrow(/lobby|in_game|started/i);
+  });
+
+  it('preserves all three difficulty tiers', () => {
+    let r = freshRoom('8');
+    for (const [i, tier] of (['easy', 'medium', 'hard'] as const).entries()) {
+      r = addBotToRoom({
+        state: r,
+        id: `p${i + 1}`,
+        handle: `@bot${i + 1}`,
+        difficulty: tier,
+        now: T0,
+        tokenGen: tokenGen(),
+      });
+    }
+    expect(r.members.slice(1).map((m) => m.difficulty)).toEqual(['easy', 'medium', 'hard']);
   });
 });
 

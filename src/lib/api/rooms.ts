@@ -107,18 +107,30 @@ async function call<T>(
   return body as T;
 }
 
+/** Bot seat config sent on createRoom. Omit field to create a humans-only room. */
+export interface BotSeat {
+  readonly tier: BotDifficulty;
+}
+
 export async function createRoom(
-  input: { mode: GameMode; handle: string },
+  input: { mode: GameMode; handle: string; bots?: readonly BotSeat[] },
   opts: RoomApiOptions = {}
 ): Promise<CreateRoomResponse> {
   const fetcher = opts.fetcher ?? defaultFetcher;
   const base = opts.baseUrl ?? '';
+  const body: Record<string, unknown> = {
+    mode: input.mode,
+    host: { handle: input.handle },
+  };
+  if (input.bots && input.bots.length > 0) {
+    body['bots'] = input.bots.map((b) => ({ tier: b.tier }));
+  }
   return call<CreateRoomResponse>(
     `${base}/api/room/create`,
     {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ mode: input.mode, host: { handle: input.handle } }),
+      body: JSON.stringify(body),
     },
     fetcher
   );

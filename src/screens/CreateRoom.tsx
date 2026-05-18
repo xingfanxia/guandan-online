@@ -16,7 +16,13 @@
 
 import { useMemo, useState } from 'react';
 import { getHandle, storeCredentials } from '@/lib/identity';
-import { createRoom, RoomApiError, seatCountForMode, type GameMode } from '@/lib/api/rooms';
+import {
+  createRoom,
+  RoomApiError,
+  seatCountForMode,
+  type BotSeat,
+  type GameMode,
+} from '@/lib/api/rooms';
 import { navigate } from '@/lib/router';
 
 interface RuleAxis {
@@ -93,7 +99,17 @@ export function CreateRoom({
     setBusy(true);
     setError(null);
     try {
-      const res = await createFn({ mode, handle });
+      // Convert the chip state into the BotSeat[] the server expects.
+      // 'human' chips are NOT seated — the host wants a real player to join
+      // that slot. AI tier chips become bot seats in chip-row order.
+      const bots: BotSeat[] = [];
+      for (const seat of aiSeats) {
+        const tier = aiTiers[seat] ?? 'human';
+        if (tier !== 'human') bots.push({ tier });
+      }
+      const createInput: { mode: GameMode; handle: string; bots?: BotSeat[] } =
+        bots.length > 0 ? { mode, handle, bots } : { mode, handle };
+      const res = await createFn(createInput);
       storeCredentials({
         code: res.code,
         playerId: res.hostId,

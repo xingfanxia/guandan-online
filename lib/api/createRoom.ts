@@ -5,12 +5,13 @@
 // `deps` directly with deterministic codeGen / tokenGen / now to make the
 // happy paths and collision-retry behavior easy to assert.
 
-import { createRoom } from '../room/lifecycle';
+import { createRoom, addBotToRoom } from '../room/lifecycle';
 import { generateRoomCode } from '../room/code';
 import { normalizeHandle, validateHandle } from '../auth/handle';
 import type { RoomStore } from '../storage/roomStore';
 import type { GameMode } from '../game/mode';
-import { DEFAULT_MODE_RULES } from '../game/mode';
+import { DEFAULT_MODE_RULES, positionCount } from '../game/mode';
+import { generateBotName } from '../ai/names';
 
 export interface CreateRoomDeps {
   roomStore: RoomStore;
@@ -20,6 +21,13 @@ export interface CreateRoomDeps {
   codeGen?: () => string;
   /** Wall clock. Defaults to Date.now. */
   now?: () => number;
+  /** RNG for bot-handle picking. Defaults to Math.random. */
+  botNameRng?: () => number;
+}
+
+/** Bot seat config submitted by the host at create-time. */
+export interface BotSeatConfig {
+  tier: 'easy' | 'medium' | 'hard';
 }
 
 export interface CreateRoomResponseBody {
@@ -60,6 +68,7 @@ export async function handleCreateRoom(
   const tokenGen = deps.tokenGen ?? defaultTokenGen;
   const codeGen = deps.codeGen ?? (() => generateRoomCode(Math.random));
   const now = deps.now ?? Date.now;
+  const botNameRng = deps.botNameRng ?? Math.random;
 
   // Collision-retry: room codes are 6.2M-cardinality and we SET NX. If the
   // first attempt lost the race, generate a new one. After RETRY_CAP misses
@@ -67,14 +76,34 @@ export async function handleCreateRoom(
   // rather than genuine cardinality exhaustion.
   for (let attempt = 0; attempt < ROOM_CODE_RETRY_CAP; attempt++) {
     const code = codeGen();
-    const state = createRoom({
+    const ts = now();
+    let state = createRoom({
       code,
       mode: parsed.value.mode,
       rules: DEFAULT_MODE_RULES,
       host: { id: 'p0', handle: parsed.value.handle },
-      now: now(),
+      now: ts,
       tokenGen,
     });
+
+    // Seat bots before persistence — at create-time the host has already
+    // declared which seats are bot-filled. Bot member IDs follow the same
+    // dense p<n> scheme that joinRoom would assign. Handles come from the
+    // shared pool with per-room uniqueness retry against already-seated
+    // members.
+    for (let i = 0; i < parsed.value.bots.length; i++) {
+      const tier = parsed.value.bots[i]!.tier;
+      const handle = pickUniqueBotHandle(state, tier, botNameRng);
+      state = addBotToRoom({
+        state,
+        id: `p${i + 1}`,
+        handle,
+        difficulty: tier,
+        now: ts,
+        tokenGen,
+      });
+    }
+
     const ok = await deps.roomStore.create(state, ROOM_TTL_SECONDS);
     if (ok) {
       const hostMember = state.members[0]!;
@@ -90,10 +119,40 @@ export async function handleCreateRoom(
   return json({ error: 'code_generation_exhausted' }, 503);
 }
 
+/**
+ * Pull a bot handle out of the shared pool that isn't already used by an
+ * existing member of `state`. With 30 names in the pool and at most 7 bots
+ * seated per room, collision-retry settles within a handful of attempts.
+ * Falls back to a numeric-suffixed handle if 32 attempts all collide (which
+ * should be statistically near-impossible).
+ */
+function pickUniqueBotHandle(
+  state: { members: ReadonlyArray<{ handle: string }> },
+  tier: 'easy' | 'medium' | 'hard',
+  rng: () => number
+): string {
+  const used = new Set(state.members.map((m) => m.handle));
+  for (let attempt = 0; attempt < 32; attempt++) {
+    const { handle } = generateBotName(tier, rng);
+    if (!used.has(handle)) return handle;
+  }
+  // Pathological fallback — append a counter until unique.
+  let n = 1;
+  while (true) {
+    const { handle } = generateBotName(tier, rng);
+    const candidate = `${handle}${n}`;
+    if (!used.has(candidate)) return candidate;
+    n++;
+  }
+}
+
 interface ParsedBody {
   mode: GameMode;
   handle: string;
+  bots: BotSeatConfig[];
 }
+
+const VALID_TIERS = new Set<BotSeatConfig['tier']>(['easy', 'medium', 'hard']);
 
 function parseBody(
   body: unknown
@@ -116,7 +175,35 @@ function parseBody(
   if (!validation.valid) {
     return { ok: false, error: validation.error ?? 'invalid handle' };
   }
-  return { ok: true, value: { mode: mode as GameMode, handle } };
+
+  // bots is optional; default to []. Each entry must have a known tier.
+  const botsRaw = obj['bots'];
+  const bots: BotSeatConfig[] = [];
+  if (botsRaw !== undefined) {
+    if (!Array.isArray(botsRaw)) {
+      return { ok: false, error: 'bots must be an array' };
+    }
+    for (const [i, entry] of botsRaw.entries()) {
+      if (!entry || typeof entry !== 'object') {
+        return { ok: false, error: `bots[${i}] must be an object` };
+      }
+      const tier = (entry as Record<string, unknown>)['tier'];
+      if (typeof tier !== 'string' || !VALID_TIERS.has(tier as BotSeatConfig['tier'])) {
+        return { ok: false, error: `bots[${i}].tier must be 'easy', 'medium', or 'hard'` };
+      }
+      bots.push({ tier: tier as BotSeatConfig['tier'] });
+    }
+    // Room capacity check: 1 host + N bots ≤ positionCount(mode).
+    const cap = positionCount(mode as GameMode);
+    if (bots.length > cap - 1) {
+      return {
+        ok: false,
+        error: `mode '${mode}' fits ${cap} seats; got 1 host + ${bots.length} bots`,
+      };
+    }
+  }
+
+  return { ok: true, value: { mode: mode as GameMode, handle, bots } };
 }
 
 function defaultTokenGen(): string {

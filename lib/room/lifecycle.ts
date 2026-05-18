@@ -121,6 +121,63 @@ export function joinRoom(
   };
 }
 
+// ─── addBotToRoom ─────────────────────────────────────────────────────────────
+
+export interface AddBotInput {
+  state: RoomState;
+  id: PlayerId;
+  handle: PlayerHandle;
+  difficulty: 'easy' | 'medium' | 'hard';
+  now: number;
+  /** Synthetic token generator — bots never authenticate but the field is
+   *  non-optional in RoomMember. Caller controls source. */
+  tokenGen: () => string;
+}
+
+/**
+ * Append a bot member to a lobby-phase room. Same capacity + handle-collision
+ * checks as joinRoom; differs only by setting `status: 'bot'` + `difficulty`.
+ *
+ * Bots don't go through the join HTTP endpoint — they're seated at create-time
+ * by the host's bot-fill choice. We still bump eventVersion so lifecycle
+ * fanout (if wired) stays consistent with joinRoom.
+ */
+export function addBotToRoom(input: AddBotInput): RoomState {
+  const { state, id, handle, difficulty, now, tokenGen } = input;
+  if (state.phase !== 'lobby') {
+    throw new Error(
+      `addBotToRoom: room is in "${state.phase}", cannot add after game started`
+    );
+  }
+  const cap = positionCount(state.mode);
+  if (state.members.length >= cap) {
+    throw new Error(`addBotToRoom: room is full (${state.members.length}/${cap})`);
+  }
+  if (state.members.some((m) => m.handle === handle)) {
+    throw new Error(`addBotToRoom: handle "${handle}" is already in the room`);
+  }
+  if (state.members.some((m) => m.id === id)) {
+    throw new Error(`addBotToRoom: id "${id}" is already in the room`);
+  }
+
+  return {
+    ...state,
+    members: [
+      ...state.members,
+      {
+        id,
+        handle,
+        joinToken: tokenGen(),
+        joinedAt: now,
+        status: 'bot',
+        difficulty,
+      },
+    ],
+    lastActiveAt: now,
+    eventVersion: state.eventVersion + 1,
+  };
+}
+
 // ─── leaveRoom ────────────────────────────────────────────────────────────────
 
 /**

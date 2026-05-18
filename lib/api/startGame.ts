@@ -32,6 +32,7 @@ import { publishEvent } from '../realtime/publish';
 import { buildGameState } from '../realtime/buildGameState';
 import { encodeCards } from '../realtime/cardCodec';
 import type { AuthorDealEvent } from '../realtime/buildClientPayload';
+import { runBots } from '../ai/runBots';
 
 export interface StartGameDeps {
   roomStore: RoomStore;
@@ -48,6 +49,7 @@ const ROOM_TTL_SECONDS = 86_400;
 const ROUND_TTL_SECONDS = 86_400;
 const SESSION_TTL_SECONDS = 86_400;
 const STARTING_LEVEL: LevelRank = '2';
+const DEFAULT_TURN_TIMEOUT_SECONDS = 30;
 
 export async function handleStartGame(
   req: Request,
@@ -119,11 +121,6 @@ export async function handleStartGame(
     eventVersion: dealVersion,
   };
 
-  await deps.roundStore.put(
-    code,
-    { round, version: dealVersion, updatedAt: now() },
-    ROUND_TTL_SECONDS
-  );
   // Persist the session that survives across rounds. Move handler reads this
   // on each round-end transition to derive round_end + game_end events.
   await deps.sessionStore.put(
@@ -131,7 +128,6 @@ export async function handleStartGame(
     createSession({ mode: room.mode, rules: room.rules }),
     SESSION_TTL_SECONDS
   );
-  await deps.roomStore.put(updatedRoom, ROOM_TTL_SECONDS);
 
   // Fanout the deal. Per-recipient filtering in publishEvent → only your own
   // hand survives; everyone else's hand is replaced by a hand-count.
@@ -152,7 +148,51 @@ export async function handleStartGame(
     console.error('[start] publishEvent failed:', err);
   }
 
-  return json({ ok: true, version: dealVersion }, 200);
+  // Bot run-loop on game-start. If the first player (the leader / seats[0])
+  // is a bot, advance through any contiguous bot turns until landing on a
+  // human. Without this, a fully-bot-fill room would deal and then stall
+  // forever waiting for someone to make a move.
+  const turnDeadline = new Date(now() + DEFAULT_TURN_TIMEOUT_SECONDS * 1000).toISOString();
+  const botResult = runBots({
+    room: updatedRoom,
+    round,
+    startVersion: dealVersion,
+    turnDeadline,
+  });
+
+  // Update the round-state to the post-bots round + final event version. If
+  // no bots played, botResult.version === dealVersion and the round is
+  // unchanged.
+  const finalRound = botResult.round;
+  const finalVersion = botResult.version;
+  await deps.roundStore.put(
+    code,
+    { round: finalRound, version: finalVersion, updatedAt: now() },
+    ROUND_TTL_SECONDS
+  );
+
+  // Room eventVersion tracks the LAST emitted event version so subsequent
+  // lifecycle events (room_left during a game) and the move handler's
+  // version checks stay aligned.
+  const finalRoom: RoomState =
+    finalVersion === dealVersion ? updatedRoom : { ...updatedRoom, eventVersion: finalVersion };
+  await deps.roomStore.put(finalRoom, ROOM_TTL_SECONDS);
+
+  // Fan out each bot event in sequence. publishEvent failures don't propagate
+  // because the round state is durable and SSE clients catch up via the
+  // EventLog backlog.
+  if (botResult.events.length > 0) {
+    try {
+      const postBotsGameState = buildGameState(finalRoom, finalRound);
+      for (const event of botResult.events) {
+        await publishEvent(code, event, postBotsGameState, deps.bus, deps.log);
+      }
+    } catch (err) {
+      console.error('[start] bot publishEvent failed:', err);
+    }
+  }
+
+  return json({ ok: true, version: finalVersion }, 200);
 }
 
 /**

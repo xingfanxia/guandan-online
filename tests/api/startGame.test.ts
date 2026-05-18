@@ -140,6 +140,123 @@ describe('handleStartGame — auth', () => {
   });
 });
 
+describe('handleStartGame — bot-fill rooms', () => {
+  /**
+   * Create a 4P room with 1 host + 3 easy bots, then start it. Tests that
+   * the startGame handler doesn't choke on bot members.
+   */
+  async function fixtureWithBots(): Promise<Fixture> {
+    const roomStore = createMemoryRoomStore(() => 1_700_000_000_000);
+    const roundStore = createMemoryRoundStore(() => 1_700_000_000_000);
+    const sessionStore = createMemorySessionStore(() => 1_700_000_000_000);
+    const bus = createMemoryEventBus();
+    const log = createMemoryEventLog();
+    const rng = seedrandom('bot-fill-test') as unknown as () => number;
+
+    const create = (await (
+      await handleCreateRoom(
+        new Request('http://test/', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            mode: '4',
+            host: { handle: '@host' },
+            bots: [{ tier: 'easy' }, { tier: 'easy' }, { tier: 'easy' }],
+          }),
+        }),
+        {
+          roomStore,
+          tokenGen: counter('tok'),
+          codeGen: () => CODE,
+          now: () => 1_700_000_000_000,
+          // Deterministic bot-name picks — sequential indices into the 30-name pool.
+          botNameRng: (() => {
+            let i = 0;
+            return () => (i++ * 1) / 30;
+          })(),
+        }
+      )
+    ).json()) as CreateRoomResponseBody;
+
+    return {
+      deps: {
+        roomStore,
+        roundStore,
+        sessionStore,
+        bus,
+        log,
+        rng: () => rng(),
+        now: () => 1_700_000_000_000,
+      },
+      hostToken: create.hostToken,
+      hostJoinToken: create.hostJoinToken,
+      hostId: create.hostId,
+      joinTokens: [],
+    };
+  }
+
+  it('starts cleanly with 3 bots seated; host (seat 0) leads → bot loop is a no-op', async () => {
+    const fx = await fixtureWithBots();
+    const res = await handleStartGame(req({ bearer: fx.hostToken }), CODE, fx.deps);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; version: number };
+    expect(body.ok).toBe(true);
+
+    const room = await fx.deps.roomStore.get(CODE);
+    expect(room?.phase).toBe('in_game');
+    expect(room?.members).toHaveLength(4);
+    // Host is seat 0 (connected); bots fill seats 1-3.
+    expect(room?.members[0]?.status).toBe('connected');
+    expect(room?.members.slice(1).every((m) => m.status === 'bot')).toBe(true);
+    expect(room?.members.slice(1).every((m) => m.difficulty === 'easy')).toBe(true);
+
+    // No bot events emitted on game-start because the host leads.
+    const dealVersion = room!.eventVersion; // Stays at dealVersion (= 1 after host's room_joined skipped).
+    expect(body.version).toBe(dealVersion);
+
+    // Round is dealt and persisted with currentTrick started.
+    const envelope = await fx.deps.roundStore.get(CODE);
+    expect(envelope?.round.phase).toBe('playing');
+    expect(envelope?.round.currentTrick).not.toBeNull();
+    expect(envelope?.round.currentTrick?.currentPlayer).toBe(fx.hostId);
+  });
+
+  it('fires the bot loop when seat 0 is a bot (manually rigged room)', async () => {
+    const fx = await fixtureWithBots();
+    // Surgery: swap status of member[0] to bot so the leader is a bot.
+    // This artificial scenario exercises the startGame bot-loop branch.
+    const room = await fx.deps.roomStore.get(CODE);
+    expect(room).not.toBeNull();
+    const rigged = {
+      ...room!,
+      members: room!.members.map((m, i) =>
+        i === 0 ? { ...m, status: 'bot' as const, difficulty: 'easy' as const } : m
+      ),
+    };
+    await fx.deps.roomStore.put(rigged, 86_400);
+
+    const res = await handleStartGame(req({ bearer: fx.hostToken }), CODE, fx.deps);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; version: number };
+
+    // All 4 members are bots, so runBots advances through ALL of them until
+    // somebody runs out of cards or the safety cap fires. Either way, version
+    // should be > dealVersion (bot events emitted).
+    expect(body.version).toBeGreaterThan(1);
+
+    // Round state advanced past the deal — at least one bot played.
+    const envelope = await fx.deps.roundStore.get(CODE);
+    expect(envelope?.version).toBe(body.version);
+    // Either the round finished or it's still playing after the safety cap.
+    // Both branches prove the bot loop fired.
+    expect(['playing', 'finished']).toContain(envelope?.round.phase);
+
+    // Room eventVersion tracks the final event version.
+    const finalRoom = await fx.deps.roomStore.get(CODE);
+    expect(finalRoom?.eventVersion).toBe(body.version);
+  });
+});
+
 describe('handleStartGame — preconditions', () => {
   it('rejects non-POST', async () => {
     const fx = await fixture();

@@ -291,12 +291,17 @@ export function Waiting({
             }
             const teamClass = i % 2 === 0 ? 'waiting__slot-team--t1' : 'waiting__slot-team--t2';
             const isMe = member.id === credentials?.playerId;
+            const isBot = member.status === 'bot';
             return (
-              <div key={member.id} className="waiting__slot" role="listitem">
+              <div
+                key={member.id}
+                className={`waiting__slot${isBot ? ' waiting__slot--bot' : ''}`}
+                role="listitem"
+              >
                 <div
                   className={`avatar avatar--md ${isMe ? 'avatar--self' : i % 2 === 0 ? 'avatar--partner' : 'avatar--rival-1'}`}
                 >
-                  {avatarInitials(member.handle)}
+                  {isBot ? BOT_BADGE[member.difficulty ?? 'medium'] : avatarInitials(member.handle)}
                 </div>
                 <div className="waiting__slot-info">
                   <span className="waiting__slot-name">
@@ -309,6 +314,15 @@ export function Waiting({
                     {isMe ? (
                       <span className="chip chip--info mono" style={{ fontSize: 9, padding: '1px 5px' }}>
                         我
+                      </span>
+                    ) : null}
+                    {isBot ? (
+                      <span
+                        className="chip mono"
+                        style={{ fontSize: 9, padding: '1px 5px' }}
+                        aria-label={`AI ${member.difficulty ?? 'medium'}`}
+                      >
+                        AI · {BOT_TIER_LABEL[member.difficulty ?? 'medium']}
                       </span>
                     ) : null}
                   </span>
@@ -338,3 +352,15 @@ function avatarInitials(handle: string): string {
   // Prefer the first 2 chars; for CJK this picks one + one, for ASCII two letters.
   return body.slice(0, 2).toUpperCase();
 }
+
+const BOT_BADGE: Record<'easy' | 'medium' | 'hard', string> = {
+  easy: '🌱',
+  medium: '⚡',
+  hard: '🦊',
+};
+
+const BOT_TIER_LABEL: Record<'easy' | 'medium' | 'hard', string> = {
+  easy: '入门',
+  medium: '进阶',
+  hard: '高手',
+};

@@ -1,0 +1,227 @@
+/* Game table + rotate-prompt styles
+ * Source: extracted verbatim from demos/index.html S03 (4P game table) and
+ * docs/research/mobile-landscape-ux.md § 1.4 (rotate-prompt design req).
+ * Consumes tokens from tokens.css.
+ */
+
+/* ============ S03/S04/S05/S07: GAME TABLE common ============ */
+.table {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  background: radial-gradient(ellipse at center, var(--surface-table), oklch(8% 0.005 60) 78%);
+  display: grid;
+  grid-template-rows: 34px 1fr 112px;
+}
+
+.table-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px 0 56px;
+  border-bottom: 1px solid var(--rule-1);
+  background: oklch(8% 0.005 60 / 0.7);
+}
+.table-top-left { display: flex; align-items: center; gap: 14px; }
+.table-top-right { display: flex; align-items: center; gap: 12px; }
+.table-top-key {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--ink-3);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+.table-top-val {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--ink-1);
+  letter-spacing: 0.04em;
+}
+.table-top-val em { font-style: normal; color: var(--accent); }
+
+.table-arena {
+  position: relative;
+  padding: 12px 16px;
+  display: grid;
+  grid-template-columns: 110px 1fr 110px;
+  grid-template-rows: 1fr;
+  gap: 16px;
+  align-items: center;
+}
+
+/* Partner card (top-center) */
+.seat-partner {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 10px;
+  background: oklch(11% 0.006 60 / 0.85);
+  border: 1px solid var(--rule-1);
+  border-radius: var(--r-pill);
+  backdrop-filter: blur(6px);
+}
+
+/* Side opponent seats */
+.seat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.seat-name {
+  font-size: var(--t-xs);
+  color: var(--ink-1);
+  font-family: var(--font-mono);
+  letter-spacing: 0;
+}
+.seat-lvl {
+  font-family: var(--font-mono);
+  font-size: var(--t-3xs);
+  color: var(--ink-3);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+.seat-cards-stack { display: flex; }
+.seat-cards-stack .card { margin-left: -22px; }
+.seat-cards-stack .card:first-child { margin-left: 0; }
+.seat-count {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--ink-3);
+  letter-spacing: var(--tracking-wide);
+  margin-top: 2px;
+}
+
+/* Center trick area — extends the Trick component's .trick base class. */
+.trick {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.trick__meta,
+.trick-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--ink-3);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+.trick__meta em,
+.trick-meta em { font-style: normal; color: var(--accent); }
+.trick__kind,
+.trick__author { font-size: var(--t-3xs); color: var(--ink-2); }
+.trick__placeholder {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xl);
+  color: var(--ink-3);
+  opacity: 0.4;
+}
+
+/* Bottom row — my hand + actions */
+.table-bot {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 16px;
+  padding: 8px 16px 12px 56px;
+  border-top: 1px solid var(--rule-1);
+  background: oklch(8% 0.005 60 / 0.85);
+}
+.my-hand-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.my-hand-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--t-3xs);
+  color: var(--ink-3);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+.my-hand-meta em { font-style: normal; color: var(--accent); }
+.my-hand-row {
+  display: flex;
+  padding-top: 14px;
+}
+.my-hand-row .card { margin-left: -16px; }
+.my-hand-row .card:first-child { margin-left: 0; }
+
+.actions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+  align-content: end;
+}
+.actions .btn {
+  padding: 11px 14px;
+  font-size: var(--t-sm);
+  min-width: 86px;
+  min-height: 44px;
+}
+.actions .btn--primary {
+  grid-column: 1 / -1;
+  padding: 13px 14px;
+  font-size: var(--t-md);
+  min-height: 50px;
+}
+
+/* ============ Rotate-prompt overlay ============ */
+.rotate-prompt {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: var(--surface-0);
+  color: var(--ink-1);
+  padding: 24px;
+  text-align: center;
+}
+.rotate-prompt__icon {
+  font-size: 64px;
+  color: var(--accent);
+  animation: rotate-hint 1.8s ease-in-out infinite;
+}
+.rotate-prompt__title {
+  font-size: var(--t-2xl);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+}
+.rotate-prompt__sub {
+  font-family: var(--font-mono);
+  font-size: var(--t-sm);
+  color: var(--ink-3);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+.rotate-prompt__btn { margin-top: 8px; }
+
+@keyframes rotate-hint {
+  0%   { transform: rotate(0deg); }
+  60%  { transform: rotate(90deg); }
+  100% { transform: rotate(90deg); }
+}
+
+/* Default to hidden on landscape orientations (mobile only).
+ * The component itself only mounts when portrait-mobile, but this CSS
+ * media query is a defense-in-depth in case overrideOrientation is set
+ * incorrectly. */
+@media (orientation: landscape) {
+  .rotate-prompt { display: none; }
+}

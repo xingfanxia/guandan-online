@@ -1,60 +1,80 @@
-// App shell — wires OrientationLock around the active surface.
+// App shell — hash router for the full UI-3 flow.
 //
-// Until UI-3 (landing) lands, this renders a status banner on desktop /
-// landscape mobile, and the rotate-prompt on portrait mobile. The hash-route
-// `#table=<roomId>&token=<joinToken>&me=<handle>` mounts GameTable4P
-// against a live SSE stream — useful for manual dev-server testing today.
+// Routes (see src/lib/router.ts):
+//   #/                              → Landing (3 CTAs + recent rooms)
+//   #/create                        → CreateRoom (mode picker + preview)
+//   #/wait?code=<code>              → Waiting (lobby + start)
+//   #/table?code=<code>             → GameTable (live SSE) — reads creds from identity store
+//   #table=<id>&token=<t>&me=<h>    → GameTable (legacy direct-launch link)
+//
+// OrientationLock wraps everything so the rotate-prompt fallback fires on
+// portrait phones regardless of which screen is active.
 
 import { useEffect, useState } from 'react';
 import { OrientationLock } from '@/components/OrientationLock';
 import { GameTable4P } from '@/screens/GameTable4P';
-
-interface TableLaunchParams {
-  roomId: string;
-  joinToken: string;
-  myHandle: string;
-}
-
-function parseHash(hash: string): TableLaunchParams | null {
-  if (!hash.startsWith('#')) return null;
-  const params = new URLSearchParams(hash.slice(1));
-  const roomId = params.get('table');
-  const joinToken = params.get('token');
-  const myHandle = params.get('me');
-  if (!roomId || !joinToken || !myHandle) return null;
-  return { roomId, joinToken, myHandle };
-}
+import { Landing } from '@/screens/Landing';
+import { CreateRoom } from '@/screens/CreateRoom';
+import { Waiting } from '@/screens/Waiting';
+import { parseHash, type Route } from '@/lib/router';
+import { getCredentialsForRoom } from '@/lib/identity';
 
 export default function App(): React.JSX.Element {
-  const [launch, setLaunch] = useState<TableLaunchParams | null>(() =>
-    typeof window !== 'undefined' ? parseHash(window.location.hash) : null,
+  const [route, setRoute] = useState<Route>(() =>
+    typeof window !== 'undefined' ? parseHash(window.location.hash) : { kind: 'landing' }
   );
 
   useEffect(() => {
-    const onHash = (): void => setLaunch(parseHash(window.location.hash));
+    const onHash = (): void => setRoute(parseHash(window.location.hash));
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
 
   return (
     <OrientationLock>
-      {launch ? (
-        <GameTable4P
-          roomId={launch.roomId}
-          joinToken={launch.joinToken}
-          myHandle={launch.myHandle}
-        />
-      ) : (
-        <main style={{ padding: '2rem', fontFamily: 'var(--font-sans, system-ui)' }}>
-          <h1>掼蛋联机 (Guandan Online)</h1>
-          <p>
-            UI-1 / UI-2 shipped — Card / Hand / Trick / Avatar primitives + 4P table.
-            To open a live table, navigate to{' '}
-            <code>#table=&lt;roomId&gt;&amp;token=&lt;joinToken&gt;&amp;me=@handle</code>.
-          </p>
-          <p>Landing (UI-3), tribute (UI-4), round-end (UI-5), 6/8P (UI-6) still pending.</p>
-        </main>
-      )}
+      <RouteSwitch route={route} />
     </OrientationLock>
+  );
+}
+
+function RouteSwitch({ route }: { route: Route }): React.JSX.Element {
+  switch (route.kind) {
+    case 'landing':
+      return <Landing />;
+    case 'create':
+      return <CreateRoom />;
+    case 'wait':
+      return <Waiting code={route.code} />;
+    case 'table': {
+      const creds = getCredentialsForRoom(route.code);
+      if (!creds) {
+        return <MissingCreds code={route.code} />;
+      }
+      return (
+        <GameTable4P
+          roomId={route.code}
+          joinToken={creds.joinToken}
+          myHandle={creds.playerId}
+        />
+      );
+    }
+    case 'table-legacy':
+      return (
+        <GameTable4P
+          roomId={route.roomId}
+          joinToken={route.joinToken}
+          myHandle={route.myHandle}
+        />
+      );
+  }
+}
+
+function MissingCreds({ code }: { code: string }): React.JSX.Element {
+  return (
+    <main style={{ padding: '24px 60px' }}>
+      <h1>需要先加入房间</h1>
+      <p>房间 <code>{code}</code> 没有保存的凭据。返回首页加入该房间。</p>
+      <a href="#/" className="btn btn--primary">返回首页</a>
+    </main>
   );
 }

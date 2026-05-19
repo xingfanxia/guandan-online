@@ -32,6 +32,18 @@ export interface ModeRules {
 
   /** Strict A-mode: must win during own A-level round. */
   strictA: boolean;
+
+  /**
+   * Manual tribute mode (4P only). When false (default), `dealNextRound` auto-
+   * picks tribute + return cards server-side and starts the next round's trick
+   * in one step. When true, `dealNextRound` instead sets `pendingTribute` on
+   * the new round and waits for players to dispatch `tribute_select` /
+   * `anti_tribute` commands; the trick only starts once the manual flow
+   * finalizes (all obligations satisfied or resist declared).
+   *
+   * Has no effect on 6P / 8P rounds — those skip tribute entirely.
+   */
+  manualTribute: boolean;
 }
 
 /** Canonical defaults — mirror sibling scorer's live config (config.js:22-54). */
@@ -46,6 +58,7 @@ export const DEFAULT_MODE_RULES: ModeRules = {
 
   must1: true,
   strictA: true,
+  manualTribute: false,
 };
 
 /** Number of finishing positions for a given mode. */

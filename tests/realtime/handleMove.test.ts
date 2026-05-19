@@ -246,7 +246,8 @@ describe('handleMoveCommand — tribute_select dispatch', () => {
       targetCard: 'A-S-1',
       fromVersion: 10,
     };
-    const { newRound, response } = handleMoveCommand(r, 'd', cmd, 10);
+    const result = handleMoveCommand(r, 'd', cmd, 10);
+    const { newRound, response } = result;
     expect(response.ok).toBe(true);
     if (response.ok) {
       expect(response.appliedVersion).toBe(11);
@@ -256,6 +257,14 @@ describe('handleMoveCommand — tribute_select dispatch', () => {
     expect(newRound.hands['a']).toContainEqual(c('spades', 'A'));
     // 末游 (d) leads
     expect(newRound.leader).toBe('d');
+    // Finalization populated tributeExchanges + tributeMode so the move
+    // handler can emit a tribute_resolved event.
+    expect(result.tributeExchanges).toBeDefined();
+    expect(result.tributeExchanges!.length).toBe(1);
+    expect(result.tributeExchanges![0]!.from).toBe('d');
+    expect(result.tributeExchanges![0]!.to).toBe('a');
+    expect(result.tributeMode).toBeDefined();
+    expect(result.tributeMode!.kind).toBe('single');
   });
 
   it("skips the trick-based 'not_your_turn' check (no trick in tribute phase)", () => {
@@ -346,7 +355,8 @@ describe('handleMoveCommand — anti_tribute dispatch', () => {
   it('finalizes (no swap) when a losing-team player declares', () => {
     const r = buildResistRound();
     const cmd: MoveCommand = { kind: 'anti_tribute', fromVersion: 10 };
-    const { newRound, response } = handleMoveCommand(r, 'd', cmd, 10);
+    const result = handleMoveCommand(r, 'd', cmd, 10);
+    const { newRound, response } = result;
     expect(response.ok).toBe(true);
     if (response.ok) expect(response.appliedVersion).toBe(11);
     expect(newRound.pendingTribute).toBeUndefined();
@@ -355,6 +365,13 @@ describe('handleMoveCommand — anti_tribute dispatch', () => {
     expect(newRound.hands['d']).toEqual([c('joker', 'RJ', 2)]);
     // 头游 (a) leads on resist
     expect(newRound.leader).toBe('a');
+    // Resist finalization populates tributeExchanges as an empty array (vs
+    // undefined for intermediate selects) so the move handler can still
+    // signal "tribute phase done" — though for resist we emit no actual
+    // card movements in the resolved event.
+    expect(result.tributeExchanges).toEqual([]);
+    expect(result.tributeMode).toBeDefined();
+    expect(result.tributeMode!.kind).toBe('resist');
   });
 
   it('returns invalid_move when called by a winning-team player', () => {

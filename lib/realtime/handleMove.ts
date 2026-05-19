@@ -13,12 +13,33 @@
 import { pass, playCards } from '../game/round';
 import type { GameRound, PlayerId } from '../game/round';
 import { declareAntiTribute, selectTributeCard } from '../game/tributeFlow';
+import type { TributeExchange, TributeMode } from '../game/tribute';
 import { decodeCardIds } from './cardCodec';
 import type { MoveCommand, MoveResponse } from './commands';
 
 export interface HandleMoveResult {
   newRound: GameRound;
   response: MoveResponse;
+  /**
+   * Populated when a tribute_select or anti_tribute command FINALIZED the
+   * manual flow (all obligations satisfied or resist declared). The move
+   * handler uses this to emit a tribute_resolved event.
+   *
+   * - `undefined` — command was not a tribute command, OR it was an
+   *   intermediate select waiting for more selections.
+   * - `[]` — resist finalized; no swap took place, but the event should
+   *   still indicate finalization (the buildClientPayload-side event omits
+   *   `tribute_resolved` entirely when exchanges is empty, but the move
+   *   handler still uses this to know "tribute is done, trick has started").
+   * - non-empty — single or double tribute finalized with these card swaps.
+   */
+  tributeExchanges?: TributeExchange[];
+  /**
+   * Set alongside `tributeExchanges` when finalization occurred. Tells the
+   * downstream event-derivation which tribute mode finalized (resist vs
+   * single vs double) so it can emit the correct `tribute_resolved` payload.
+   */
+  tributeMode?: Extract<TributeMode, { kind: 'single' | 'double' | 'resist' }>;
 }
 
 export function handleMoveCommand(
@@ -109,9 +130,13 @@ function handleTributeSelect(
   } catch (err) {
     return failure(round, 'invalid_move', `card decode failed: ${(err as Error).message}`);
   }
+  // Capture pendingTribute.mode BEFORE the helper runs — finalization strips
+  // the field, so we'd otherwise lose the information needed to emit the
+  // correct tribute_resolved event variant.
+  const pendingModeBefore = round.pendingTribute?.mode;
   try {
-    const newRound = selectTributeCard(round, playerId, card);
-    return success(newRound, currentVersion);
+    const result = selectTributeCard(round, playerId, card);
+    return success(result.round, currentVersion, result.exchanges, pendingModeBefore);
   } catch (err) {
     return failure(round, 'invalid_move', (err as Error).message);
   }
@@ -122,16 +147,22 @@ function handleAntiTribute(
   playerId: PlayerId,
   currentVersion: number,
 ): HandleMoveResult {
+  const pendingModeBefore = round.pendingTribute?.mode;
   try {
-    const newRound = declareAntiTribute(round, playerId);
-    return success(newRound, currentVersion);
+    const result = declareAntiTribute(round, playerId);
+    return success(result.round, currentVersion, result.exchanges, pendingModeBefore);
   } catch (err) {
     return failure(round, 'invalid_move', (err as Error).message);
   }
 }
 
-function success(newRound: GameRound, currentVersion: number): HandleMoveResult {
-  return {
+function success(
+  newRound: GameRound,
+  currentVersion: number,
+  tributeExchanges?: TributeExchange[] | null,
+  finalizedMode?: 'single' | 'double' | 'resist',
+): HandleMoveResult {
+  const result: HandleMoveResult = {
     newRound,
     response: {
       ok: true,
@@ -139,6 +170,29 @@ function success(newRound: GameRound, currentVersion: number): HandleMoveResult 
       result: 'applied',
     },
   };
+  if (tributeExchanges !== undefined && tributeExchanges !== null && finalizedMode !== undefined) {
+    result.tributeExchanges = tributeExchanges;
+    // Synthesize a TributeMode shape from the captured pre-finalize mode +
+    // post-finalize exchanges. The wire layer (deriveTributeEvents) only
+    // looks at `kind` for the resolved event; the tributeCard field is
+    // populated by applyTribute and surfaced through `exchanges`.
+    if (finalizedMode === 'resist') {
+      result.tributeMode = { kind: 'resist' };
+    } else if (finalizedMode === 'single' && tributeExchanges.length > 0) {
+      const ex = tributeExchanges[0]!;
+      result.tributeMode = { kind: 'single', from: ex.from, to: ex.to, tributeCard: ex.tribute };
+    } else if (finalizedMode === 'double') {
+      result.tributeMode = {
+        kind: 'double',
+        obligations: tributeExchanges.map((ex) => ({
+          from: ex.from,
+          to: ex.to,
+          tributeCard: ex.tribute,
+        })),
+      };
+    }
+  }
+  return result;
 }
 
 function failure(

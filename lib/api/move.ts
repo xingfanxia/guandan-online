@@ -179,6 +179,32 @@ export async function handleMove(
       turnDeadline
     );
 
+    // Manual-tribute finalization — when a tribute_select or anti_tribute
+    // closed the pending state, emit a tribute_resolved event so clients
+    // can dismiss the tribute modal and refresh their hands.
+    //
+    // The dispatch sets tributeExchanges only on finalization (intermediate
+    // selections waiting for more players return `undefined`). For resist the
+    // array is empty; for single/double it contains the card movements.
+    // deriveMoveEvent returned [] for tribute commands so the version slot
+    // at response.appliedVersion is free.
+    if (dispatch.tributeExchanges !== undefined) {
+      const resolvedExchanged = dispatch.tributeExchanges.flatMap((ex) => {
+        const out: { from: string; to: string; card: string }[] = [
+          { from: ex.from, to: ex.to, card: encodeCards([ex.tribute])[0]! },
+        ];
+        if (ex.return !== null) {
+          out.push({ from: ex.to, to: ex.from, card: encodeCards([ex.return])[0]! });
+        }
+        return out;
+      });
+      events.push({
+        type: 'tribute_resolved',
+        version: response.appliedVersion,
+        exchanged: resolvedExchanged,
+      });
+    }
+
     // ── Bot run-loop ──────────────────────────────────────────────────────
     // If the next player is a bot, computeBotMove + apply + derive events
     // until we land on a human (or the round finishes). The round-end fanout

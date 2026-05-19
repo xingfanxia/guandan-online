@@ -21,7 +21,24 @@ import type { Card } from './cards';
 import { startTrick } from './round';
 import type { GameRound, PlayerId, PendingTributeObligation } from './round';
 import { applyTribute } from './tribute';
-import type { TributeMode } from './tribute';
+import type { TributeExchange, TributeMode } from './tribute';
+
+/**
+ * Result of a manual-tribute command. `exchanges` is non-null only on the
+ * finalizing call (last tribute_select that satisfies all obligations, or
+ * anti_tribute). Intermediate selections (still waiting on other players)
+ * return `exchanges: null` so the caller knows not to emit a tribute_resolved
+ * event yet.
+ *
+ * For resist: `exchanges` is an empty array (`[]`) — no swap, but the flow
+ * did finalize (trick started, pendingTribute cleared). Callers distinguish
+ * `null` (in-progress) from `[]` (resist-finalized) when deciding to emit
+ * tribute_resolved.
+ */
+export interface TributeFlowResult {
+  round: GameRound;
+  exchanges: TributeExchange[] | null;
+}
 
 /**
  * Validate + record the loser's chosen tribute card. If this completes all
@@ -41,7 +58,7 @@ export function selectTributeCard(
   round: GameRound,
   playerId: PlayerId,
   card: Card,
-): GameRound {
+): TributeFlowResult {
   const pending = round.pendingTribute;
   if (!pending) {
     throw new Error('selectTributeCard: no pending tribute on this round');
@@ -87,8 +104,11 @@ export function selectTributeCard(
   const allSelected = updatedObligations.every((o) => o.selectedCard !== null);
   if (!allSelected) {
     return {
-      ...round,
-      pendingTribute: { ...pending, obligations: updatedObligations },
+      round: {
+        ...round,
+        pendingTribute: { ...pending, obligations: updatedObligations },
+      },
+      exchanges: null,
     };
   }
 
@@ -116,7 +136,7 @@ export function selectTributeCard(
 export function declareAntiTribute(
   round: GameRound,
   playerId: PlayerId,
-): GameRound {
+): TributeFlowResult {
   const pending = round.pendingTribute;
   if (!pending) {
     throw new Error('declareAntiTribute: no pending tribute on this round');
@@ -158,7 +178,7 @@ function finalizeManualTribute(
   mode: 'single' | 'double' | 'resist',
   obligations: readonly PendingTributeObligation[],
   finishOrder: readonly PlayerId[],
-): GameRound {
+): TributeFlowResult {
   let tributeMode: TributeMode;
   if (mode === 'resist') {
     tributeMode = { kind: 'resist' };
@@ -190,5 +210,8 @@ function finalizeManualTribute(
   // Strip the pendingTribute field — it's served its purpose.
   const { pendingTribute: _stripped, ...withoutPending } = next;
   void _stripped;
-  return startTrick(withoutPending as GameRound);
+  return {
+    round: startTrick(withoutPending as GameRound),
+    exchanges: applied.exchanges,
+  };
 }

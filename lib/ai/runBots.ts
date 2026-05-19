@@ -69,6 +69,14 @@ export function runBots(input: RunBotsInput): RunBotsResult {
     // Round finished — nothing more to do here. Caller handles round_end fanout.
     if (round.phase !== 'playing') return { round, version, events };
 
+    // Manual-tribute mode: the round is dealt but the tribute swap hasn't
+    // happened yet (pendingTribute set, currentTrick null). Do NOT auto-start
+    // a trick — players must dispatch `tribute_select` / `anti_tribute` first.
+    // The manual flow helpers in tributeFlow.ts will run startTrick once the
+    // tribute finalizes. After finalization, a subsequent /move request will
+    // re-enter this loop and pick up at the trick-based dispatch.
+    if (round.pendingTribute !== undefined) return { round, version, events };
+
     // Between-trick boundary: previous trick ended, no new trick started yet.
     // startTrick is bookkeeping only (no event). Both human + bot turns need
     // currentTrick to be non-null before they can act.

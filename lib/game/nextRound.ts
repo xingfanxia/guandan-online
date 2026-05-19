@@ -13,7 +13,12 @@
 import { buildDeck, shuffleDeck } from './cards';
 import type { GameSession } from './session';
 import { dealRound, startTrick } from './round';
-import type { GameRound, PlayerId } from './round';
+import type {
+  GameRound,
+  PendingTributeObligation,
+  PendingTributeState,
+  PlayerId,
+} from './round';
 import {
   applyTribute,
   detectTributeMode4P,
@@ -30,12 +35,36 @@ export interface DealNextRoundInput {
 }
 
 export interface DealNextRoundResult {
-  /** New round with hands post-tribute and the first trick started. */
+  /**
+   * New round.
+   *
+   * AUTO path: hands post-tribute, trick started (`currentTrick` non-null).
+   *
+   * MANUAL path: hands pre-tribute, `pendingTribute` set, `currentTrick`
+   * null. Caller must wait for `tribute_select` / `anti_tribute` commands
+   * before play can begin. When `tributeMode.kind === 'none'` (no tribute
+   * obligation at all — same-team finish in 4P doesn't happen, but the type
+   * allows it), behaves like AUTO (trick started, no pending state).
+   */
   round: GameRound;
   /** Tribute outcome (4P only). `null` for 6P/8P where tribute is skipped. */
   tributeMode: TributeMode | null;
-  /** Card exchanges that took place (empty for 'resist' / 'none' / non-4P). */
+  /**
+   * Card exchanges that took place.
+   *
+   * AUTO path: actual exchanges (empty for 'resist' / 'none' / non-4P).
+   *
+   * MANUAL path: always empty — the exchanges happen later when the manual
+   * flow finalizes via tributeFlow.ts. The pending state on the returned
+   * round carries the obligation list instead.
+   */
   exchanges: TributeExchange[];
+  /**
+   * True when this result deferred the tribute swap to a later manual flow.
+   * Caller uses this to choose which event sequence to emit (tribute_pending
+   * only vs. tribute_pending + tribute_resolved + deal).
+   */
+  pendingManualTribute: boolean;
 }
 
 /**
@@ -105,6 +134,39 @@ export function dealNextRound(input: DealNextRoundInput): DealNextRoundResult {
       seats,
       newRound.hands
     );
+
+    // Manual-tribute path: when the room opted into manual mode AND there's
+    // an actual obligation to resolve (single/double/resist), defer the swap
+    // to the manual flow. The round returns with hands pre-tribute,
+    // pendingTribute set, and no trick started.
+    //
+    // 'none' falls through to the AUTO tail so the trick still starts — there's
+    // nothing to defer when there's no tribute obligation.
+    if (input.session.rules.manualTribute && tributeMode.kind !== 'none') {
+      const obligations: PendingTributeObligation[] =
+        tributeMode.kind === 'single'
+          ? [{ from: tributeMode.from, to: tributeMode.to, selectedCard: null }]
+          : tributeMode.kind === 'double'
+            ? tributeMode.obligations.map((o) => ({
+                from: o.from,
+                to: o.to,
+                selectedCard: null,
+              }))
+            : []; // 'resist' — obligations stays empty; declarer dispatches anti_tribute
+      const pending: PendingTributeState = {
+        mode: tributeMode.kind,
+        obligations,
+        finishOrder: [...input.prevRound.finishOrder],
+      };
+      const pendingRound: GameRound = { ...newRound, pendingTribute: pending };
+      return {
+        round: pendingRound,
+        tributeMode,
+        exchanges: [],
+        pendingManualTribute: true,
+      };
+    }
+
     const applied = applyTribute(
       newRound.hands,
       tributeMode,
@@ -122,5 +184,10 @@ export function dealNextRound(input: DealNextRoundInput): DealNextRoundResult {
   // Start the first trick of the new round so currentTrick is non-null. The
   // move handler / runBots both rely on this invariant.
   const started = startTrick(newRound);
-  return { round: started, tributeMode, exchanges };
+  return {
+    round: started,
+    tributeMode,
+    exchanges,
+    pendingManualTribute: false,
+  };
 }

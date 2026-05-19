@@ -733,6 +733,159 @@ describe('handleMove — round_end + game_end events on finished round', () => {
     expect(persistedEnvelope?.round.finishOrder).toEqual([]);
   });
 
+  it('manual-tribute mode: defers tribute_resolved at round transition; emits it on tribute_select finalize', async () => {
+    const fx = await fixture();
+    const round = buildNearFinishedRound();
+    await fx.deps.roundStore.put(
+      CODE,
+      { round, version: 0, updatedAt: 1_700_000_000_000 },
+      86_400
+    );
+    // Manual tribute rule ON for this session.
+    await fx.deps.sessionStore.put(
+      CODE,
+      {
+        mode: '4',
+        rules: { ...DEFAULT_MODE_RULES, manualTribute: true },
+        teamLevels: { t1: '2', t2: '2' },
+        teamAFails: { t1: 0, t2: 0 },
+        roundOwner: null,
+        finishedRounds: 0,
+        phase: 'in_progress',
+        winnerTeam: null,
+      },
+      86_400
+    );
+
+    // First move closes the round; dealNextRound runs in manual mode →
+    // emits tribute_pending + deal but no tribute_resolved.
+    const cardId = encodeCards([round.hands['p0']![0]!])[0]!;
+    const r1 = await handleMove(
+      req({
+        body: {
+          moveId: 'm-manual-1',
+          command: { kind: 'play', cards: [cardId], fromVersion: 0 },
+        },
+        bearer: fx.hostJoinToken,
+      }),
+      CODE,
+      fx.deps
+    );
+    expect(r1.status).toBe(200);
+
+    const log1 = await fx.deps.log.range(eventLogKey(CODE, 'p0'), null);
+    const types1 = log1.map((e) => e.event.type);
+    expect(types1).toContain('round_end');
+    expect(types1).toContain('tribute_pending');
+    expect(types1).toContain('deal');
+    // Crucial — no resolved event yet; players haven't picked cards.
+    expect(types1).not.toContain('tribute_resolved');
+
+    // The persisted new round must have pendingTribute set and no trick.
+    const env = await fx.deps.roundStore.get(CODE);
+    expect(env).not.toBeNull();
+    expect(env!.round.pendingTribute).toBeDefined();
+    expect(env!.round.currentTrick).toBeNull();
+
+    // Identify the obligated loser + a non-wildcard card they can submit.
+    const pending = env!.round.pendingTribute!;
+    expect(['single', 'double', 'resist']).toContain(pending.mode);
+
+    if (pending.mode === 'resist') {
+      // Resist path: any losing-team player submits anti_tribute.
+      const allSeats = env!.round.seats;
+      const winnerTeam = allSeats.find((s) => s.id === pending.finishOrder[0])!.team;
+      const declarer = allSeats.find((s) => s.team !== winnerTeam)!.id;
+      const declarerToken =
+        declarer === 'p1' ? fx.p1Token :
+        declarer === 'p2' ? fx.p2Token :
+        declarer === 'p3' ? fx.p3Token :
+        fx.hostJoinToken;
+      const r2 = await handleMove(
+        req({
+          body: {
+            moveId: 'm-manual-resist',
+            command: { kind: 'anti_tribute', fromVersion: env!.version },
+          },
+          bearer: declarerToken,
+        }),
+        CODE,
+        fx.deps
+      );
+      expect(r2.status).toBe(200);
+
+      const log2 = await fx.deps.log.range(eventLogKey(CODE, 'p0'), null);
+      const types2 = log2.map((e) => e.event.type);
+      // Resist finalization emits tribute_resolved with empty exchanged.
+      const resolvedEvents = log2.filter((e) => e.event.type === 'tribute_resolved');
+      expect(resolvedEvents.length).toBe(1);
+      if (resolvedEvents[0]!.event.type === 'tribute_resolved') {
+        expect(resolvedEvents[0]!.event.exchanged).toEqual([]);
+      }
+      expect(types2.filter((t) => t === 'tribute_resolved').length).toBe(1);
+      return;
+    }
+
+    // Single / double path — pick a non-wildcard card to tribute.
+    // Send one tribute_select per obligation; resolved fires on the last one.
+    let envCursor = await fx.deps.roundStore.get(CODE);
+    let seqNum = 0;
+    for (const o of pending.obligations) {
+      seqNum += 1;
+      const loserId = o.from;
+      const loserToken =
+        loserId === 'p1' ? fx.p1Token :
+        loserId === 'p2' ? fx.p2Token :
+        loserId === 'p3' ? fx.p3Token :
+        fx.hostJoinToken;
+      const loserHand = envCursor!.round.hands[loserId]!;
+      // Pick first non-heart-suit-level-rank card (wildcard exempt for level=2).
+      const candidate = loserHand.find(
+        (card) => !(card.suit === 'hearts' && card.rank === envCursor!.round.level)
+      );
+      expect(candidate).toBeDefined();
+      const cardIdSel = encodeCards([candidate!])[0]!;
+
+      const isLast = seqNum === pending.obligations.length;
+      const rSel = await handleMove(
+        req({
+          body: {
+            moveId: `m-manual-sel-${seqNum}`,
+            command: { kind: 'tribute_select', targetCard: cardIdSel, fromVersion: envCursor!.version },
+          },
+          bearer: loserToken,
+        }),
+        CODE,
+        fx.deps
+      );
+      expect(rSel.status).toBe(200);
+
+      envCursor = await fx.deps.roundStore.get(CODE);
+      if (!isLast) {
+        // Intermediate: still pending, trick not started.
+        expect(envCursor!.round.pendingTribute).toBeDefined();
+        expect(envCursor!.round.currentTrick).toBeNull();
+      } else {
+        // Final select: pending cleared + trick started.
+        expect(envCursor!.round.pendingTribute).toBeUndefined();
+        expect(envCursor!.round.currentTrick).not.toBeNull();
+      }
+    }
+
+    // After all obligations satisfied, exactly one tribute_resolved was emitted.
+    const log2 = await fx.deps.log.range(eventLogKey(CODE, 'p0'), null);
+    const resolvedEvents = log2.filter((e) => e.event.type === 'tribute_resolved');
+    expect(resolvedEvents.length).toBe(1);
+    if (resolvedEvents[0]!.event.type === 'tribute_resolved') {
+      // Single → 2 wire entries (tribute + return). Double → 4.
+      const expectedEntries = pending.mode === 'single' ? 2 : 4;
+      expect(resolvedEvents[0]!.event.exchanged.length).toBeLessThanOrEqual(expectedEntries);
+      expect(resolvedEvents[0]!.event.exchanged.length).toBeGreaterThanOrEqual(
+        pending.mode === 'single' ? 1 : 2,
+      );
+    }
+  });
+
   it('emits game_end when applyRoundResult closes the session (winning at A)', async () => {
     const fx = await fixture();
     const round = buildCleanWinNearFinishedRound();

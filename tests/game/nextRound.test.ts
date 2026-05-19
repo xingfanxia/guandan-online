@@ -214,6 +214,75 @@ describe('dealNextRound — 4P', () => {
   });
 });
 
+describe('dealNextRound — 4P manual tribute', () => {
+  it('defers the swap and sets pendingTribute on the new round', () => {
+    const rng = seedrandom('next-manual-1');
+    const deck = shuffleDeck(buildDeck(), rng);
+    const round0 = dealRound({
+      mode: '4',
+      level: '2',
+      owner: null,
+      seats: SEATS_4P,
+      leader: 'alice',
+      shuffledDeck: deck,
+    });
+    const finished = runRoundToFinish(round0, rng);
+    const session0 = createSession({
+      mode: '4',
+      rules: { ...DEFAULT_MODE_RULES, manualTribute: true },
+    });
+    const session1 = applyRoundResult(session0, finished);
+
+    const result = dealNextRound({ prevRound: finished, session: session1, rng });
+
+    expect(result.pendingManualTribute).toBe(true);
+    expect(result.tributeMode).not.toBeNull();
+    expect(['single', 'double', 'resist']).toContain(result.tributeMode!.kind);
+    // Exchanges are deferred — empty until manual flow finalizes.
+    expect(result.exchanges).toEqual([]);
+    // Trick has NOT started yet — manual flow finalizes that.
+    expect(result.round.currentTrick).toBeNull();
+    // pendingTribute is set with the right mode + a snapshot finishOrder.
+    expect(result.round.pendingTribute).toBeDefined();
+    expect(result.round.pendingTribute!.mode).toBe(result.tributeMode!.kind);
+    expect(result.round.pendingTribute!.finishOrder).toEqual(finished.finishOrder);
+    if (result.tributeMode!.kind === 'single') {
+      expect(result.round.pendingTribute!.obligations).toHaveLength(1);
+      expect(result.round.pendingTribute!.obligations[0]!.selectedCard).toBeNull();
+    } else if (result.tributeMode!.kind === 'double') {
+      expect(result.round.pendingTribute!.obligations).toHaveLength(2);
+      for (const o of result.round.pendingTribute!.obligations) {
+        expect(o.selectedCard).toBeNull();
+      }
+    } else {
+      // resist mode — obligations stays empty; declarer dispatches anti_tribute
+      expect(result.round.pendingTribute!.obligations).toEqual([]);
+    }
+  });
+
+  it('AUTO path returns pendingManualTribute=false', () => {
+    const rng = seedrandom('next-auto-1');
+    const deck = shuffleDeck(buildDeck(), rng);
+    const round0 = dealRound({
+      mode: '4',
+      level: '2',
+      owner: null,
+      seats: SEATS_4P,
+      leader: 'alice',
+      shuffledDeck: deck,
+    });
+    const finished = runRoundToFinish(round0, rng);
+    const session0 = createSession({ mode: '4', rules: DEFAULT_MODE_RULES });
+    const session1 = applyRoundResult(session0, finished);
+
+    const result = dealNextRound({ prevRound: finished, session: session1, rng });
+    expect(result.pendingManualTribute).toBe(false);
+    expect(result.round.pendingTribute).toBeUndefined();
+    // Auto path: trick has started.
+    expect(result.round.currentTrick).not.toBeNull();
+  });
+});
+
 describe('dealNextRound — 6P', () => {
   it('skips tribute (returns null + empty exchanges)', () => {
     const rng = seedrandom('next-6p');

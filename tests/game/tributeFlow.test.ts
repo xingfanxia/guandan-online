@@ -56,9 +56,15 @@ describe('selectTributeCard — single tribute', () => {
 
   it('finalizes the swap when the obligated loser picks a card', () => {
     const round = makeRound(handsBefore, pending);
-    const next = selectTributeCard(round, 'd', aceSpades);
+    const result = selectTributeCard(round, 'd', aceSpades);
+    const next = result.round;
     // Pending cleared
     expect(next.pendingTribute).toBeUndefined();
+    // Finalization populated exchanges
+    expect(result.exchanges).not.toBeNull();
+    expect(result.exchanges!.length).toBe(1);
+    expect(result.exchanges![0]!.from).toBe('d');
+    expect(result.exchanges![0]!.to).toBe('a');
     // d lost the Ace; a gained it
     expect(next.hands['d']).not.toContainEqual(aceSpades);
     expect(next.hands['a']).toContainEqual(aceSpades);
@@ -131,7 +137,10 @@ describe('selectTributeCard — double tribute', () => {
 
   it('keeps pendingTribute when only one obligation is satisfied', () => {
     const round = makeRound(handsBefore, pending);
-    const after = selectTributeCard(round, 'd', dAce);
+    const result = selectTributeCard(round, 'd', dAce);
+    const after = result.round;
+    // Not yet finalized — exchanges is null
+    expect(result.exchanges).toBeNull();
     expect(after.pendingTribute).toBeDefined();
     expect(after.pendingTribute!.obligations).toHaveLength(2);
     expect(after.pendingTribute!.obligations[0]!.selectedCard).toEqual(dAce);
@@ -144,9 +153,13 @@ describe('selectTributeCard — double tribute', () => {
 
   it('finalizes when both obligations are satisfied (in either order)', () => {
     const round = makeRound(handsBefore, pending);
-    const afterFirst = selectTributeCard(round, 'b', bKing);
-    const afterSecond = selectTributeCard(afterFirst, 'd', dAce);
+    const afterFirst = selectTributeCard(round, 'b', bKing).round;
+    const finalResult = selectTributeCard(afterFirst, 'd', dAce);
+    const afterSecond = finalResult.round;
     expect(afterSecond.pendingTribute).toBeUndefined();
+    // Finalization populated exchanges (one per obligation, two for double)
+    expect(finalResult.exchanges).not.toBeNull();
+    expect(finalResult.exchanges!.length).toBe(2);
     // Both swaps happened
     expect(afterSecond.hands['a']).toContainEqual(dAce);
     expect(afterSecond.hands['c']).toContainEqual(bKing);
@@ -157,7 +170,7 @@ describe('selectTributeCard — double tribute', () => {
 
   it("rejects double-selection from the same player", () => {
     const round = makeRound(handsBefore, pending);
-    const after = selectTributeCard(round, 'd', dAce);
+    const after = selectTributeCard(round, 'd', dAce).round;
     expect(() => selectTributeCard(after, 'd', dAce)).toThrow(/already selected/);
   });
 });
@@ -178,8 +191,11 @@ describe('declareAntiTribute — resist mode', () => {
 
   it('finalizes with no swap when called by a losing-team player', () => {
     const round = makeRound(handsBefore, pending);
-    const next = declareAntiTribute(round, 'd');
+    const result = declareAntiTribute(round, 'd');
+    const next = result.round;
     expect(next.pendingTribute).toBeUndefined();
+    // Resist finalization emits an empty (but non-null) exchanges array.
+    expect(result.exchanges).toEqual([]);
     // Hands unchanged
     expect(next.hands['a']).toEqual([c('clubs', '5')]);
     expect(next.hands['d']).toEqual([c('joker', 'RJ', 2)]);
@@ -191,7 +207,7 @@ describe('declareAntiTribute — resist mode', () => {
 
   it('accepts the declaration from either losing-team player', () => {
     const round = makeRound(handsBefore, pending);
-    const next = declareAntiTribute(round, 'b');
+    const next = declareAntiTribute(round, 'b').round;
     expect(next.pendingTribute).toBeUndefined();
     expect(next.leader).toBe('a');
   });

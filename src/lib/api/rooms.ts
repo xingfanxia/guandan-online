@@ -113,7 +113,18 @@ export interface BotSeat {
 }
 
 export async function createRoom(
-  input: { mode: GameMode; handle: string; bots?: readonly BotSeat[] },
+  input: {
+    mode: GameMode;
+    handle: string;
+    bots?: readonly BotSeat[];
+    /**
+     * 4P only. When true, the new round opens with `pendingTribute` set —
+     * players must dispatch `tribute_select` / `anti_tribute` before the
+     * trick begins. When false (default) the server auto-picks tribute
+     * cards and starts the trick immediately.
+     */
+    manualTribute?: boolean;
+  },
   opts: RoomApiOptions = {}
 ): Promise<CreateRoomResponse> {
   const fetcher = opts.fetcher ?? defaultFetcher;
@@ -124,6 +135,9 @@ export async function createRoom(
   };
   if (input.bots && input.bots.length > 0) {
     body['bots'] = input.bots.map((b) => ({ tier: b.tier }));
+  }
+  if (input.manualTribute === true) {
+    body['manualTribute'] = true;
   }
   return call<CreateRoomResponse>(
     `${base}/api/room/create`,

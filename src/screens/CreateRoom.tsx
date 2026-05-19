@@ -38,6 +38,10 @@ const RULE_AXES: readonly RuleAxis[] = [
   { id: 'steelPlate', label: '钢板可出', defaultOn: true },
   { id: 'triPair', label: '三连对可出', defaultOn: false },
   { id: 'straightFlushAboveBomb5', label: '同花顺 > 5 炸', defaultOn: true },
+  // Manual tribute (手动进贡) is the only RULE_AXES entry currently plumbed
+  // through to ModeRules — other toggles are display-only until ROOM-2
+  // ships the full server-side rule validation surface.
+  { id: 'manualTribute', label: '手动进贡', defaultOn: false },
 ];
 
 type AiTier = 'easy' | 'medium' | 'human';
@@ -106,8 +110,19 @@ export function CreateRoom({
         const tier = aiTiers[seat] ?? 'human';
         if (tier !== 'human') bots.push({ tier });
       }
-      const createInput: { mode: GameMode; handle: string; bots?: BotSeat[] } =
-        bots.length > 0 ? { mode, handle, bots } : { mode, handle };
+      const createInput: {
+        mode: GameMode;
+        handle: string;
+        bots?: BotSeat[];
+        manualTribute?: boolean;
+      } = { mode, handle };
+      if (bots.length > 0) createInput.bots = bots;
+      // Only thread the manualTribute axis right now — the other 6 toggles
+      // are cosmetic per the ROOM-2 plumbing note in `lib/api/createRoom.ts`.
+      // 6P/8P silently ignores manualTribute (the engine only runs tribute
+      // for 4P), but we send it anyway so the room state preserves the host's
+      // intent should the engine later add sweep-tribute support.
+      if (rulesOn.manualTribute) createInput.manualTribute = true;
       const res = await createFn(createInput);
       storeCredentials({
         code: res.code,

@@ -262,6 +262,48 @@ describe('handleCreateRoom — bot fill at create-time', () => {
     );
     expect(res.status).toBe(400);
   });
+
+  it('persists manualTribute=true on the room rules when supplied', async () => {
+    const deps = DEPS_OK();
+    const res = await handleCreateRoom(
+      req('POST', {
+        mode: '4',
+        host: { handle: '@fufu' },
+        manualTribute: true,
+      }),
+      deps
+    );
+    expect(res.status).toBe(201);
+    const persisted = await deps.roomStore.get('CODE-1');
+    expect(persisted?.rules.manualTribute).toBe(true);
+  });
+
+  it('defaults manualTribute to false when omitted', async () => {
+    const deps = DEPS_OK();
+    const res = await handleCreateRoom(
+      req('POST', { mode: '4', host: { handle: '@fufu' } }),
+      deps
+    );
+    expect(res.status).toBe(201);
+    const persisted = await deps.roomStore.get('CODE-1');
+    expect(persisted?.rules.manualTribute).toBe(false);
+  });
+
+  it('rejects non-boolean manualTribute', async () => {
+    const deps = DEPS_OK();
+    const res = await handleCreateRoom(
+      req('POST', {
+        mode: '4',
+        host: { handle: '@fufu' },
+        manualTribute: 'yes',
+      }),
+      deps
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string; details?: string };
+    expect(body.error).toBe('invalid_request');
+    expect(body.details).toMatch(/manualTribute/);
+  });
 });
 
 describe('handleCreateRoom — code collision retry', () => {

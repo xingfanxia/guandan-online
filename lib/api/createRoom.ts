@@ -74,13 +74,21 @@ export async function handleCreateRoom(
   // first attempt lost the race, generate a new one. After RETRY_CAP misses
   // bail with 503 — that's a strong signal of upstream rate-limit issues
   // rather than genuine cardinality exhaustion.
+  // Merge body-supplied rule overrides onto the defaults. Only manualTribute
+  // is currently accepted from the wire (other rule axes still require the
+  // full ROOM-2 milestone plumbing). Defaults to false when omitted.
+  const effectiveRules = {
+    ...DEFAULT_MODE_RULES,
+    manualTribute: parsed.value.manualTribute,
+  };
+
   for (let attempt = 0; attempt < ROOM_CODE_RETRY_CAP; attempt++) {
     const code = codeGen();
     const ts = now();
     let state = createRoom({
       code,
       mode: parsed.value.mode,
-      rules: DEFAULT_MODE_RULES,
+      rules: effectiveRules,
       host: { id: 'p0', handle: parsed.value.handle },
       now: ts,
       tokenGen,
@@ -150,6 +158,7 @@ interface ParsedBody {
   mode: GameMode;
   handle: string;
   bots: BotSeatConfig[];
+  manualTribute: boolean;
 }
 
 const VALID_TIERS = new Set<BotSeatConfig['tier']>(['easy', 'medium']);
@@ -203,7 +212,19 @@ function parseBody(
     }
   }
 
-  return { ok: true, value: { mode: mode as GameMode, handle, bots } };
+  // Manual-tribute opt-in. Defaults to false; ignored on 6P/8P (the game
+  // engine only runs tribute for 4P). Rule shipped 2026-05-19 — see
+  // docs/research/SUMMARY.md decision #15 + `lib/game/mode.ts ModeRules`.
+  const manualTributeRaw = obj['manualTribute'];
+  let manualTribute = false;
+  if (manualTributeRaw !== undefined) {
+    if (typeof manualTributeRaw !== 'boolean') {
+      return { ok: false, error: 'manualTribute must be a boolean' };
+    }
+    manualTribute = manualTributeRaw;
+  }
+
+  return { ok: true, value: { mode: mode as GameMode, handle, bots, manualTribute } };
 }
 
 function defaultTokenGen(): string {

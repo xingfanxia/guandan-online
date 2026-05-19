@@ -172,8 +172,29 @@ GameTable4P reducer now handles `tribute_pending` / `tribute_resolved` and rende
 **Manual smoke not yet done** — the reducer / dispatch path is unit-tested but iPhone 14 Pro landscape capture under chrome-devtools-mcp hasn't been run for this commit. The TributeModal component itself was visually validated at 2026-05-18 UI-4 ship; the wire-up adds no new visual surface.
 
 **Still outstanding:**
-- **Room rule UI** — CreateRoom toggle for `manualTribute`. ~30 min work; cosmetic addition to the existing 6-axis rules grid.
+- ~~Room rule UI~~ ✅ Shipped in follow-up commit (see next section).
 - **GameTableMP** (6P/8P) — doesn't yet handle tribute events. Currently a no-op because `dealNextRound` only runs tribute for `mode==='4'`. When 6P/8P sweep tribute lands (`docs/research/game-rules.md` § "Sweep tribute"), the same reducer pattern would need to be ported.
+
+### 2026-05-19 — Manual-tribute opt-in UI + server plumbing (手动进贡 toggle)
+
+Closes the last manual-tribute gap before deploy. The `POST /api/room/create` body now accepts `manualTribute: boolean` (defaults false; server validates type, persists onto the room's `ModeRules`). The CreateRoom screen surfaces a `手动进贡` toggle in the existing rules grid that threads through the typed client API client. Other rule toggles in the grid remain cosmetic for ROOM-2 to wire.
+
+| File | Change |
+|---|---|
+| `lib/api/createRoom.ts` | `parseBody` accepts optional `manualTribute: boolean` (defaults false; rejects non-boolean with `invalid_request` + descriptive details). Merges onto `DEFAULT_MODE_RULES` before `createRoom()` so `RoomState.rules.manualTribute` reflects host's choice. |
+| `src/lib/api/rooms.ts` | `createRoom(input)` accepts optional `manualTribute?: boolean`; included in POST body only when true (keeps payload minimal for default-false). |
+| `src/screens/CreateRoom.tsx` | `RULE_AXES` gains 7th entry `manualTribute` (`label: 手动进贡`, `defaultOn: false`). `submit()` threads the toggled state through `createInput.manualTribute`. Comment notes only this axis is currently plumbed end-to-end. |
+| `tests/api/createRoom.test.ts` | +3 tests: persists `manualTribute=true`, defaults to `false` when omitted, rejects non-boolean. |
+
+**Stats**: **932/932 tests passing** (929 → 932). TS strict clean. `npm run build` clean (242kB JS / 41kB CSS · gzip 74kB + 8.5kB). grep-no-leak gate green.
+
+**Manual-tribute is now fully wired end-to-end**: host opts in via the toggle on CreateRoom → server persists onto session.rules → dealNextRound branches to manual path → tribute_pending event fires → TributeModal renders for obligated players → tribute_select / anti_tribute commands dispatch → tribute_resolved closes the modal and the trick begins.
+
+**Remaining substantive work after this session:**
+- **First Vercel production deploy** — `vercel --prod` against `panpanmao/guandan-online` + `gdo.ax0x.ai` domain config + `ADMIN_TOKEN` env var (required for `/api/cron/cleanup-rooms`; fail-closed 503 without). Needs AX authorization — destructive external operation.
+- **Bobgy WASM port** — Repo 1 in `ai-strategies.md`; 7-10 days independent work to bring back the Hard tier via deeper search depth.
+- **ROOM-2 milestone** — Wire the remaining 6 cosmetic rule axes in CreateRoom (aLevelStrict / wildcardHeart / lastCallDeclare / steelPlate / triPair / straightFlushAboveBomb5) through to `ModeRules` server-side. Pattern is the same as the manualTribute slice from this session; just more axes + more validation.
+- **GameTableMP** sweep tribute — deferred per game-rules.md § "Sweep tribute (6P/8P)".
 
 ### 2026-05-19 — Backlog A-D executed (LLM deletion + AUTH-2 teardown + UI 3→2 + doc sync)
 

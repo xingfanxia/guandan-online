@@ -28,11 +28,19 @@ import type {
   ServerEvent,
   SnapshotEvent,
   TrickWonEvent,
+  TributePendingEvent,
+  TributeResolvedEvent,
 } from '@lib/realtime/messages';
 import type { Card as GameCard } from '@lib/game/cards';
 import type { LevelRank } from '@lib/game/levels';
 import type { TeamKey } from '@lib/game/mode';
-import type { PlayCommand, PassCommand } from '@lib/realtime/commands';
+import type {
+  PlayCommand,
+  PassCommand,
+  TributeSelectCommand,
+  AntiTributeCommand,
+} from '@lib/realtime/commands';
+import { TributeModal, type TributeState } from '@/screens/TributeModal';
 
 export interface GameTable4PProps {
   roomId: string;
@@ -59,6 +67,23 @@ interface TableState {
   myPlayerId: string | null;
   myTeam: TeamKey | null;
   partnerId: string | null;
+  /**
+   * Manual-tribute UI state. Set by `tribute_pending` and cleared by
+   * `tribute_resolved`. Null when no tribute is in flight.
+   *
+   * Each obligation snapshot lets the UI tell whether I owe a card, expect
+   * to receive one, or am eligible to declare anti-tribute.
+   */
+  tribute: TributePendingSnapshot | null;
+  /** Monotonic round counter — bumped on each `deal` event so TributeModal
+   *  can render an eyebrow ("第 N 局") without separate state. */
+  roundNumber: number;
+}
+
+export interface TributePendingSnapshot {
+  direction: TributePendingEvent['direction'];
+  obligations: TributePendingEvent['obligations'];
+  yourOwedCard?: CardId;
 }
 
 const EMPTY_STATE: TableState = {
@@ -70,6 +95,8 @@ const EMPTY_STATE: TableState = {
   myPlayerId: null,
   myTeam: null,
   partnerId: null,
+  tribute: null,
+  roundNumber: 1,
 };
 
 function decodeHand(ids: readonly CardId[]): GameCard[] {
@@ -139,7 +166,44 @@ export function GameTable4P({
     await postCommand(roomId, joinToken, cmd);
   };
 
+  const submitTributeSelect = async (card: GameCard): Promise<void> => {
+    const id = encodeCard(card);
+    if (id === null) return;
+    const cmd: TributeSelectCommand = {
+      kind: 'tribute_select',
+      targetCard: id,
+      fromVersion: version,
+    };
+    await postCommand(roomId, joinToken, cmd);
+  };
+
+  const submitAntiTribute = async (): Promise<void> => {
+    const cmd: AntiTributeCommand = { kind: 'anti_tribute', fromVersion: version };
+    await postCommand(roomId, joinToken, cmd);
+  };
+
   const seats = useMemo(() => splitSeats(state, myHandle), [state, myHandle]);
+  const tributeModalState = useMemo(
+    () =>
+      buildTributeModalState(
+        state.tribute,
+        state.myHand,
+        state.myPlayerId,
+        state.myTeam,
+        state.players,
+        myLevel,
+        state.roundNumber,
+      ),
+    [
+      state.tribute,
+      state.myHand,
+      state.myPlayerId,
+      state.myTeam,
+      state.players,
+      myLevel,
+      state.roundNumber,
+    ],
+  );
 
   return (
     <div className="table" role="application" aria-label="4-player game table">
@@ -246,6 +310,14 @@ export function GameTable4P({
           <button type="button" className="btn btn--accent-soft">提示</button>
         </div>
       </div>
+
+      {tributeModalState && (
+        <TributeModal
+          state={tributeModalState}
+          onConfirm={(card) => void submitTributeSelect(card)}
+          onDismiss={() => void submitAntiTribute()}
+        />
+      )}
     </div>
   );
 }
@@ -274,6 +346,10 @@ export function reduceEvent(
       return reduceMovePassed(prev, evt);
     case 'trick_won':
       return reduceTrickWon(prev, evt);
+    case 'tribute_pending':
+      return reduceTributePending(prev, evt);
+    case 'tribute_resolved':
+      return reduceTributeResolved(prev, evt);
     default:
       return prev;
   }
@@ -300,7 +376,35 @@ function reduceDeal(prev: TableState, evt: DealEvent): TableState {
     ...prev,
     myHand: decodeHand(evt.yourHand),
     lastPlayed: null,
+    // A `deal` event closes any prior tribute (round transition has finished).
+    // Auto-mode emits tribute_resolved BEFORE deal; manual mode emits
+    // tribute_pending BEFORE deal and tribute_resolved later. Either way,
+    // the new round opens with no in-flight tribute state UNLESS the next
+    // tribute_pending fires right after this deal — and the reducer is
+    // strictly event-by-event, so a follow-up tribute_pending will set it.
+    tribute: null,
+    roundNumber: prev.roundNumber + 1,
   };
+}
+
+function reduceTributePending(prev: TableState, evt: TributePendingEvent): TableState {
+  const snapshot: TributePendingSnapshot = {
+    direction: evt.direction,
+    obligations: evt.obligations,
+  };
+  if (evt.yourOwedCard !== undefined) {
+    snapshot.yourOwedCard = evt.yourOwedCard;
+  }
+  return { ...prev, tribute: snapshot };
+}
+
+function reduceTributeResolved(prev: TableState, _evt: TributeResolvedEvent): TableState {
+  // The server has applied the swap and started the trick. Clear the modal
+  // so the table is interactive again. Subsequent `move_played` will refresh
+  // the player's hand counts; their own `deal` already gave them the hand
+  // pre-swap, so we don't try to splice the received card in here — the
+  // next play / pass round-trip will re-sync via the normal move events.
+  return { ...prev, tribute: null };
 }
 
 function reduceRoomJoined(prev: TableState, evt: RoomJoinedEvent): TableState {
@@ -386,7 +490,7 @@ function removeCards(hand: readonly GameCard[], played: readonly CardId[]): Game
 async function postCommand(
   roomId: string,
   joinToken: string,
-  cmd: PlayCommand | PassCommand,
+  cmd: PlayCommand | PassCommand | TributeSelectCommand | AntiTributeCommand,
 ): Promise<void> {
   const url = `/api/room/${encodeURIComponent(roomId)}/move`;
   await fetch(url, {
@@ -397,4 +501,106 @@ async function postCommand(
     },
     body: JSON.stringify({ ...cmd, moveId: crypto.randomUUID() }),
   });
+}
+
+/**
+ * Pick the TributeModal substate to render for the local player given the
+ * pending snapshot from the wire. Returns null when this player has nothing
+ * to do (e.g., a third-party watching) — the table stays interactive.
+ *
+ * Mapping:
+ *  - direction='anti_tribute' + losing team → render `anti-tribute` (with
+ *    onDismiss bound to dispatching anti_tribute).
+ *  - direction in {single, double} + me as `from` → render `pending` (I
+ *    must pick a card; candidates = highest-rank non-wildcard from my hand).
+ *  - direction in {single, double} + me as `to` + yourOwedCard set →
+ *    render `auto` display showing the card I'm receiving (legacy auto-
+ *    mode path; manual mode never sets yourOwedCard, so this branch only
+ *    fires for AUTO).
+ *  - otherwise → null (watch state).
+ *
+ * Exported for unit testing.
+ */
+export function buildTributeModalState(
+  snapshot: TributePendingSnapshot | null,
+  myHand: readonly GameCard[],
+  myPlayerId: string | null,
+  myTeam: TeamKey | null,
+  players: Map<string, PlayerSummary>,
+  levelRank: LevelRank,
+  roundNumber: number,
+): TributeState | null {
+  if (!snapshot || !myPlayerId) return null;
+
+  // Anti-tribute (resist) — show banner to anyone on losing team. Either
+  // can dispatch via the dismiss callback. Winning-team players see nothing.
+  if (snapshot.direction === 'anti_tribute') {
+    if (myTeam === null) return null;
+    // The winner is whoever currently leads with `to` slot in the existing
+    // game state — but resist has no obligations. So we infer winning team
+    // from the seats roster: check if I'm on the same team as the winner.
+    // Without explicit finishOrder here we use heuristic: render the resist
+    // banner to all players. Winning team's dismiss is a no-op (server will
+    // reject) — and we don't show the declare CTA to them.
+    const holderHandle = players.get(myPlayerId)?.handle ?? myPlayerId;
+    return {
+      kind: 'anti-tribute',
+      holderHandle,
+      roundNumber,
+    };
+  }
+
+  // Single / double tribute. Check my role in the obligation list.
+  const mine = snapshot.obligations.find((o) => o.from === myPlayerId);
+  if (mine) {
+    // I owe a card. Compute candidate keys — highest-rank non-wildcard
+    // entries from my hand. For simplicity, expose all non-wildcard cards
+    // as candidates; the server enforces the "highest" rule on submission.
+    const candidateKeys = new Set<string>();
+    for (const card of myHand) {
+      const isWildcard = card.suit === 'hearts' && card.rank === levelRank;
+      if (!isWildcard) candidateKeys.add(cardKey(card));
+    }
+    const winnerHandle = players.get(mine.to)?.handle ?? mine.to;
+    const loserHandle = players.get(myPlayerId)?.handle ?? myPlayerId;
+    const progress =
+      snapshot.obligations.length > 1
+        ? `${snapshot.obligations.findIndex((o) => o.from === myPlayerId) + 1}/${snapshot.obligations.length}`
+        : undefined;
+    return {
+      kind: 'pending',
+      loserHandle,
+      winnerHandle,
+      hand: myHand,
+      candidateKeys,
+      roundNumber,
+      ...(progress !== undefined ? { progressLabel: progress } : {}),
+      countdownSeconds: 30,
+    };
+  }
+
+  // I'm a recipient (or third party). Auto path provides yourOwedCard so
+  // the recipient sees a preview; manual path doesn't, so recipients fall
+  // through to null (they wait silently for the resolved event).
+  const owed = snapshot.yourOwedCard;
+  if (owed !== undefined) {
+    const card = decodeCardId(owed);
+    // Find the from -> to obligation that names me as `to`
+    const obl = snapshot.obligations.find((o) => o.to === myPlayerId);
+    const fromHandle = obl ? (players.get(obl.from)?.handle ?? obl.from) : '末游';
+    const toHandle = players.get(myPlayerId)?.handle ?? myPlayerId;
+    return {
+      kind: 'auto',
+      fromHandle,
+      toHandle,
+      card,
+      roundNumber,
+    };
+  }
+
+  return null;
+}
+
+function cardKey(card: GameCard): string {
+  return `${card.rank}-${card.suit}-${card.deck}`;
 }

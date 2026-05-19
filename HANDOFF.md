@@ -1,4 +1,4 @@
-# Handoff — guandan-online v1.0 (backend + all UI + Easy/Medium AI + bot-fill + auto-tribute + manual tribute + Vercel linked; LLM line deleted)
+# Handoff — guandan-online v1.0 (backend + all UI + Easy/Medium AI + bot-fill + auto-tribute + manual tribute end-to-end backend + Vercel linked; LLM line deleted)
 
 **Date**: 2026-05-19
 **Status**: backend feature-complete + **all UI tracks shipped (UI-1/2/3/4/5/6)** + bot dispatch wired in the move handler + **Easy + Medium AI tiers (LLM Hard tier deleted 2026-05-19)** + host-controlled bot fill at game-start + TRIBUTE-1 part D auto-tribute realtime wiring + TRIBUTE-1 part E manual tribute commands + Vercel project linked. 9 HTTP/SSE routes plus the complete React 19 game surface — lobby flow (Landing / CreateRoom / Waiting), GameTable4P + shared GameTableMP for 6P/8P, TributeModal (4 substates), RoundEnd / ALevelFinal / Victory, and two AI tiers (Easy rule-based + 30% noise, Medium rule-based + partner cooperation). The session lifecycle is fully event-driven end-to-end: `room_joined` / `room_left` from lobby, `deal` from game-start, `move_played` / `move_passed` / `trick_won` / `round_end` / `game_end` / `tribute_pending` / `tribute_resolved` / next-round `deal` from gameplay — all flowing through the single publishEvent gateway with per-recipient log keys and a contiguous version namespace across the lobby → game boundary so a single SSE `Last-Event-ID` resumes cleanly across phase transitions. After a human's move applies, an in-handler synchronous bot run-loop (`lib/ai/runBots.ts`) computes + publishes bot turns until landing on a human or round-end. `lib/realtime/handleMove.ts` dispatches `tribute_select` + `anti_tribute` commands through `lib/game/tributeFlow.ts` pure transitions; auto-mode at round-start is unchanged (`pendingTribute` setting is a future phase). Tests **917/917** · TS strict clean · `npm run build` green (41 modules → 233kB JS / 41kB CSS gzip) · grep-no-leak gate green. Vercel project `panpanmao/guandan-online` linked (separate from sibling scorer `guandan-calc`); Upstash Redis provisioned via Marketplace integration as an **independent instance** (no shared key space with sibling). The end-to-end integration test (`tests/integration/full-game-flow.test.ts`) walks create → join × 3 → start → SSE → play → pass. Remaining substantive work: manual-tribute round-start wiring (dispatcher accepts commands; `dealNextRound` still runs auto swap), first Vercel production deploy + `gdo.ax0x.ai` domain config, Bobgy WASM port to bring Hard tier back via deeper search depth (separate 7-10 day ticket). AUTH-2 sibling KV migration is **cancelled** (per-app independent Upstash; no shared key space).
@@ -137,6 +137,43 @@
 **Stats**: **970/970 tests passing** (up from 922; +48 new tests). TS strict clean. `npm run build` green (41 modules → 233kB JS / 41kB CSS · gzip 72kB + 8.5kB). grep-no-leak gate green. 3 commits pushed to `origin/main` (range `133ed0f..df6ba3f`).
 
 **Vercel project linked** (separate event, same session): Created `panpanmao/guandan-online` (projectId `prj_Y3gwNGDixTDz5KBfkjJjsYWcwrlv`, GitHub repo auto-connected). Decision: keep stale `guandan-online-codex` project (from a prior agent session) alive rather than deleting. Upstash Redis provisioned via Marketplace integration → exposes `KV_REST_API_*` env vars (handled by the env-aliasing in commit `99dd52e`). Production deploy + `gdo.ax0x.ai` domain config still pending.
+
+### 2026-05-19 — Manual-tribute round-start wiring (commit `15d2ec2`)
+
+Closes the manual-tribute backend gap: until this commit the dispatcher accepted `tribute_select` / `anti_tribute` commands but `dealNextRound` always ran the auto swap. Now opting into `manualTribute` via `ModeRules` causes the new round to surface with `pendingTribute` set and the trick deferred until players resolve via the wire commands.
+
+| File | Change |
+|---|---|
+| `lib/game/mode.ts` | `ModeRules.manualTribute: boolean` (default `false`). `DEFAULT_MODE_RULES.manualTribute = false`. |
+| `lib/game/nextRound.ts` | Manual branch: when `session.rules.manualTribute && mode==='4' && tributeMode.kind !== 'none'`, skip `applyTribute`, build `pendingTribute` from the detected mode, skip `startTrick`. AUTO path unchanged. Result gains `pendingManualTribute: boolean` so callers can choose event sequences. |
+| `lib/game/tributeFlow.ts` | `selectTributeCard` / `declareAntiTribute` now return `TributeFlowResult` (`{ round, exchanges }`) instead of just `GameRound`. `exchanges` is `null` for intermediate selects, `[]` for resist finalization, populated for single/double finalization. |
+| `lib/realtime/handleMove.ts` | `HandleMoveResult` gains optional `tributeExchanges` + `tributeMode` populated only on finalization; threaded up from `tributeFlow`. |
+| `lib/api/move.ts` | When `dispatch.tributeExchanges` is set, emit a `tribute_resolved` event at `response.appliedVersion` carrying the flattened tribute+return card movements (resist emits empty `exchanged`). |
+| `lib/ai/runBots.ts` | Exit early when `round.pendingTribute !== undefined`. Previously the loop auto-called `startTrick` when `currentTrick` was null, which would prematurely start play before the tribute resolves. The manual flow helpers handle `startTrick` themselves after finalization. |
+| Tests | nextRound (+2 manual-branch tests), tributeFlow (existing 4 updated to unpack `.round`), handleMove (+2 assertions on finalization fields), api/move (+1 end-to-end manual flow test). |
+
+**Stats**: **920/920 tests passing** (917 → 920). TS strict clean. `npm run build` clean (233kB JS / 41kB CSS · gzip 72kB + 8.5kB). grep-no-leak gate green.
+
+**What's still outstanding for manual tribute to be reachable end-to-end from a browser:**
+- ~~UI hookup~~ ✅ Shipped in follow-up commit (see next section).
+- Room rule UI: `src/screens/CreateRoom.tsx` rules grid currently has 6 axes; would need to add a "手动进贡" toggle that translates to `manualTribute: true` in the room rules payload sent to `POST /api/room/create`. (Server-side accepts the rule via the existing `ModeRules` plumbing; just no UI surface for opting in yet.)
+
+### 2026-05-19 — Manual-tribute UI hookup (GameTable4P reducer + TributeModal wiring)
+
+GameTable4P reducer now handles `tribute_pending` / `tribute_resolved` and renders the existing `TributeModal` component when the local player has a role in the tribute (obligated to pick, or losing-team resist).
+
+| File | Change |
+|---|---|
+| `src/screens/GameTable4P.tsx` | `TableState` gains `tribute: TributePendingSnapshot \| null` + `roundNumber: number`. Reducer adds `reduceTributePending` (stores snapshot) and `reduceTributeResolved` (clears snapshot). `reduceDeal` also clears the snapshot + bumps `roundNumber`. New `submitTributeSelect(card)` + `submitAntiTribute()` POST handlers fire `tribute_select` / `anti_tribute` commands via the existing `/api/room/[code]/move` endpoint. New `buildTributeModalState(...)` helper maps the snapshot + local player context to the appropriate `TributeState` substate (`pending` when I owe, `auto` display when I'm receiver with `yourOwedCard` set, `anti-tribute` banner on resist, `null` for third parties). Modal renders conditionally when state is non-null. |
+| `tests/screens/GameTable4P.test.tsx` | EMPTY fixture updated for new fields. +4 reducer tests covering tribute_pending storage, yourOwedCard preservation, tribute_resolved clear, and deal-time clear with roundNumber bump. +5 buildTributeModalState tests covering null, pending (with wildcard exemption), auto display, manual receiver waits silently, resist banner. |
+
+**Stats**: **929/929 tests passing** (920 → 929). TS strict clean. `npm run build` clean (242kB JS / 41kB CSS · gzip 73kB + 8.5kB — modest bump from importing TributeModal into the table screen). grep-no-leak gate green.
+
+**Manual smoke not yet done** — the reducer / dispatch path is unit-tested but iPhone 14 Pro landscape capture under chrome-devtools-mcp hasn't been run for this commit. The TributeModal component itself was visually validated at 2026-05-18 UI-4 ship; the wire-up adds no new visual surface.
+
+**Still outstanding:**
+- **Room rule UI** — CreateRoom toggle for `manualTribute`. ~30 min work; cosmetic addition to the existing 6-axis rules grid.
+- **GameTableMP** (6P/8P) — doesn't yet handle tribute events. Currently a no-op because `dealNextRound` only runs tribute for `mode==='4'`. When 6P/8P sweep tribute lands (`docs/research/game-rules.md` § "Sweep tribute"), the same reducer pattern would need to be ported.
 
 ### 2026-05-19 — Backlog A-D executed (LLM deletion + AUTH-2 teardown + UI 3→2 + doc sync)
 

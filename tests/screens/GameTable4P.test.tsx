@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
-import { reduceEvent, splitSeats } from '@/screens/GameTable4P';
+import { reduceEvent, splitSeats, buildTributeModalState } from '@/screens/GameTable4P';
 import type {
   DealEvent,
   MovePlayedEvent,
@@ -10,6 +10,8 @@ import type {
   RoomLeftEvent,
   SnapshotEvent,
   TrickWonEvent,
+  TributePendingEvent,
+  TributeResolvedEvent,
 } from '@lib/realtime/messages';
 import type { Card as GameCard } from '@lib/game/cards';
 
@@ -22,6 +24,8 @@ const EMPTY = {
   myPlayerId: null,
   myTeam: null,
   partnerId: null,
+  tribute: null,
+  roundNumber: 1,
 } as const;
 
 const snapshot: SnapshotEvent = {
@@ -175,6 +179,174 @@ describe('reduceEvent — room_joined / room_left', () => {
     };
     const next = reduceEvent(base, left, '@me');
     expect(next.players.has('p_left')).toBe(false);
+  });
+});
+
+describe('reduceEvent — tribute_pending / tribute_resolved', () => {
+  it('stores the tribute snapshot on tribute_pending', () => {
+    const base = reduceEvent({ ...EMPTY }, snapshot, '@me');
+    const pend: TributePendingEvent = {
+      type: 'tribute_pending',
+      version: 2,
+      direction: 'single',
+      obligations: [{ from: 'p_left', to: 'p_partner', constraint: 'highest_non_heart' }],
+    };
+    const next = reduceEvent(base, pend, '@me');
+    expect(next.tribute).toBeDefined();
+    expect(next.tribute!.direction).toBe('single');
+    expect(next.tribute!.obligations).toHaveLength(1);
+  });
+
+  it('preserves yourOwedCard when present', () => {
+    const base = reduceEvent({ ...EMPTY }, snapshot, '@me');
+    const pend: TributePendingEvent = {
+      type: 'tribute_pending',
+      version: 2,
+      direction: 'single',
+      obligations: [{ from: 'p_left', to: 'p_me', constraint: 'highest_non_heart' }],
+      yourOwedCard: 'K-S-1',
+    };
+    const next = reduceEvent(base, pend, '@me');
+    expect(next.tribute!.yourOwedCard).toBe('K-S-1');
+  });
+
+  it('clears the tribute snapshot on tribute_resolved', () => {
+    let s = reduceEvent({ ...EMPTY }, snapshot, '@me');
+    const pend: TributePendingEvent = {
+      type: 'tribute_pending',
+      version: 2,
+      direction: 'double',
+      obligations: [
+        { from: 'p_left', to: 'p_me', constraint: 'highest_non_heart' },
+        { from: 'p_right', to: 'p_partner', constraint: 'highest_non_heart' },
+      ],
+    };
+    s = reduceEvent(s, pend, '@me');
+    expect(s.tribute).not.toBeNull();
+    const resolved: TributeResolvedEvent = {
+      type: 'tribute_resolved',
+      version: 3,
+      exchanged: [
+        { from: 'p_left', to: 'p_me', card: 'A-S-1' },
+        { from: 'p_me', to: 'p_left', card: '5-D-1' },
+      ],
+    };
+    const next = reduceEvent(s, resolved, '@me');
+    expect(next.tribute).toBeNull();
+  });
+
+  it('clears the tribute snapshot on deal (new round opens fresh)', () => {
+    let s = reduceEvent({ ...EMPTY }, snapshot, '@me');
+    const pend: TributePendingEvent = {
+      type: 'tribute_pending',
+      version: 2,
+      direction: 'single',
+      obligations: [{ from: 'p_left', to: 'p_partner', constraint: 'highest_non_heart' }],
+    };
+    s = reduceEvent(s, pend, '@me');
+    const deal: DealEvent = {
+      type: 'deal',
+      version: 3,
+      yourHand: ['A-H-1'],
+      publicHandCounts: { p_me: 1, p_partner: 0, p_left: 0, p_right: 0 },
+      roundOwner: 't1',
+    };
+    const next = reduceEvent(s, deal, '@me');
+    expect(next.tribute).toBeNull();
+    expect(next.roundNumber).toBe(EMPTY.roundNumber + 1);
+  });
+});
+
+describe('buildTributeModalState', () => {
+  const players = new Map<string, PlayerSummary>([
+    ['p_me', { id: 'p_me', handle: '@me', team: 't1', handCount: 27, status: 'connected', rank: null }],
+    ['p_partner', { id: 'p_partner', handle: '@quan', team: 't1', handCount: 27, status: 'connected', rank: null }],
+    ['p_left', { id: 'p_left', handle: '@fan', team: 't2', handCount: 27, status: 'connected', rank: null }],
+    ['p_right', { id: 'p_right', handle: '@guo', team: 't2', handCount: 27, status: 'connected', rank: null }],
+  ]);
+  const myHand: GameCard[] = [
+    { suit: 'spades', rank: 'A', deck: 1 },
+    { suit: 'clubs', rank: '5', deck: 1 },
+    { suit: 'hearts', rank: '2', deck: 1 }, // wildcard when level=2
+  ];
+
+  it('returns null when no snapshot', () => {
+    const result = buildTributeModalState(null, myHand, 'p_me', 't1', players, '2', 1);
+    expect(result).toBeNull();
+  });
+
+  it('renders pending mode when I am a `from` in single tribute', () => {
+    const result = buildTributeModalState(
+      {
+        direction: 'single',
+        obligations: [{ from: 'p_me', to: 'p_left', constraint: 'highest_non_heart' }],
+      },
+      myHand,
+      'p_me',
+      't1',
+      players,
+      '2',
+      3,
+    );
+    expect(result?.kind).toBe('pending');
+    if (result?.kind === 'pending') {
+      expect(result.candidateKeys.size).toBe(2); // wildcard excluded
+      expect(result.candidateKeys.has('A-spades-1')).toBe(true);
+      expect(result.candidateKeys.has('5-clubs-1')).toBe(true);
+      expect(result.candidateKeys.has('2-hearts-1')).toBe(false);
+      expect(result.roundNumber).toBe(3);
+    }
+  });
+
+  it('renders auto display when I am `to` and yourOwedCard is set', () => {
+    const result = buildTributeModalState(
+      {
+        direction: 'single',
+        obligations: [{ from: 'p_left', to: 'p_me', constraint: 'highest_non_heart' }],
+        yourOwedCard: 'K-S-1',
+      },
+      myHand,
+      'p_me',
+      't1',
+      players,
+      '2',
+      3,
+    );
+    expect(result?.kind).toBe('auto');
+    if (result?.kind === 'auto') {
+      expect(result.card).toEqual({ suit: 'spades', rank: 'K', deck: 1 });
+      expect(result.fromHandle).toBe('@fan');
+      expect(result.toHandle).toBe('@me');
+    }
+  });
+
+  it('returns null when manual `to` (no yourOwedCard) — recipient waits silently', () => {
+    const result = buildTributeModalState(
+      {
+        direction: 'single',
+        obligations: [{ from: 'p_left', to: 'p_me', constraint: 'highest_non_heart' }],
+      },
+      myHand,
+      'p_me',
+      't1',
+      players,
+      '2',
+      3,
+    );
+    expect(result).toBeNull();
+  });
+
+  it('renders anti-tribute banner on resist', () => {
+    const result = buildTributeModalState(
+      { direction: 'anti_tribute', obligations: [] },
+      myHand,
+      'p_me',
+      't1',
+      players,
+      '2',
+      3,
+    );
+    expect(result?.kind).toBe('anti-tribute');
   });
 });
 

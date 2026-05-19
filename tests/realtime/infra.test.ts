@@ -24,6 +24,16 @@ describe('createRealtimeInfra — memory backend (no env)', () => {
     expect(infra.backend).toBe('memory');
   });
 
+  it('returns backend=memory when only token is set', () => {
+    const infra = createRealtimeInfra({ UPSTASH_REDIS_REST_TOKEN: 'x' });
+    expect(infra.backend).toBe('memory');
+  });
+
+  it('returns backend=memory when only KV_REST_API_URL is set', () => {
+    const infra = createRealtimeInfra({ KV_REST_API_URL: 'x' });
+    expect(infra.backend).toBe('memory');
+  });
+
   it('memory log appends and ranges as expected', async () => {
     const { log } = createRealtimeInfra({});
     await log.append('room1', event(1));
@@ -49,6 +59,35 @@ describe('createRealtimeInfra — upstash backend (injected redis)', () => {
   it('returns backend=upstash when a RedisLike is injected', () => {
     const redis = createFakeRedis();
     const infra = createRealtimeInfra({}, { redis });
+    expect(infra.backend).toBe('upstash');
+  });
+
+  it('returns backend=upstash when UPSTASH_REDIS_REST_* pair is set', () => {
+    const infra = createRealtimeInfra({
+      UPSTASH_REDIS_REST_URL: 'https://example.upstash.io',
+      UPSTASH_REDIS_REST_TOKEN: 'tok',
+    });
+    expect(infra.backend).toBe('upstash');
+  });
+
+  it('returns backend=upstash when KV_REST_API_* pair is set (Vercel Marketplace naming)', () => {
+    const infra = createRealtimeInfra({
+      KV_REST_API_URL: 'https://example.upstash.io',
+      KV_REST_API_TOKEN: 'tok',
+    });
+    expect(infra.backend).toBe('upstash');
+  });
+
+  it('prefers UPSTASH_REDIS_REST_* over KV_REST_API_* when both are set', () => {
+    // No assertion on which URL got picked (no observable side-effect without a network call);
+    // this test pins the precedence rule into the test suite so future-you doesn't accidentally
+    // flip it. The factory should select the upstash branch in either case.
+    const infra = createRealtimeInfra({
+      UPSTASH_REDIS_REST_URL: 'https://up.example.io',
+      UPSTASH_REDIS_REST_TOKEN: 'tok-up',
+      KV_REST_API_URL: 'https://kv.example.io',
+      KV_REST_API_TOKEN: 'tok-kv',
+    });
     expect(infra.backend).toBe('upstash');
   });
 

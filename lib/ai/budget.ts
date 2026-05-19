@@ -1,13 +1,15 @@
 // Hard-tier LLM budget guardrail.
 //
-// Tracks monthly spend (USD) in an injectable counter (memory by default,
-// Upstash-backed in production via `createUpstashBudget()` — added with the
-// AI-2 deploy). When spend > softLimit, the public API returns false from
-// `canAffordHardMove()`, causing the bot dispatch to silently degrade Hard
-// → Medium until the month rolls over.
+// Tracks monthly spend (USD) in an injectable counter (memory in dev/tests,
+// Upstash-backed in production via `createUpstashBudget()`). When spend
+// crosses softLimit, the public API returns false from `canAffordHardMove()`,
+// causing the bot dispatch to silently degrade Hard → Medium until the month
+// rolls over.
 //
 // No PII in this module — counters are global per-server, not per-user.
-// Stored under a single key `ai:budget:<YYYY-MM>` for easy operator audit.
+// Stored under a single key `ai:budget:<YYYY-MM>` (UTC) for easy operator audit.
+
+import type { RedisLike } from '../realtime/redisClient';
 
 export interface BudgetClient {
   /** Returns the current YYYY-MM-keyed spend in USD. */
@@ -71,6 +73,52 @@ export function createMemoryBudgetClient(initial: number = 0): BudgetClient {
     currentSpend: async () => spend,
     recordCost: async (cost) => {
       spend += cost;
+    },
+  };
+}
+
+/**
+ * Compute the `ai:budget:YYYY-MM` key for a given date, in UTC so buckets are
+ * consistent across server regions. Exported for tests and for operator
+ * inspection / manual reset scripts.
+ */
+export function budgetKeyForMonth(date: Date): string {
+  const yyyy = date.getUTCFullYear();
+  const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
+  return `ai:budget:${yyyy}-${mm}`;
+}
+
+/**
+ * Upstash-backed budget client. Reads + writes the monthly USD bucket via the
+ * provided `RedisLike` — anything structurally compatible with @upstash/redis.
+ *
+ * Concurrency note: `recordCost` is a read-modify-write. Concurrent recordCost
+ * calls in the same instant can lose a few cents of tracking. This is
+ * intentional — the soft/hard limits are guardrails, not strict ledgers. If
+ * Upstash exposes an atomic INCRBYFLOAT in the future and we need exactness,
+ * the swap is local to this function.
+ *
+ * @param redis  Upstash client or test fake conforming to RedisLike.
+ * @param now    Time source for the month bucket. Injectable for tests; defaults
+ *               to `Date.now`. Required to be a function so that long-lived
+ *               function instances continue rolling buckets at month boundaries.
+ */
+export function createUpstashBudget(
+  redis: RedisLike,
+  now: () => Date = () => new Date(),
+): BudgetClient {
+  const readSpend = async (): Promise<number> => {
+    const raw = await redis.get<number | string>(budgetKeyForMonth(now()));
+    if (raw === null || raw === undefined) return 0;
+    const n = typeof raw === 'number' ? raw : parseFloat(raw);
+    return Number.isFinite(n) ? n : 0;
+  };
+  return {
+    currentSpend: readSpend,
+    recordCost: async (cost) => {
+      const current = await readSpend();
+      const next = current + cost;
+      await redis.set(budgetKeyForMonth(now()), String(next));
     },
   };
 }

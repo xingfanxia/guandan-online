@@ -37,15 +37,29 @@ export interface RealtimeInfra {
   sessionStore: SessionStore;
   /** Which backing implementation was selected — for logging / health checks. */
   backend: 'memory' | 'upstash';
+  /**
+   * Underlying Redis when `backend === 'upstash'`, otherwise null. Exposed so
+   * route handlers can construct adjacent Upstash-backed clients (e.g., the
+   * AI budget) without having to re-read env vars.
+   */
+  redis: RedisLike | null;
 }
 
 /**
  * Subset of env we care about. Pass `process.env` from a route handler; tests
  * pass a plain object so they don't have to mutate global state.
+ *
+ * Both naming pairs are supported:
+ *   - `UPSTASH_REDIS_REST_{URL,TOKEN}` — the names @upstash/redis docs use
+ *   - `KV_REST_API_{URL,TOKEN}` — what Vercel's Upstash Marketplace integration
+ *     auto-provisions (and what the `vercel env pull` output contains)
+ * When both pairs are present, the UPSTASH-prefixed pair wins.
  */
 export interface RealtimeEnv {
   UPSTASH_REDIS_REST_URL?: string;
   UPSTASH_REDIS_REST_TOKEN?: string;
+  KV_REST_API_URL?: string;
+  KV_REST_API_TOKEN?: string;
 }
 
 export interface RealtimeInfraOptions {
@@ -64,8 +78,8 @@ export function createRealtimeInfra(
   if (options.redis) {
     return wireUpstash(options.redis);
   }
-  const url = env.UPSTASH_REDIS_REST_URL;
-  const token = env.UPSTASH_REDIS_REST_TOKEN;
+  const url = env.UPSTASH_REDIS_REST_URL ?? env.KV_REST_API_URL;
+  const token = env.UPSTASH_REDIS_REST_TOKEN ?? env.KV_REST_API_TOKEN;
   if (url && token) {
     const redis = new Redis({ url, token }) as unknown as RedisLike;
     return wireUpstash(redis);
@@ -78,6 +92,7 @@ export function createRealtimeInfra(
     roundStore: createMemoryRoundStore(),
     sessionStore: createMemorySessionStore(),
     backend: 'memory',
+    redis: null,
   };
 }
 
@@ -90,5 +105,6 @@ function wireUpstash(redis: RedisLike): RealtimeInfra {
     roundStore: createRoundStore(redis),
     sessionStore: createSessionStore(redis),
     backend: 'upstash',
+    redis,
   };
 }

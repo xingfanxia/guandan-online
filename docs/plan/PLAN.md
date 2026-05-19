@@ -46,7 +46,7 @@ Ship a real online multiplayer Guandan game with the following capabilities at v
 
 ```
 P0 (week 1-2)  Foundation
-  CORE-1 · CORE-2 · AUTH-1 · AUTH-2 · NET-1 · NET-2 · NET-3
+  CORE-1 · CORE-2 · AUTH-1 · ~~AUTH-2~~ (cancelled 2026-05-19) · NET-1 · NET-2 · NET-3
   Acceptance: Two browsers in dev can exchange SSE messages via Redis; rules engine passes 100% of unit tests.
 
 P1 (week 3-4)  Vertical slice
@@ -81,8 +81,8 @@ Polish (v1.1+)
                   ┌── CORE-1 ──┬── CORE-2 ──┬── CORE-3 ──┬── CORE-4 ──┐
                   │            │            │            │            │
                   │            │            │            └────────────┤
-P0 │ AUTH-1 ──┬── AUTH-2                                              │
-   │          │                                                       │
+P0 │ AUTH-1   (AUTH-2 cancelled 2026-05-19 — per-app independent Upstash) │
+   │                                                                  │
    │ NET-1 ──┴── NET-2 ──── NET-3                                     │
    │          │                                                       │
    │          ├───────────────── (all P1+ depend on NET-1 NET-3)      │
@@ -100,7 +100,7 @@ P4 │                                            UI-6 ── AI-2          │
 P5 │           SEC-1 ── SEC-2 ── SEC-3 ── SEC-4 ── DEPLOY-1 ── DEPLOY-2
 ```
 
-CORE-1 blocks everything. NET-1 / NET-3 block everything that exchanges state with client. AUTH-2 (scorer migration) is the only cross-project work and should land first since it touches the sibling repo.
+CORE-1 blocks everything. NET-1 / NET-3 block everything that exchanges state with client. ~~AUTH-2 (scorer migration) is the only cross-project work and should land first since it touches the sibling repo.~~ AUTH-2 cancelled 2026-05-19 — guandan-online runs on its own Upstash instance, no shared key space with sibling scorer.
 
 ---
 
@@ -187,40 +187,11 @@ Goal: ship the rules engine, transport layer, auth bridge, and hidden-state filt
 - Do NOT modify the function logic — copy verbatim
 - If scorer's signature changes, update here in sync (track via a `// SYNC: ../guandan-scorer/api/players/_utils.js:259-277` comment)
 
-### AUTH-2 · Migrate scorer's player keys to gs: prefix
+### ~~AUTH-2 · Migrate scorer's player keys to gs: prefix~~ — **CANCELLED 2026-05-19**
 
-**Goal**: Cross-project work in sibling `guandan-scorer` — rename bare `player:{handle}` keys to `gs:player:{handle}` so this new project can use `go:player:{handle}` cleanly in the shared Upstash namespace.
+**Status**: CANCELLED. The Vercel Marketplace integration auto-provisioned an independent Upstash for guandan-online (separate from sibling scorer's Redis). The two projects no longer share a key space, so the rename from bare `player:{handle}` → `gs:player:{handle}` is moot — there's no shared namespace to keep clean. Sibling scorer's keys stay as-is.
 
-**Depends on**: none.
-
-**Deliverables**:
-- Sibling scorer changes (~15 file/line updates):
-  - `api/players/[handle].js` — read/write `gs:player:` prefix
-  - `api/players/list.js` line 43 — `kv.keys('gs:player:*')`
-  - `api/players/create.js` — write to `gs:player:`
-  - `api/players/_utils.js` — update key construction helpers
-  - 11 other API files referencing `player:*` keys
-- Sibling scorer one-time migration script:
-  - `scripts/migrate-player-prefix.mjs` — copies all `player:*` to `gs:player:*` (idempotent — checks if target exists)
-  - Run during low-traffic window with read-fallback during rollout
-- Sibling scorer fallback-read pattern in `api/players/[handle].js`:
-  ```ts
-  let profile = await kv.get(`gs:player:${handle}`);
-  if (!profile) profile = await kv.get(`player:${handle}`); // backwards fallback
-  ```
-- Sibling scorer changelog entry + memory note (`gs:` prefix is the canonical namespace)
-
-**Acceptance**:
-- Migration script runs cleanly on scorer's production KV
-- Sibling scorer continues to work for existing users (fallback-read covers them)
-- Reading `kv.keys('gs:player:*')` returns same count as old `kv.keys('player:*')` after migration
-
-**Files to touch**: cross-project — `~/projects/side-projects/guandan-scorer/api/players/*` (15 files), `~/projects/side-projects/guandan-scorer/scripts/migrate-player-prefix.mjs` (new)
-**Effort**: 1-2 days (cross-project, requires deploy + monitoring)
-**Notes**:
-- This is the only milestone that touches the SIBLING repo. Do this FIRST so guandan-online never has to deal with the bare `player:` namespace.
-- Coordinate with scorer's production deploy schedule
-- Verify ADMIN_TOKEN-gated admin endpoints still work after key rename
+Rationale: hobby-scale project doesn't need cross-app identity continuity; independent Redis means gdo failures don't cascade to scorer. See `docs/research/SUMMARY.md` decision #16 and `docs/research/cross-project-integration.md` (marked SUPERSEDED) for the full reasoning.
 
 ### NET-1 · SSE+POST + Upstash Redis transport scaffold
 
@@ -1020,3 +991,4 @@ Launch-ready:
 | Date | Change |
 |---|---|
 | 2026-05-16 | Initial plan drafted from 13 research streams |
+| 2026-05-19 | AUTH-2 cancelled (per-app independent Upstash; no shared key space); AI-2 LLM Hard tier deleted (latency structural, not tuneable — Hard returns post-WASM via deeper Bobgy search depth). See `docs/research/SUMMARY.md` decisions #15 + #16. |

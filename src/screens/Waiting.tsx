@@ -353,14 +353,12 @@ function avatarInitials(handle: string): string {
   return body.slice(0, 2).toUpperCase();
 }
 
-const BOT_BADGE: Record<'easy' | 'medium' | 'hard', string> = {
+const BOT_BADGE: Record<'easy' | 'medium', string> = {
   easy: '🌱',
   medium: '⚡',
-  hard: '🦊',
 };
 
-const BOT_TIER_LABEL: Record<'easy' | 'medium' | 'hard', string> = {
+const BOT_TIER_LABEL: Record<'easy' | 'medium', string> = {
   easy: '入门',
   medium: '进阶',
-  hard: '高手',
 };

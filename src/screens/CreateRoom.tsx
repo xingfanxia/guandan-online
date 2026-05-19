@@ -40,14 +40,13 @@ const RULE_AXES: readonly RuleAxis[] = [
   { id: 'straightFlushAboveBomb5', label: '同花顺 > 5 炸', defaultOn: true },
 ];
 
-type AiTier = 'easy' | 'medium' | 'hard' | 'human';
+type AiTier = 'easy' | 'medium' | 'human';
 const AI_TIER_LABELS: Record<AiTier, string> = {
   human: '等真人',
   easy: 'AI 入门',
   medium: 'AI 进阶',
-  hard: 'AI 高手',
 };
-const AI_TIERS: readonly AiTier[] = ['human', 'easy', 'medium', 'hard'];
+const AI_TIERS: readonly AiTier[] = ['human', 'easy', 'medium'];
 
 export interface CreateRoomProps {
   /** Override identity handle — tests pass deterministic values. */

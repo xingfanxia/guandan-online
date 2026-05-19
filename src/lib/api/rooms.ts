@@ -12,7 +12,7 @@
 export type GameMode = '4' | '6' | '8';
 export type RoomPhase = 'lobby' | 'in_game';
 export type PlayerStatus = 'connected' | 'disconnected' | 'bot';
-export type BotDifficulty = 'easy' | 'medium' | 'hard';
+export type BotDifficulty = 'easy' | 'medium';
 
 export interface PublicMember {
   readonly id: string;

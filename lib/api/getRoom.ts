@@ -18,7 +18,7 @@ export interface PublicMember {
   handle: string;
   joinedAt: number;
   status: string;
-  difficulty?: 'easy' | 'medium' | 'hard';
+  difficulty?: 'easy' | 'medium';
 }
 
 export interface PublicRoomState {

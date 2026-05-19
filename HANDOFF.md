@@ -1,7 +1,7 @@
-# Handoff — guandan-online v1.0 (backend + all UI + bot-fill + auto-tribute + Hard async + AI Gateway prod + manual tribute + Vercel linked)
+# Handoff — guandan-online v1.0 (backend + all UI + Easy/Medium AI + bot-fill + auto-tribute + manual tribute + Vercel linked; LLM line deleted)
 
-**Date**: 2026-05-18
-**Status**: backend feature-complete + **all UI tracks shipped (UI-1/2/3/4/5/6)** + bot dispatch wired in the move handler + full AI tier ladder + **host-controlled bot fill at game-start** + **TRIBUTE-1 part D auto-tribute realtime wiring** + **Hard tier async via runBotsAsync** + **production Vercel AI Gateway wiring (`generateText('deepseek/deepseek-chat')`) + `createUpstashBudget()` Upstash-backed budget + TRIBUTE-1 part E manual tribute commands + Vercel project linked**. 9 HTTP/SSE routes plus the complete React 19 game surface — lobby flow (Landing / CreateRoom / Waiting), GameTable4P + shared GameTableMP for 6P/8P, TributeModal (4 substates), RoundEnd / ALevelFinal / Victory, and three AI tiers (Easy + Medium with partner cooperation + Hard via Vercel AI Gateway with 5 silent-fallback triggers). The session lifecycle is fully event-driven end-to-end: `room_joined` / `room_left` from lobby, `deal` from game-start, `move_played` / `move_passed` / `trick_won` / `round_end` / `game_end` / `tribute_pending` / `tribute_resolved` / next-round `deal` from gameplay — all flowing through the single publishEvent gateway with per-recipient log keys and a contiguous version namespace across the lobby → game boundary so a single SSE `Last-Event-ID` resumes cleanly across phase transitions. After a human's move applies, an in-handler **async** bot run-loop (`lib/ai/runBots.ts` → `runBotsAsync`) computes + publishes bot turns until landing on a human or round-end; Hard tier awaits chooseHardMove with the injected `generate` fn from `lib/ai/gateway.ts createGatewayGenerate()` (Vercel AI Gateway-routed when `AI_GATEWAY_API_KEY` env is set, else silent Medium fallback). `lib/realtime/handleMove.ts` now dispatches `tribute_select` + `anti_tribute` commands through new `lib/game/tributeFlow.ts` pure transitions; auto-mode at round-start is unchanged (`pendingTribute` setting is a future phase). Tests **970/970** · TS strict clean · `npm run build` green (41 modules → 233kB JS / 41kB CSS gzip) · grep-no-leak gate green · `main` at `df6ba3f` synced to `origin/main`. Vercel project `panpanmao/guandan-online` linked this session (separate from sibling scorer `guandan-calc`); Upstash Redis provisioned via Marketplace integration. The end-to-end integration test (`tests/integration/full-game-flow.test.ts`) walks create → join × 3 (with lifecycle events published) → start → SSE-subscribe → play → pass and asserts the full event sequence including lifecycle backlog. Remaining substantive work: AUTH-2 (Critical Decision — sibling KV migration), manual-tribute round-start wiring (dispatcher accepts commands; `dealNextRound` still runs auto swap), first Vercel production deploy + `gdo.ax0x.ai` domain config.
+**Date**: 2026-05-19
+**Status**: backend feature-complete + **all UI tracks shipped (UI-1/2/3/4/5/6)** + bot dispatch wired in the move handler + **Easy + Medium AI tiers (LLM Hard tier deleted 2026-05-19)** + host-controlled bot fill at game-start + TRIBUTE-1 part D auto-tribute realtime wiring + TRIBUTE-1 part E manual tribute commands + Vercel project linked. 9 HTTP/SSE routes plus the complete React 19 game surface — lobby flow (Landing / CreateRoom / Waiting), GameTable4P + shared GameTableMP for 6P/8P, TributeModal (4 substates), RoundEnd / ALevelFinal / Victory, and two AI tiers (Easy rule-based + 30% noise, Medium rule-based + partner cooperation). The session lifecycle is fully event-driven end-to-end: `room_joined` / `room_left` from lobby, `deal` from game-start, `move_played` / `move_passed` / `trick_won` / `round_end` / `game_end` / `tribute_pending` / `tribute_resolved` / next-round `deal` from gameplay — all flowing through the single publishEvent gateway with per-recipient log keys and a contiguous version namespace across the lobby → game boundary so a single SSE `Last-Event-ID` resumes cleanly across phase transitions. After a human's move applies, an in-handler synchronous bot run-loop (`lib/ai/runBots.ts`) computes + publishes bot turns until landing on a human or round-end. `lib/realtime/handleMove.ts` dispatches `tribute_select` + `anti_tribute` commands through `lib/game/tributeFlow.ts` pure transitions; auto-mode at round-start is unchanged (`pendingTribute` setting is a future phase). Tests **917/917** · TS strict clean · `npm run build` green (41 modules → 233kB JS / 41kB CSS gzip) · grep-no-leak gate green. Vercel project `panpanmao/guandan-online` linked (separate from sibling scorer `guandan-calc`); Upstash Redis provisioned via Marketplace integration as an **independent instance** (no shared key space with sibling). The end-to-end integration test (`tests/integration/full-game-flow.test.ts`) walks create → join × 3 → start → SSE → play → pass. Remaining substantive work: manual-tribute round-start wiring (dispatcher accepts commands; `dealNextRound` still runs auto swap), first Vercel production deploy + `gdo.ax0x.ai` domain config, Bobgy WASM port to bring Hard tier back via deeper search depth (separate 7-10 day ticket). AUTH-2 sibling KV migration is **cancelled** (per-app independent Upstash; no shared key space).
 **Repo**: https://github.com/xingfanxia/guandan-online
 **Vercel project**: `panpanmao/guandan-online` (linked 2026-05-18; deploy pending)
 **Domain (locked)**: `gdo.ax0x.ai` (sibling subdomain to scorer at `gd.ax0x.ai`)
@@ -138,9 +138,31 @@
 
 **Vercel project linked** (separate event, same session): Created `panpanmao/guandan-online` (projectId `prj_Y3gwNGDixTDz5KBfkjJjsYWcwrlv`, GitHub repo auto-connected). Decision: keep stale `guandan-online-codex` project (from a prior agent session) alive rather than deleting. Upstash Redis provisioned via Marketplace integration → exposes `KV_REST_API_*` env vars (handled by the env-aliasing in commit `99dd52e`). Production deploy + `gdo.ax0x.ai` domain config still pending.
 
-### 2026-05-19 — Strategic re-decisions (no commits; backlog only)
+### 2026-05-19 — Backlog A-D executed (LLM deletion + AUTH-2 teardown + UI 3→2 + doc sync)
 
-After a critical re-review of the AI tier strategy and the just-completed Vercel setup, AX overturned two earlier locked decisions. The actual deletions / doc edits are queued for the next session.
+The strategic re-decisions documented in the section below (originally backlog-only) were executed this session in a single autonomous /goal loop. Net effect: Easy + Medium tiers stay; LLM Hard tier and all its plumbing (gateway, budget, hard.ts, prompts, async dispatch path) are gone; UI now offers 2 AI chips instead of 3; AUTH-2 milestone struck through in PLAN.md; `cross-project-integration.md` marked SUPERSEDED at top; SUMMARY.md gains decisions #15 + #16. No new logic — pure deletion + doc edits.
+
+**Files touched this session (one commit):**
+
+| Group | Files |
+|---|---|
+| A. Delete LLM line | Deleted: `lib/ai/{hard,gateway,budget}.ts`, `lib/ai/prompts/hard.zh.{md,ts}`, `tests/ai/{hard,gateway,budget}.test.ts`. Rewritten: `lib/ai/dispatch.ts` (no async path), `lib/ai/runBots.ts` (sync-only). Edited: `lib/ai/names.ts`, `lib/api/move.ts`, `lib/api/startGame.ts`, `lib/api/createRoom.ts`, `lib/api/getRoom.ts`, `lib/room/lifecycle.ts`, `lib/realtime/infra.ts` (kept `redis` exposure; updated comment), `api/room/[code]/{move,start}.ts`, `.env.example`. Test updates: `tests/ai/{dispatch,runBots,names}.test.ts`, `tests/room/lifecycle.test.ts`, `tests/api/createRoom.test.ts`. `npm uninstall ai`. |
+| B. AUTH-2 teardown | `docs/research/cross-project-integration.md` (SUPERSEDED block at top), `docs/research/SUMMARY.md` (decisions #15 + #16 added; #2, #7, #8 + milestone list AUTH-2/AI-2 markers updated), `docs/plan/PLAN.md` (AUTH-2 milestone strike-through; phase summary + dependency graph + changelog entry). |
+| C. UI 3→2 | `src/screens/CreateRoom.tsx` (drop `'hard'` from `AiTier`), `src/screens/Waiting.tsx` (drop `hard` from `BOT_BADGE` + `BOT_TIER_LABEL`), `src/lib/api/rooms.ts` (`BotDifficulty`). |
+| D. Doc sync | `CLAUDE.md` (Current phase rewritten; Last updated entry added), `README.md` (Status block, Stack table, sibling note), `~/.claude/projects/.../memory/project_vercel_setup.md`, `HANDOFF.md` (this entry). |
+
+**Stats**: **917/917 tests passing** (970 - 53 removed for deleted features). TS strict clean. `npm run build` clean (41 modules → 233kB JS / 41kB CSS · gzip 72kB + 8.5kB). grep-no-leak gate green.
+
+**Outstanding work** (after this session):
+- **Manual-tribute round-start wiring** — dispatcher accepts `tribute_select` + `anti_tribute` (since `df6ba3f`), but `dealNextRound` still always runs the auto swap. Flipping to set `pendingTribute` (gated by room rule or feature flag) + emitting `tribute_pending` ahead of the swap is the remaining piece to make manual mode reachable from gameplay.
+- **First Vercel production deploy** — `vercel --prod` against the linked project + `gdo.ax0x.ai` domain config + `ADMIN_TOKEN` env var (required for `/api/cron/cleanup-rooms`; fail-closed 503 without). No more `AI_GATEWAY_API_KEY` line item — LLM gone.
+- **Bobgy WASM port** — 7-10 days independent work; brings Hard tier back via deeper search depth (see `docs/research/ai-strategies.md` Repo 1).
+
+---
+
+### 2026-05-19 — Strategic re-decisions (original backlog notes — preserved for context)
+
+After a critical re-review of the AI tier strategy and the just-completed Vercel setup, AX overturned two earlier locked decisions. The actual deletions / doc edits were executed in the session above.
 
 **Decision 1 — Independent Upstash per app; cross-app `@handle` sync DROPPED.**
 
@@ -168,11 +190,11 @@ Choice made: **delete the LLM tier entirely now, ship Easy + Medium as v1, bring
 | **D. Doc sync** | CLAUDE.md "Remaining substantive work" (drop AUTH-2, add "Hard tier returns post-WASM"); README.md "Remaining" (same); HANDOFF.md add new dated section + outstanding work refresh; project memory files (`project_vercel_setup.md` mentions `AI_GATEWAY_API_KEY` in "How to apply" — refresh). |
 | **E (independent, separate work)** | **Bobgy WASM port** — Repo 1 in `ai-strategies.md`. Port the C++ `poker-guandan-strategy` to Emscripten WASM, wire into `lib/ai/medium.ts` replacing the `rankByCoop` pickCheapest tail call. Estimated 7-10 days. **NOT next session** — separate ticket. When that lands, Hard tier comes back via deeper search depth. |
 
-**Outstanding work** (updated, after the re-decisions):
-- **Next session's A-D backlog above** — delete LLM line + AUTH-2 teardown + UI 3→2 + doc sync. ~1-2 hours.
-- **Manual-tribute round-start wiring** — the dispatcher accepts `tribute_select` + `anti_tribute` commands as of `df6ba3f`, but `dealNextRound` still always runs the auto swap. Flipping to set `pendingTribute` (gated by room rule or feature flag) + emitting `tribute_pending` ahead of the swap is the remaining piece to make manual mode actually reachable from gameplay.
-- **First Vercel production deploy** — `vercel --prod` against the linked project + `gdo.ax0x.ai` domain config + `ADMIN_TOKEN` env var (required for `/api/cron/cleanup-rooms`; fail-closed 503 without). After the A-D backlog runs, the `AI_GATEWAY_API_KEY` line item drops off — no LLM means no gateway key needed.
-- **Bobgy WASM port** (Group E above) — 7-10 days independent work; brings Hard tier back.
+**Outstanding work** (original backlog snapshot — see executed section above for the live list):
+- ~~Groups A-D — delete LLM line + AUTH-2 teardown + UI 3→2 + doc sync~~ ✅ **DONE 2026-05-19**
+- **Manual-tribute round-start wiring** — still outstanding (see executed section above)
+- **First Vercel production deploy** — still outstanding (see executed section above)
+- **Bobgy WASM port** (Group E above) — still outstanding (separate 7-10 day ticket)
 
 **Auth note for CRON-1 deploy**: set `ADMIN_TOKEN` (or `CRON_SECRET`) in Vercel project env vars before the first cron fires; absent it the endpoint returns 503 fail-closed.
 

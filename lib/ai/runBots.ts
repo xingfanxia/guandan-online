@@ -17,10 +17,9 @@
 // already detects `newRound.phase === 'finished'` and runs the session/
 // round-end fanout once after all moves (human + bots) have landed.
 //
-// Hard tier is deferred: when a 'hard' bot's turn comes up we fall back to
-// the medium tier so the run-loop stays synchronous. Real Hard tier dispatch
-// (which is async via the LLM client) lands when AI-2 wires its async client
-// through the move handler.
+// v1 ships Easy + Medium only (see lib/ai/dispatch.ts header for the Hard
+// tier deletion rationale). RoomMember.difficulty narrows down at the bot-
+// fill API boundary.
 
 import { pass, playCards, startTrick } from '../game/round';
 import type { GameRound, PlayerId } from '../game/round';
@@ -30,15 +29,7 @@ import { deriveMoveEvent } from '../realtime/deriveMoveEvent';
 import type { AuthorEvent } from '../realtime/buildClientPayload';
 import type { MoveCommand } from '../realtime/commands';
 import type { ISOTimestamp } from '../realtime/messages';
-import {
-  computeBotMove,
-  computeBotMoveAsync,
-  type BotContext,
-  type BotContextAsync,
-  type BotTier,
-} from './dispatch';
-import type { GenerateInput, GenerateResult } from './hard';
-import type { BudgetClient } from './budget';
+import { computeBotMove, type BotContext, type BotTier } from './dispatch';
 
 export interface RunBotsInput {
   room: RoomState;
@@ -53,17 +44,6 @@ export interface RunBotsInput {
   maxIterations?: number;
   /** RNG passthrough for Easy noise + Medium tie-breaks. Defaults to Math.random. */
   rng?: () => number;
-}
-
-export interface RunBotsAsyncInput extends RunBotsInput {
-  /** LLM client for Hard tier. When omitted, hard degrades to medium. */
-  generate?: (input: GenerateInput) => Promise<GenerateResult>;
-  /** Budget client for Hard tier cost tracking. Defaults to in-memory. */
-  budget?: BudgetClient;
-  /** Override `FEATURE_AI_HARD` env var check. Tests pass true. */
-  featureEnabled?: boolean;
-  /** Hard-tier LLM timeout ms. Default 3000. */
-  timeoutMs?: number;
 }
 
 export interface RunBotsResult {
@@ -110,7 +90,7 @@ export function runBots(input: RunBotsInput): RunBotsResult {
       return { round, version, events };
     }
 
-    const tier: BotTier = (member.difficulty ?? 'medium') === 'hard' ? 'medium' : (member.difficulty ?? 'medium');
+    const tier: BotTier = member.difficulty ?? 'medium';
 
     const ctx = buildBotContext(round, currentPlayer, tier, input.rng);
     const decision = computeBotMove(ctx);
@@ -164,90 +144,6 @@ export function runBots(input: RunBotsInput): RunBotsResult {
   // will pick up where we left off via SSE Last-Event-ID resume.
   console.warn(
     `[runBots] hit max iteration cap (${maxIterations}); returning partial result`
-  );
-  return { round, version, events };
-}
-
-/**
- * Async variant — same run-loop as `runBots` but routes Hard-tier bots
- * through `computeBotMoveAsync` so the LLM client (when injected) actually
- * fires. Easy + Medium remain on the sync path; only Hard awaits.
- *
- * When `input.generate` is omitted, Hard silently falls back to Medium (same
- * behavior as sync runBots). Production callers that want Hard tier active
- * must wire a Vercel AI Gateway generate fn via this surface.
- */
-export async function runBotsAsync(input: RunBotsAsyncInput): Promise<RunBotsResult> {
-  const maxIterations = input.maxIterations ?? DEFAULT_MAX_ITERATIONS;
-  let round = input.round;
-  let version = input.startVersion;
-  const events: AuthorEvent[] = [];
-
-  for (let i = 0; i < maxIterations; i++) {
-    if (round.phase !== 'playing') return { round, version, events };
-
-    if (round.currentTrick === null) {
-      round = startTrick(round);
-      continue;
-    }
-
-    const currentPlayer = round.currentTrick.currentPlayer;
-    const member = input.room.members.find((m) => m.id === currentPlayer);
-    if (!member) return { round, version, events };
-    if (member.status !== 'bot') return { round, version, events };
-
-    // True tier — no hard→medium downcast. computeBotMoveAsync handles the
-    // Hard branch with the injected generate fn (or falls back to Medium if
-    // not provided).
-    const tier: BotTier = member.difficulty ?? 'medium';
-    const asyncCtx: BotContextAsync = {
-      ...buildBotContext(round, currentPlayer, tier, input.rng),
-    };
-    if (input.generate !== undefined) asyncCtx.generate = input.generate;
-    if (input.budget !== undefined) asyncCtx.budget = input.budget;
-    if (input.featureEnabled !== undefined) asyncCtx.featureEnabled = input.featureEnabled;
-    if (input.timeoutMs !== undefined) asyncCtx.timeoutMs = input.timeoutMs;
-
-    const decision = await computeBotMoveAsync(asyncCtx);
-
-    let command: MoveCommand;
-    let newRound: GameRound;
-    if (decision.kind === 'play') {
-      const cardIds = encodeCards(decision.pattern.cards);
-      command = { kind: 'play', fromVersion: version, cards: cardIds };
-      try {
-        newRound = playCards(round, decision.pattern.cards);
-      } catch (err) {
-        console.error('[runBotsAsync] illegal play from', tier, 'bot:', (err as Error).message);
-        return { round, version, events };
-      }
-    } else {
-      command = { kind: 'pass', fromVersion: version };
-      try {
-        newRound = pass(round);
-      } catch (err) {
-        console.error('[runBotsAsync] illegal pass from', tier, 'bot:', (err as Error).message);
-        return { round, version, events };
-      }
-    }
-
-    const nextVersion = version + 1;
-    const moveEvents = deriveMoveEvent(
-      currentPlayer,
-      command,
-      round,
-      newRound,
-      nextVersion,
-      input.turnDeadline
-    );
-    events.push(...moveEvents);
-
-    round = newRound;
-    version = moveEvents.length > 0 ? moveEvents[moveEvents.length - 1]!.version : nextVersion;
-  }
-
-  console.warn(
-    `[runBotsAsync] hit max iteration cap (${maxIterations}); returning partial result`
   );
   return { round, version, events };
 }

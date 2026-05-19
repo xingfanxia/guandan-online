@@ -8,13 +8,12 @@
 //
 // Pure-functional. RNG injected; deterministic per seed for replay tests.
 
-export type BotTier = 'easy' | 'medium' | 'hard';
+export type BotTier = 'easy' | 'medium';
 
 /** Tier-specific decoration shown alongside the handle. */
 export const TIER_BADGES: Record<BotTier, string> = {
   easy: '🌱',
   medium: '⚡',
-  hard: '🦊',
 };
 
 /**

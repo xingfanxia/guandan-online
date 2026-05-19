@@ -32,9 +32,7 @@ import { publishEvent } from '../realtime/publish';
 import { buildGameState } from '../realtime/buildGameState';
 import { encodeCards } from '../realtime/cardCodec';
 import type { AuthorDealEvent } from '../realtime/buildClientPayload';
-import { runBotsAsync } from '../ai/runBots';
-import type { GenerateInput, GenerateResult } from '../ai/hard';
-import type { BudgetClient } from '../ai/budget';
+import { runBots } from '../ai/runBots';
 
 export interface StartGameDeps {
   roomStore: RoomStore;
@@ -45,10 +43,6 @@ export interface StartGameDeps {
   /** RNG seed for deck shuffle. Defaults to Math.random. */
   rng?: () => number;
   now?: () => number;
-  /** LLM client for Hard tier bots. When omitted, Hard degrades to Medium. */
-  generate?: (input: GenerateInput) => Promise<GenerateResult>;
-  /** Budget client for Hard tier cost tracking. Defaults to in-memory. */
-  budget?: BudgetClient;
 }
 
 const ROOM_TTL_SECONDS = 86_400;
@@ -159,15 +153,12 @@ export async function handleStartGame(
   // human. Without this, a fully-bot-fill room would deal and then stall
   // forever waiting for someone to make a move.
   const turnDeadline = new Date(now() + DEFAULT_TURN_TIMEOUT_SECONDS * 1000).toISOString();
-  const botArgs: Parameters<typeof runBotsAsync>[0] = {
+  const botResult = runBots({
     room: updatedRoom,
     round,
     startVersion: dealVersion,
     turnDeadline,
-  };
-  if (deps.generate !== undefined) botArgs.generate = deps.generate;
-  if (deps.budget !== undefined) botArgs.budget = deps.budget;
-  const botResult = await runBotsAsync(botArgs);
+  });
 
   // Update the round-state to the post-bots round + final event version. If
   // no bots played, botResult.version === dealVersion and the round is

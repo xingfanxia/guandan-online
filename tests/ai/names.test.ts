@@ -10,23 +10,21 @@ describe('generateBotName — shape', () => {
 
   it('handle body is one of the canonical pool entries (no random unicode)', () => {
     const { handle } = generateBotName('medium', seedrandom('pool-1'));
-    const body = handle.slice(1); // strip @
+    const body = handle.slice(1);
     expect(BOT_HANDLE_POOL).toContain(body);
   });
 });
 
 describe('generateBotName — tier badges', () => {
-  it('easy / medium / hard each get distinct badges', () => {
+  it('easy + medium each get distinct badges', () => {
     const e = generateBotName('easy', seedrandom('t-1')).badge;
     const m = generateBotName('medium', seedrandom('t-2')).badge;
-    const h = generateBotName('hard', seedrandom('t-3')).badge;
-    expect(new Set([e, m, h]).size).toBe(3);
+    expect(new Set([e, m]).size).toBe(2);
   });
 
   it('badge matches the TIER_BADGES table', () => {
     expect(generateBotName('easy', seedrandom('t-e')).badge).toBe(TIER_BADGES.easy);
     expect(generateBotName('medium', seedrandom('t-m')).badge).toBe(TIER_BADGES.medium);
-    expect(generateBotName('hard', seedrandom('t-h')).badge).toBe(TIER_BADGES.hard);
   });
 });
 

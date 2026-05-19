@@ -6,7 +6,7 @@
 
 1. **Realtime stack: Vercel-native SSE+POST + Upstash Redis pub/sub** — locked. No Fly.io / Colyseus / extra dependency. ~200 lines of glue (hidden-state filtering + reconnect) replaces the framework convenience. Latency budget 50-165ms end-to-end, within Guandan's 200ms target. Lichess's `lila-ws` is the closest production analog.
 
-2. **AI is v1-shippable in 3 tiers** — Easy (rule-based + 30% noise), Medium (rule-based + WASM solver + partner awareness), Hard (DeepSeek LLM with candidate pre-filter + Chinese prompt). Master tier (DanLM neural net) deferred to v1.1 due to macOS-only binaries. Per-tier algorithm pseudocode + GameState/PlayerView types + Elo bench harness all specified in `ai-implementation-plan.md`. Cost: ~$30/month with $50 soft-limit Hard→Medium degradation.
+2. **AI is v1-shippable in 2 tiers** — Easy (rule-based + 30% noise) and Medium (rule-based + partner awareness; WASM solver port pending). The LLM Hard tier was deleted 2026-05-19 (see decision #15) and returns post-WASM via deeper Bobgy search depth. Master tier (DanLM neural net) deferred to v1.1.
 
 3. **Mobile landscape via CSS rotate** (Majsoul-style) — iOS Safari does not implement `screen.orientation.lock()`; the production fix is CSS `transform: rotate(90deg)` on root + JS-set logical viewport CSS vars. Native lock on Android. Rotate-prompt overlay is emergency fallback only.
 
@@ -16,7 +16,7 @@
 
 6. **Tribute mechanic fully specified** — Cross-referenced 4 Chinese tournament PDFs (NUIST / SEU / CUP / 中国掼蛋研究院). All prior open questions resolved: 双下 both 3rd+4th tribute; 抗贡 needs 2 大王 (not mixed jokers); tribute card auto-pick in tournament, player-pick in casual; 还贡 always winner's choice with ≤10 cap fallback; "贡左还右" canonical. 6/8 modes get a 3-mode room selector.
 
-7. **Cross-project integration**: Option B — shared @handle namespace with sibling scorer, deferred cross-app stats sync. ~2 days total work, zero user friction. Scorer's bare `player:{handle}` keys migrate to `gs:player:{handle}` prefix; online uses `go:*` prefix in same Upstash instance. Online copies sibling's 10-line `validateOwnershipToken` for auth.
+7. **Cross-project integration**: ~~Option B (shared namespace)~~ — SUPERSEDED 2026-05-19. Accepted reality: independent Upstash per app (Marketplace integration auto-provisioned a separate instance for guandan-online). No cross-app stats sync, no shared key space. Online still copies sibling's 10-line `validateOwnershipToken` for handle ownership semantics (pure function — no cross-app reads needed). AUTH-2 milestone cancelled. See decision #16.
 
 ## Recommended stack
 
@@ -48,13 +48,17 @@
 5. **Card back**: CSS `repeating-linear-gradient` using existing tokens (NO PNG / SVG asset)
 6. **Wildcard treatment**: Gold edge stroke + ★ corner badge (Option A)
 7. **AI tier strategy**: Different engines per tier (NOT same engine + search depth)
-8. **Auth**: Anonymous @handle, **shared namespace with sibling scorer** (Option B from `cross-project-integration.md`)
+8. **Auth**: Anonymous @handle, **per-app namespace, independent Upstash instance** (SUPERSEDES Option B from `cross-project-integration.md` — see decisions #15 + #16 below)
 9. **PRC delivery**: Vercel-only launch with client-side latency beacons; Tencent Cloud Shenzhen mirror deferred until p95 > 350ms observed
 10. **Custom domain required day 1** — `*.vercel.app` is DNS-poisoned in mainland China. **Domain: `gdo.ax0x.ai`** (sibling subdomain to scorer at `gd.ax0x.ai`; "o" = online)
 11. **Tribute defaults**: tournament rule baseline (server auto-picks tribute card; "贡左还右" direction; 还贡 ≤10 cap with smallest-card fallback); casual variants surfaced as room rule axes
 12. **Anti-cheat v1**: Rate limiting (5s sliding window) + IP throttle (5 accounts/IP/24h) + report button + admin dashboard + Vercel BotID. ~340 LOC, ~5-6 days.
 13. **6P/8P sweep tribute** (2026-05-17): in 2-teams-of-N modes (6P 2-of-3, 8P 2-of-4), if winning team takes all top-N positions, losers tribute by rank order pairing (8→1, 7→2, 6→3, 5→4 for 8P sweep). Mixed-team finishes still use Path A single末→头 tribute. 4-teams-of-2 mode never triggers sweep tribute (mathematically impossible).
 14. **换牌 card-exchange optional rule** (2026-05-17): OFF by default; if enabled, losing team votes after round-end (>50% pass), then after tribute every player picks 3 cards which pass to neighbor in server-RNG'd direction (CW/CCW). New EXCHANGE-1 milestone in P3, ~3-4 days work.
+
+15. **AI tier ladder reduced to Easy + Medium for v1** (2026-05-19, SUPERSEDES headline #2 + decision #7 above): the LLM Hard tier was removed because (a) the original research direction was algorithmic / NN, not LLM (5 reference engines surveyed in `ai-strategies.md` are all rule-based / MCTS / NN), and (b) LLM latency 1.5-3s/move × 3 Hard bots × 30 tricks ≈ 3 minutes/game of cumulative wait — structural, not tuneable. Hard tier returns post-WASM via the Bobgy `poker-guandan-strategy` solver with deeper search depth (same engine, depth params produce tier separation). DanLM Master tier still deferred to v1.1.
+
+16. **Per-app Upstash + AUTH-2 cancelled** (2026-05-19, SUPERSEDES decision #8 above + `cross-project-integration.md`): the Vercel Marketplace integration auto-provisioned an independent Upstash for guandan-online (separate from sibling scorer's Redis). Accepted: per-app namespace, no profile sync, no shared key space. **AUTH-2 milestone (migrate scorer's `player:*` → `gs:player:*`) is CANCELLED** — the two projects no longer share key space. Independent redis means gdo failures don't cascade to scorer.
 
 ## Recommended AI strategy
 
@@ -167,12 +171,12 @@ Using `<MILESTONE>-N: description` naming convention:
 - **UI-6**: Round-end / A-level / victory screens
 
 **Auth + Cross-project**:
-- **AUTH-1**: Copy `validateOwnershipToken` from scorer + shared @handle namespace setup
-- **AUTH-2**: Migrate scorer's `player:*` → `gs:player:*` keys (sibling scorer side, ~15 file changes)
+- **AUTH-1**: Copy `validateOwnershipToken` from scorer + handle namespace setup
+- ~~**AUTH-2**: Migrate scorer's `player:*` → `gs:player:*` keys~~ — **CANCELLED 2026-05-19** (per-app independent Upstash; no shared key space; see decision #16)
 
 **AI**:
 - **AI-1**: Easy + Medium engines inline (rule-based + WASM)
-- **AI-2**: LLM Hard tier via DeepSeek + candidate pre-filter
+- ~~**AI-2**: LLM Hard tier via DeepSeek + candidate pre-filter~~ — **DELETED 2026-05-19** (LLM latency structural, not tuneable; Hard returns post-WASM via deeper Bobgy search depth; see decision #15)
 - **AI-3**: Player assistance — auto-sort + suggest + wildcard substitution UI
 - **AI-4**: Mid-game DC takeover (60s grace → bot promotes)
 

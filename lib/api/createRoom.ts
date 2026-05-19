@@ -27,7 +27,7 @@ export interface CreateRoomDeps {
 
 /** Bot seat config submitted by the host at create-time. */
 export interface BotSeatConfig {
-  tier: 'easy' | 'medium' | 'hard';
+  tier: 'easy' | 'medium';
 }
 
 export interface CreateRoomResponseBody {
@@ -128,7 +128,7 @@ export async function handleCreateRoom(
  */
 function pickUniqueBotHandle(
   state: { members: ReadonlyArray<{ handle: string }> },
-  tier: 'easy' | 'medium' | 'hard',
+  tier: 'easy' | 'medium',
   rng: () => number
 ): string {
   const used = new Set(state.members.map((m) => m.handle));
@@ -152,7 +152,7 @@ interface ParsedBody {
   bots: BotSeatConfig[];
 }
 
-const VALID_TIERS = new Set<BotSeatConfig['tier']>(['easy', 'medium', 'hard']);
+const VALID_TIERS = new Set<BotSeatConfig['tier']>(['easy', 'medium']);
 
 function parseBody(
   body: unknown
@@ -189,7 +189,7 @@ function parseBody(
       }
       const tier = (entry as Record<string, unknown>)['tier'];
       if (typeof tier !== 'string' || !VALID_TIERS.has(tier as BotSeatConfig['tier'])) {
-        return { ok: false, error: `bots[${i}].tier must be 'easy', 'medium', or 'hard'` };
+        return { ok: false, error: `bots[${i}].tier must be 'easy' or 'medium'` };
       }
       bots.push({ tier: tier as BotSeatConfig['tier'] });
     }

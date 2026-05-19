@@ -39,8 +39,12 @@ export interface RealtimeInfra {
   backend: 'memory' | 'upstash';
   /**
    * Underlying Redis when `backend === 'upstash'`, otherwise null. Exposed so
-   * route handlers can construct adjacent Upstash-backed clients (e.g., the
-   * AI budget) without having to re-read env vars.
+   * route handlers can construct adjacent Upstash-backed clients (presence,
+   * cleanup, future telemetry stores) without having to re-read env vars.
+   *
+   * NOTE: per-app independent Upstash instance — guandan-online and sibling
+   * scorer (guandan-calc) each have their own Marketplace-provisioned Redis
+   * after the 2026-05-19 cross-app teardown decision. No shared key space.
    */
   redis: RedisLike | null;
 }

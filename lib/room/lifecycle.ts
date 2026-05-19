@@ -19,7 +19,7 @@ export interface RoomMember {
   joinedAt: number;
   status: PlayerStatus;
   /** Bot difficulty when status === 'bot'; undefined otherwise. */
-  difficulty?: 'easy' | 'medium' | 'hard';
+  difficulty?: 'easy' | 'medium';
 }
 
 export interface RoomState {
@@ -127,7 +127,7 @@ export interface AddBotInput {
   state: RoomState;
   id: PlayerId;
   handle: PlayerHandle;
-  difficulty: 'easy' | 'medium' | 'hard';
+  difficulty: 'easy' | 'medium';
   now: number;
   /** Synthetic token generator — bots never authenticate but the field is
    *  non-optional in RoomMember. Caller controls source. */

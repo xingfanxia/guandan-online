@@ -136,7 +136,7 @@ describe('handleCreateRoom — bot fill at create-time', () => {
       req('POST', {
         mode: '4',
         host: { handle: '@fufu' },
-        bots: [{ tier: 'easy' }, { tier: 'medium' }, { tier: 'hard' }],
+        bots: [{ tier: 'easy' }, { tier: 'medium' }, { tier: 'easy' }],
       }),
       deps
     );
@@ -152,7 +152,7 @@ describe('handleCreateRoom — bot fill at create-time', () => {
     expect(persisted?.members[2]?.status).toBe('bot');
     expect(persisted?.members[2]?.difficulty).toBe('medium');
     expect(persisted?.members[3]?.status).toBe('bot');
-    expect(persisted?.members[3]?.difficulty).toBe('hard');
+    expect(persisted?.members[3]?.difficulty).toBe('easy');
   });
 
   it('assigns bot IDs as p1, p2, ... matching joinRoom convention', async () => {

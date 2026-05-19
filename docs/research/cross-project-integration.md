@@ -1,7 +1,19 @@
 # Cross-Project Integration: guandan-online × guandan-scorer
 
+> ## SUPERSEDED — 2026-05-19
+>
+> **This entire document and its Option B (shared @handle namespace) recommendation are SUPERSEDED.**
+>
+> What changed: the Vercel Marketplace integration auto-provisioned an independent Upstash Redis for guandan-online (separate instance from sibling scorer's Redis). Accepted reality: per-app namespace, no profile sync, no shared key space. The AUTH-2 milestone that was scoped here (migrate scorer's `player:*` → `gs:player:*`) is **CANCELLED** — there's no shared namespace to keep clean.
+>
+> Rationale: hobby-scale project doesn't need cross-app identity continuity; independent Redis means gdo failures don't cascade to scorer. Online still copies sibling's 10-line `validateOwnershipToken` for handle ownership semantics (pure function — no cross-app reads needed).
+>
+> See `docs/research/SUMMARY.md` decisions #15 + #16 for the full reasoning. The text below is preserved as historical context only — **do not implement anything described here**.
+
+---
+
 **Date**: 2026-05-16  
-**Status**: Research document — written before plan phase. Informs the design doc.  
+**Status**: ~~Research document — written before plan phase. Informs the design doc.~~ **SUPERSEDED 2026-05-19 (see above).**
 **Sibling scorer production URL**: gd.ax0x.ai  
 **Scorer KV schema source of truth**: `../guandan-scorer/docs/architecture/KV_SCHEMA.md`  
 **Scorer player API source of truth**: `../guandan-scorer/api/players/_utils.js` (`initializePlayerStats`)

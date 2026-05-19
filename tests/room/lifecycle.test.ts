@@ -217,9 +217,9 @@ describe('addBotToRoom', () => {
     ).toThrow(/lobby|in_game|started/i);
   });
 
-  it('preserves all three difficulty tiers', () => {
+  it('preserves both difficulty tiers', () => {
     let r = freshRoom('8');
-    for (const [i, tier] of (['easy', 'medium', 'hard'] as const).entries()) {
+    for (const [i, tier] of (['easy', 'medium'] as const).entries()) {
       r = addBotToRoom({
         state: r,
         id: `p${i + 1}`,
@@ -229,7 +229,7 @@ describe('addBotToRoom', () => {
         tokenGen: tokenGen(),
       });
     }
-    expect(r.members.slice(1).map((m) => m.difficulty)).toEqual(['easy', 'medium', 'hard']);
+    expect(r.members.slice(1).map((m) => m.difficulty)).toEqual(['easy', 'medium']);
   });
 });
 

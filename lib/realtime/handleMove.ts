@@ -12,6 +12,7 @@
 
 import { pass, playCards } from '../game/round';
 import type { GameRound, PlayerId } from '../game/round';
+import { declareAntiTribute, selectTributeCard } from '../game/tributeFlow';
 import { decodeCardIds } from './cardCodec';
 import type { MoveCommand, MoveResponse } from './commands';
 
@@ -31,21 +32,27 @@ export function handleMoveCommand(
     return failure(round, 'stale_version', `expected version ${currentVersion}, got ${command.fromVersion}`);
   }
 
-  // 2. Authority check: only the current player can act.
-  if (round.currentTrick === null || round.currentTrick.currentPlayer !== playerId) {
-    return failure(round, 'not_your_turn');
-  }
-
-  // 3. Dispatch by command kind.
+  // 2. Dispatch by command kind. Tribute commands route ahead of the trick-
+  //    based authority check — they operate on the pre-trick pendingTribute
+  //    state, where `round.currentTrick` is null by design.
   switch (command.kind) {
-    case 'play':
-      return handlePlay(round, command.cards, currentVersion);
-
-    case 'pass':
-      return handlePass(round, currentVersion);
-
     case 'tribute_select':
+      return handleTributeSelect(round, playerId, command.targetCard, currentVersion);
+
     case 'anti_tribute':
+      return handleAntiTribute(round, playerId, currentVersion);
+
+    case 'play':
+    case 'pass': {
+      // Trick-based commands: only the current player may act.
+      if (round.currentTrick === null || round.currentTrick.currentPlayer !== playerId) {
+        return failure(round, 'not_your_turn');
+      }
+      return command.kind === 'play'
+        ? handlePlay(round, command.cards, currentVersion)
+        : handlePass(round, currentVersion);
+    }
+
     case 'report_card':
     case 'ready':
       return failure(
@@ -83,6 +90,40 @@ function handlePlay(
 function handlePass(round: GameRound, currentVersion: number): HandleMoveResult {
   try {
     const newRound = pass(round);
+    return success(newRound, currentVersion);
+  } catch (err) {
+    return failure(round, 'invalid_move', (err as Error).message);
+  }
+}
+
+function handleTributeSelect(
+  round: GameRound,
+  playerId: PlayerId,
+  cardId: string,
+  currentVersion: number,
+): HandleMoveResult {
+  let card;
+  try {
+    [card] = decodeCardIds([cardId]);
+    if (!card) throw new Error('empty decode result');
+  } catch (err) {
+    return failure(round, 'invalid_move', `card decode failed: ${(err as Error).message}`);
+  }
+  try {
+    const newRound = selectTributeCard(round, playerId, card);
+    return success(newRound, currentVersion);
+  } catch (err) {
+    return failure(round, 'invalid_move', (err as Error).message);
+  }
+}
+
+function handleAntiTribute(
+  round: GameRound,
+  playerId: PlayerId,
+  currentVersion: number,
+): HandleMoveResult {
+  try {
+    const newRound = declareAntiTribute(round, playerId);
     return success(newRound, currentVersion);
   } catch (err) {
     return failure(round, 'invalid_move', (err as Error).message);

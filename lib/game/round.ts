@@ -34,6 +34,33 @@ export interface PlayerSeat {
 
 export type RoundPhase = 'playing' | 'finished';
 
+export interface PendingTributeObligation {
+  from: PlayerId;
+  to: PlayerId;
+  /**
+   * Null while waiting for the `from` player to call `tribute_select`.
+   * Set once they pick; cleared when the round finalizes via
+   * `selectTributeCard` / `declareAntiTribute`.
+   */
+  selectedCard: Card | null;
+}
+
+/**
+ * Manual-tribute pending state — set on the new-round shell while waiting for
+ * `tribute_select` / `anti_tribute` from the obligated players. AUTO-mode flow
+ * (the current default in `dealNextRound`) never produces this state; it lands
+ * when the room opts into manual tribute (wired by a separate phase).
+ *
+ * Resist mode produces a pending state with `obligations: []` — the losers
+ * must explicitly call `anti_tribute` to confirm refusal.
+ */
+export interface PendingTributeState {
+  mode: 'single' | 'double' | 'resist';
+  obligations: PendingTributeObligation[];
+  /** Snapshot finish order; needed for `applyTribute` first-leader selection. */
+  finishOrder: PlayerId[];
+}
+
 export interface GameRound {
   mode: GameMode;
   level: LevelRank;
@@ -49,6 +76,12 @@ export interface GameRound {
   finishOrder: PlayerId[];
   /** Current trick state; null between tricks (call startTrick to begin). */
   currentTrick: Trick | null;
+  /**
+   * Manual-tribute pending state. Optional — only set when the round opens in
+   * manual tribute mode and at least one obligation is unresolved. Cleared by
+   * the manual-flow helpers once all selections finalize.
+   */
+  pendingTribute?: PendingTributeState;
 }
 
 // ─── Trick state ──────────────────────────────────────────────────────────────

@@ -18,8 +18,11 @@ import type { TeamKey } from './mode';
 
 export type TributeMode =
   | { kind: 'none' }
-  | { kind: 'single'; from: PlayerId; to: PlayerId }
-  | { kind: 'double'; obligations: { from: PlayerId; to: PlayerId }[] }
+  | { kind: 'single'; from: PlayerId; to: PlayerId; tributeCard?: Card }
+  | {
+      kind: 'double';
+      obligations: { from: PlayerId; to: PlayerId; tributeCard?: Card }[];
+    }
   | { kind: 'resist' };
 
 export function detectTributeMode4P(
@@ -205,9 +208,13 @@ export function applyTribute(
     };
   }
 
-  const obligations =
+  const obligations: { from: PlayerId; to: PlayerId; tributeCard?: Card }[] =
     mode.kind === 'single'
-      ? [{ from: mode.from, to: mode.to }]
+      ? [
+          mode.tributeCard
+            ? { from: mode.from, to: mode.to, tributeCard: mode.tributeCard }
+            : { from: mode.from, to: mode.to },
+        ]
       : mode.obligations;
 
   // Determine first leader: 末游 (4th place / last in finishOrder) leads in
@@ -221,7 +228,29 @@ export function applyTribute(
     const loserHand = working[obligation.from]!;
     const winnerHand = working[obligation.to]!;
 
-    const tributeCard = pickTributeCard(loserHand, levelRank);
+    // Manual mode: caller provided the exact card. Validate it's still in the
+    // loser's hand and isn't a wildcard (heart-suit level rank exempt per rules).
+    // Auto mode: pick the highest non-wildcard.
+    let tributeCard: Card | null;
+    if (obligation.tributeCard) {
+      const explicit = obligation.tributeCard;
+      const exists = loserHand.some(
+        (c) => c.suit === explicit.suit && c.rank === explicit.rank && c.deck === explicit.deck,
+      );
+      if (!exists) {
+        throw new Error(
+          `applyTribute: ${obligation.from} cannot tribute ${explicit.rank}-${explicit.suit}-${explicit.deck} — not in hand`,
+        );
+      }
+      if (isWildcard(explicit, levelRank)) {
+        throw new Error(
+          `applyTribute: ${obligation.from} cannot tribute a wildcard (heart-suit level rank is exempt)`,
+        );
+      }
+      tributeCard = explicit;
+    } else {
+      tributeCard = pickTributeCard(loserHand, levelRank);
+    }
     if (tributeCard === null) {
       throw new Error(
         `applyTribute: ${obligation.from} has no tributable card (only wildcards in hand)`

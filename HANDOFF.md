@@ -138,11 +138,41 @@
 
 **Vercel project linked** (separate event, same session): Created `panpanmao/guandan-online` (projectId `prj_Y3gwNGDixTDz5KBfkjJjsYWcwrlv`, GitHub repo auto-connected). Decision: keep stale `guandan-online-codex` project (from a prior agent session) alive rather than deleting. Upstash Redis provisioned via Marketplace integration → exposes `KV_REST_API_*` env vars (handled by the env-aliasing in commit `99dd52e`). Production deploy + `gdo.ax0x.ai` domain config still pending.
 
-**Outstanding work**:
-- **AUTH-2** — sibling scorer key migration `player:*` → `gs:*`. **CRITICAL DECISION TRIGGER — touches production sibling KV. Requires explicit go-ahead.**
-- **Manual-tribute round-start wiring** — the dispatcher now accepts `tribute_select` + `anti_tribute` commands, but `dealNextRound` still always runs the auto swap. Flipping to set `pendingTribute` (gated by a room rule? feature flag?) and emitting the right pre-state events is the remaining piece to make manual mode actually reachable from gameplay.
-- **First Vercel production deploy** — `vercel --prod` against the linked project + `gdo.ax0x.ai` domain config + `AI_GATEWAY_API_KEY` env var setup (required for Hard tier to actually fire; absent it Hard correctly degrades to Medium). `ADMIN_TOKEN` also required before the first cron fires for `/api/cron/cleanup-rooms` (fail-closed 503 otherwise).
-- **WASM solver** — Bobgy `poker-guandan-strategy` C++ → Emscripten port deferred. Medium currently uses pure heuristic ranking via `rankByCoop`; swapping in the WASM solver requires only changing the final `pickCheapest` call (no dispatch-surface change). Estimated 7-10 days when the port becomes a priority.
+### 2026-05-19 — Strategic re-decisions (no commits; backlog only)
+
+After a critical re-review of the AI tier strategy and the just-completed Vercel setup, AX overturned two earlier locked decisions. The actual deletions / doc edits are queued for the next session.
+
+**Decision 1 — Independent Upstash per app; cross-app `@handle` sync DROPPED.**
+
+Context: `SUMMARY.md` "Locked decision 8" originally read "Anonymous @handle, **shared namespace with sibling scorer** (Option B)" — purpose was profile sync between guandan-online and guandan-scorer. But gdo's own Upstash got linked yesterday (Marketplace integration auto-provisioning), and the two projects are now on separate Redis instances.
+
+Choice made: accept the new reality (per-app namespace, no profile sync). Hobby project doesn't need cross-app identity continuity; independent redis means gdo failures don't cascade to scorer. **AUTH-2 milestone CANCELLED** — the entire "migrate scorer `player:*` → `gs:player:*` prefix" workstream is moot because the two projects no longer share key space.
+
+**Decision 2 — LLM Hard tier was misaligned with the research; delete the entire LLM line.**
+
+Two problems compounded:
+
+1. **Research direction was algorithmic, not LLM.** `docs/research/ai-strategies.md` surveyed 5 reference engines (Bobgy poker-guandan-strategy C++ MCTS, agil27/Quentain, shuilongzhu/ai-guandan, dashidhy/DanLM neural net, and one more) — **all algorithmic / NN, none LLM**. The original `ai-implementation-plan.md` tier design was: Easy = rules+noise, Medium = rules + **Bobgy WASM solver** + partner cooperation, Hard = LLM (placeholder), Master = DanLM (deferred). LLM was the temporary occupant of Hard until DanLM ported. But (a) Medium never got the WASM port either (still pure heuristic `rankByCoop`), and (b) DanLM stayed deferred to v1.1.
+
+2. **LLM latency is structural, not a tuning issue.** Plan-documented budgets: Easy <20ms, Medium <80ms (WASM), Hard 1.5-3s (LLM). For a 30-trick game with 3 Hard bots, that's ~3 minutes of cumulative LLM wait per game. Real-time card play needs <500ms per opponent move; LLM at 25× that gap is not optimizable. Plus DeepSeek occasional timeouts, gateway hops, and price drift.
+
+Choice made: **delete the LLM tier entirely now, ship Easy + Medium as v1, bring Hard back later as Bobgy WASM with deeper search depth** (the research doc's `ai-strategies.md` Repo 1 "Difficulty tuning surface" — same solver, different depth params produces tier separation). Master (DanLM) stays deferred to v1.1. LLM has no v2 reservation — if conversational features come later, that's a separate skill and a separate dependency.
+
+**Next-session backlog** (~1-2 hours of pure deletion + doc edits; no new logic):
+
+| Group | Files to touch |
+|---|---|
+| **A. Delete LLM line** | `lib/ai/hard.ts`, `lib/ai/gateway.ts`, `lib/ai/budget.ts`, `lib/ai/prompts/hard.zh.{md,ts}`, `tests/ai/{hard,gateway,budget}.test.ts`. Revert `lib/ai/runBots.ts` to sync-only (drop `runBotsAsync`). Drop `computeBotMoveAsync` from `lib/ai/dispatch.ts`. Strip `generate` + `budget` fields from `MoveDeps` / `StartGameDeps` (in `lib/api/move.ts` + `lib/api/startGame.ts`). Strip gateway/budget injection from `api/room/[code]/{move,start}.ts`. `npm uninstall ai`. Drop `AI_GATEWAY_API_KEY` + `FEATURE_AI_HARD` from `.env.example`. Update `lib/realtime/infra.ts redis` exposure to keep it (still useful for adjacent clients in the future), but remove all internal callers that used it for budget construction. Expected test count after: 970 - ~35 = ~935. |
+| **B. AUTH-2 / Option B teardown** | Mark `docs/research/cross-project-integration.md` SUPERSEDED with a top-of-file status block citing this decision. Update `docs/research/SUMMARY.md` "Locked decision 8" to "Anonymous @handle, **per-app namespace** (independent redis)". Delete or strike-through AUTH-2 in `docs/plan/PLAN.md` (recommend strike-through with a "CANCELLED 2026-05-19" note rather than delete, since plans are historical). Remove AUTH-2 from "Outstanding work" everywhere. Comment in `lib/realtime/infra.ts` (currently says "shared instance with sibling scorer" or similar — update to "per-app independent Upstash instance"). |
+| **C. UI 3 tiers → 2 tiers** | `src/screens/CreateRoom.tsx` aiTiers chip array: drop `'hard'`. `src/screens/Waiting.tsx` bot row rendering: drop the Hard tier emoji + label branch. `lib/ai/names.ts`: drop Hard tier badge if separately defined. Re-run visual smoke on iPhone 14 Pro landscape (`chrome-devtools-mcp emulate_device`) to confirm Landing + CreateRoom still match demos S01/S02 with 2 chips instead of 3. |
+| **D. Doc sync** | CLAUDE.md "Remaining substantive work" (drop AUTH-2, add "Hard tier returns post-WASM"); README.md "Remaining" (same); HANDOFF.md add new dated section + outstanding work refresh; project memory files (`project_vercel_setup.md` mentions `AI_GATEWAY_API_KEY` in "How to apply" — refresh). |
+| **E (independent, separate work)** | **Bobgy WASM port** — Repo 1 in `ai-strategies.md`. Port the C++ `poker-guandan-strategy` to Emscripten WASM, wire into `lib/ai/medium.ts` replacing the `rankByCoop` pickCheapest tail call. Estimated 7-10 days. **NOT next session** — separate ticket. When that lands, Hard tier comes back via deeper search depth. |
+
+**Outstanding work** (updated, after the re-decisions):
+- **Next session's A-D backlog above** — delete LLM line + AUTH-2 teardown + UI 3→2 + doc sync. ~1-2 hours.
+- **Manual-tribute round-start wiring** — the dispatcher accepts `tribute_select` + `anti_tribute` commands as of `df6ba3f`, but `dealNextRound` still always runs the auto swap. Flipping to set `pendingTribute` (gated by room rule or feature flag) + emitting `tribute_pending` ahead of the swap is the remaining piece to make manual mode actually reachable from gameplay.
+- **First Vercel production deploy** — `vercel --prod` against the linked project + `gdo.ax0x.ai` domain config + `ADMIN_TOKEN` env var (required for `/api/cron/cleanup-rooms`; fail-closed 503 without). After the A-D backlog runs, the `AI_GATEWAY_API_KEY` line item drops off — no LLM means no gateway key needed.
+- **Bobgy WASM port** (Group E above) — 7-10 days independent work; brings Hard tier back.
 
 **Auth note for CRON-1 deploy**: set `ADMIN_TOKEN` (or `CRON_SECRET`) in Vercel project env vars before the first cron fires; absent it the endpoint returns 503 fail-closed.
 

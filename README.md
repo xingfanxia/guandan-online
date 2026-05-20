@@ -4,7 +4,7 @@ Real online multiplayer **Guandan** (掼蛋) — landscape-first web game for 4 
 
 ## Status
 
-🚧 **Backend + all UI tracks + bot dispatch + Easy/Medium AI tiers + bot-fill + auto-tribute realtime + manual tribute dispatch + Vercel project linked** (2026-05-19 — LLM line deleted; see HANDOFF.md). **917/917 tests**, TS strict clean, `npm run build` clean (233kB JS / 41kB CSS · gzip 72kB + 8.5kB), grep-no-leak gate green. Beyond the P0 logic layer (Guandan rules engine, round/trick/session state machines, tribute, room lifecycle, hidden-state filter), the project ships:
+🚧 **Backend + all UI tracks + bot dispatch + Easy/Medium AI tiers + bot-fill + auto/manual tribute + ROOM-2 all 7 rule axes plumbed + first production deploy live** (2026-05-19; see HANDOFF.md). **956/956 tests**, TS strict clean, `npm run build` clean (242kB JS / 42kB CSS · gzip 74kB + 8.5kB), grep-no-leak gate green. Production aliases (`guandan-online-{henna,panpanmao,xingfanxia-panpanmao}.vercel.app`) live behind team SSO; public access on `gdo.ax0x.ai` pending DNS verification (TXT + CNAME records — see HANDOFF.md). Beyond the P0 logic layer (Guandan rules engine, round/trick/session state machines, tribute, room lifecycle, hidden-state filter), the project ships:
 
 - Live Upstash impls of `IdempotencyCache` / `EventLog` / `EventBus` selected via env-driven `createRealtimeInfra(env)`
 - 9 HTTP/SSE routes — create / read / join / leave / start / move / sse / cron-cleanup / health
@@ -17,14 +17,14 @@ Real online multiplayer **Guandan** (掼蛋) — landscape-first web game for 4 
 - **Manual tribute commands**: `handleMoveCommand` dispatches `tribute_select` / `anti_tribute` through pure transitions in `lib/game/tributeFlow.ts` (`selectTributeCard` validates ownership + card-in-hand + wildcard exemption + no-double-select; `declareAntiTribute` requires resist mode + losing-team player; finalization runs `applyTribute` + `startTrick` and clears `pendingTribute`). Auto-mode at round-start is unchanged — wiring `dealNextRound` to set `pendingTribute` instead of running the auto swap is a future phase.
 - **Vercel project linked**: `panpanmao/guandan-online` (separate from sibling scorer `guandan-calc`), Upstash Redis provisioned via Marketplace **as an independent instance**. Env vars read either `UPSTASH_REDIS_REST_*` or `KV_REST_API_*` (UPSTASH-prefixed wins). No shared key space with sibling scorer.
 
-Remaining: manual-tribute round-start wiring (server-side `pendingTribute` setting + UI event hookup for substates S11/S12/S13), first Vercel production deploy + `gdo.ax0x.ai` domain configuration, Bobgy WASM port to bring Hard tier back (separate 7-10 day ticket). AUTH-2 sibling KV migration is **cancelled** 2026-05-19 — per-app independent Upstash means there's no shared key space. See [`HANDOFF.md`](HANDOFF.md) for the commit-by-commit map and [`docs/plan/PLAN.md`](docs/plan/PLAN.md) for the full 31-milestone roadmap.
+Remaining: **DNS records for `gdo.ax0x.ai`** at the user's DNS provider (one TXT for verification + one CNAME for traffic), end-to-end HTTP smoke (gated by DNS), GitHub auto-deploy path fix (currently broken — cloud build's per-function tsc check against bundler-mode codebase fails; workaround is `vercel build && vercel deploy --prebuilt --prod` from local), Bobgy WASM port to bring Hard tier back (separate 7-10 day ticket). AUTH-2 sibling KV migration is **cancelled** 2026-05-19 — per-app independent Upstash means there's no shared key space. See [`HANDOFF.md`](HANDOFF.md) for the commit-by-commit map and [`docs/plan/PLAN.md`](docs/plan/PLAN.md) for the full 31-milestone roadmap.
 
 ## Stack
 
 | Layer | Choice |
 |---|---|
 | Frontend | Vite 8 + React 19 + TypeScript 6 (strict mode, `noUncheckedIndexedAccess`) |
-| Backend | Vercel `/api/*.ts` serverless functions on Fluid Compute (`nodejs22.x`, 300s timeout) |
+| Backend | Vercel `/api/*.ts` serverless functions on Fluid Compute (Node 24.x via project Node Version setting, 300s default timeout; explicit `maxDuration: 300` retained on SSE route for clarity) |
 | Transport | SSE + POST + Upstash Redis pub/sub (NOT Colyseus / PartyKit) — locked per `docs/research/realtime-sync-deep-dive.md` |
 | Persistence | Upstash Redis (per-app independent instance; sibling scorer runs on its own) |
 | Tests | Vitest 4 + V8 coverage (95%+ target on `lib/game/*`) |
@@ -36,7 +36,7 @@ Remaining: manual-tribute round-start wiring (server-side `pendingTribute` setti
 ```bash
 npm install              # ~150 packages (adds jsdom + @testing-library/react)
 npm run dev              # Vite dev server on :5174
-npm test                 # vitest run (917 tests as of 2026-05-19)
+npm test                 # vitest run (956 tests as of 2026-05-19)
 npm run typecheck        # tsc -b
 npm run test:coverage    # V8 coverage; outputs to coverage/
 npm run security:no-leak # grep-no-leak CI gate (enforces single publish site)

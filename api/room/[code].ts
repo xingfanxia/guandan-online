@@ -3,10 +3,6 @@
 import { createRealtimeInfra } from '../../lib/realtime/infra';
 import { handleGetRoom } from '../../lib/api/getRoom';
 
-export const config = {
-  runtime: 'nodejs22.x',
-};
-
 let infraCache: ReturnType<typeof createRealtimeInfra> | null = null;
 function getInfra() {
   if (!infraCache) {

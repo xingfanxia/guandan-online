@@ -3,10 +3,10 @@
 import { createRealtimeInfra } from '../../lib/realtime/infra';
 import { handleSse } from '../../lib/api/sse';
 
+// Allow the function to run nearly the full 300s ceiling so the 270s
+// rotation has headroom. 300s is the platform default in 2026 but we keep
+// it explicit here so the SSE rotation contract is self-documenting.
 export const config = {
-  runtime: 'nodejs22.x',
-  // Allow the function to run nearly the full 300s ceiling so the 270s
-  // rotation has headroom. Vercel can be overridden per project.
   maxDuration: 300,
 };
 

@@ -4,10 +4,6 @@ import { createRealtimeInfra } from '../../../lib/realtime/infra';
 import { handleMove } from '../../../lib/api/move';
 import { createSlidingWindowLimiter } from '../../../lib/security/rateLimit';
 
-export const config = {
-  runtime: 'nodejs22.x',
-};
-
 // Cap per (room, player) at 30 moves per 10 seconds — enough headroom for
 // fast-twitch play, low enough to throttle scripted clients.
 const rateLimiter = createSlidingWindowLimiter({ windowMs: 10_000, max: 30 });

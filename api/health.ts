@@ -1,10 +1,6 @@
 // GET /api/health — liveness probe. Used by monitoring + smoke deploys.
 // Vercel auto-detects this file as a Node serverless function.
 
-export const config = {
-  runtime: 'nodejs22.x',
-};
-
 export default function handler(_req: Request): Response {
   return new Response(
     JSON.stringify({

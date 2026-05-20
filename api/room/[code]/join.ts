@@ -5,10 +5,6 @@
 import { createRealtimeInfra } from '../../../lib/realtime/infra';
 import { handleJoinRoom } from '../../../lib/api/joinRoom';
 
-export const config = {
-  runtime: 'nodejs22.x',
-};
-
 let infraCache: ReturnType<typeof createRealtimeInfra> | null = null;
 function getInfra() {
   if (!infraCache) {

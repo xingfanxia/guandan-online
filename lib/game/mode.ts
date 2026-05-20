@@ -44,6 +44,35 @@ export interface ModeRules {
    * Has no effect on 6P / 8P rounds — those skip tribute entirely.
    */
   manualTribute: boolean;
+
+  /**
+   * Heart card of current level acts as wildcard. Default true.
+   * Display-only at v1 — `cards.ts isWildcard` already implements this
+   * unconditionally; the toggle is preserved on RoomState so a future
+   * engine pass can branch on it.
+   */
+  wildcardHeart: boolean;
+
+  /** Allow declaring "last call" (报警) on the last card. Display-only at v1. */
+  lastCallDeclare: boolean;
+
+  /**
+   * Allow steel-plate pattern (钢板 — 三连对的同点数变体). Default true.
+   * Display-only at v1 — pattern enumeration already includes it.
+   */
+  steelPlate: boolean;
+
+  /**
+   * Allow tri-pair pattern (三连对). Default false in some regional rulesets.
+   * Display-only at v1.
+   */
+  triPair: boolean;
+
+  /**
+   * Straight-flush outranks 5-bomb (同花顺 > 5 炸). Default true.
+   * Display-only at v1 — `bomb.ts` already implements this ordering.
+   */
+  straightFlushAboveBomb5: boolean;
 }
 
 /** Canonical defaults — mirror sibling scorer's live config (config.js:22-54). */
@@ -59,6 +88,11 @@ export const DEFAULT_MODE_RULES: ModeRules = {
   must1: true,
   strictA: true,
   manualTribute: false,
+  wildcardHeart: true,
+  lastCallDeclare: false,
+  steelPlate: true,
+  triPair: false,
+  straightFlushAboveBomb5: true,
 };
 
 /** Number of finishing positions for a given mode. */

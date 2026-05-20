@@ -22,25 +22,37 @@ import {
   seatCountForMode,
   type BotSeat,
   type GameMode,
+  type RoomRuleOverrides,
 } from '@/lib/api/rooms';
 import { navigate } from '@/lib/router';
 
+// Each axis id matches the corresponding field in `lib/game/mode.ts ModeRules`.
+// The server accepts these as a flat object via `POST /api/room/create`. As of
+// ROOM-2 (2026-05-19) all 7 boolean axes are plumbed through; the game engine
+// only branches on `strictA` and `manualTribute` for now — the other 5 are
+// persisted but display-only until a future engine pass wires them through.
+type RuleAxisId =
+  | 'strictA'
+  | 'wildcardHeart'
+  | 'lastCallDeclare'
+  | 'steelPlate'
+  | 'triPair'
+  | 'straightFlushAboveBomb5'
+  | 'manualTribute';
+
 interface RuleAxis {
-  readonly id: string;
+  readonly id: RuleAxisId;
   readonly label: string;
   readonly defaultOn: boolean;
 }
 
 const RULE_AXES: readonly RuleAxis[] = [
-  { id: 'aLevelStrict', label: 'A 级严格', defaultOn: true },
+  { id: 'strictA', label: 'A 级严格', defaultOn: true },
   { id: 'wildcardHeart', label: '红心通配', defaultOn: true },
   { id: 'lastCallDeclare', label: '报警出最后', defaultOn: false },
   { id: 'steelPlate', label: '钢板可出', defaultOn: true },
   { id: 'triPair', label: '三连对可出', defaultOn: false },
   { id: 'straightFlushAboveBomb5', label: '同花顺 > 5 炸', defaultOn: true },
-  // Manual tribute (手动进贡) is the only RULE_AXES entry currently plumbed
-  // through to ModeRules — other toggles are display-only until ROOM-2
-  // ships the full server-side rule validation surface.
   { id: 'manualTribute', label: '手动进贡', defaultOn: false },
 ];
 
@@ -69,8 +81,8 @@ export function CreateRoom({
   const handle = initialHandle ?? getHandle();
 
   const [mode, setMode] = useState<GameMode>('4');
-  const [rulesOn, setRulesOn] = useState<Record<string, boolean>>(() => {
-    const seed: Record<string, boolean> = {};
+  const [rulesOn, setRulesOn] = useState<Record<RuleAxisId, boolean>>(() => {
+    const seed = {} as Record<RuleAxisId, boolean>;
     for (const axis of RULE_AXES) seed[axis.id] = axis.defaultOn;
     return seed;
   });
@@ -86,7 +98,7 @@ export function CreateRoom({
     [seatCount]
   );
 
-  function toggleRule(id: string): void {
+  function toggleRule(id: RuleAxisId): void {
     setRulesOn((prev) => ({ ...prev, [id]: !prev[id] }));
   }
 
@@ -110,19 +122,22 @@ export function CreateRoom({
         const tier = aiTiers[seat] ?? 'human';
         if (tier !== 'human') bots.push({ tier });
       }
+      // Build the rule-overrides slice. Send only axes that differ from the
+      // axis defaults (defaultOn matches `DEFAULT_MODE_RULES` server-side) to
+      // keep the wire payload minimal — omitting a key tells the server to
+      // use its default.
+      const ruleOverrides: { -readonly [K in keyof RoomRuleOverrides]: RoomRuleOverrides[K] } = {};
+      for (const axis of RULE_AXES) {
+        if (rulesOn[axis.id] !== axis.defaultOn) {
+          ruleOverrides[axis.id] = rulesOn[axis.id];
+        }
+      }
       const createInput: {
         mode: GameMode;
         handle: string;
         bots?: BotSeat[];
-        manualTribute?: boolean;
-      } = { mode, handle };
+      } & RoomRuleOverrides = { mode, handle, ...ruleOverrides };
       if (bots.length > 0) createInput.bots = bots;
-      // Only thread the manualTribute axis right now — the other 6 toggles
-      // are cosmetic per the ROOM-2 plumbing note in `lib/api/createRoom.ts`.
-      // 6P/8P silently ignores manualTribute (the engine only runs tribute
-      // for 4P), but we send it anyway so the room state preserves the host's
-      // intent should the engine later add sweep-tribute support.
-      if (rulesOn.manualTribute) createInput.manualTribute = true;
       const res = await createFn(createInput);
       storeCredentials({
         code: res.code,
@@ -242,7 +257,7 @@ export function CreateRoom({
           </div>
           <div className="create__summary-list">
             <SummaryRow k="模式" v={`${seatCount}P · ${teamDescriptor(mode)}`} />
-            <SummaryRow k="A 级" v={rulesOn.aLevelStrict ? '严格' : '宽松'} />
+            <SummaryRow k="A 级" v={rulesOn.strictA ? '严格' : '宽松'} />
             <SummaryRow k="通配" v={rulesOn.wildcardHeart ? '红心级牌 ON' : 'OFF'} />
             <SummaryRow k="报警" v={rulesOn.lastCallDeclare ? 'ON' : 'OFF'} />
             <SummaryRow k="炸弹" v="4 < 5 < 同花顺 < 6 < 7…" />

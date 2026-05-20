@@ -100,4 +100,58 @@ describe('CreateRoom', () => {
     fireEvent.click(first);
     expect(first).toHaveAttribute('aria-pressed', 'true');
   });
+
+  // ROOM-2 (2026-05-19): rule-axis toggles thread through to the create call.
+  // Only non-default values are sent — keeps the wire payload minimal.
+  it('threads toggled rule axes through to createFn (non-defaults only)', async () => {
+    const createFn = vi.fn().mockResolvedValue({
+      code: 'K7M2P9',
+      hostId: 'p0',
+      hostToken: 'ht',
+      hostJoinToken: 'jt',
+    });
+    render(
+      <CreateRoom
+        initialHandle="@阿祥"
+        createFn={createFn}
+        navigateFn={vi.fn()}
+      />
+    );
+    // Flip strictA from default ON → OFF.
+    fireEvent.click(screen.getByRole('button', { name: 'A 级严格' }));
+    // Flip triPair from default OFF → ON.
+    fireEvent.click(screen.getByRole('button', { name: '三连对可出' }));
+    // Flip manualTribute from default OFF → ON.
+    fireEvent.click(screen.getByRole('button', { name: '手动进贡' }));
+    fireEvent.click(screen.getByRole('button', { name: /建立房间/ }));
+    await waitFor(() =>
+      expect(createFn).toHaveBeenCalledWith({
+        mode: '4',
+        handle: '@阿祥',
+        strictA: false,
+        triPair: true,
+        manualTribute: true,
+      })
+    );
+  });
+
+  it('sends no rule overrides when all toggles are at default', async () => {
+    const createFn = vi.fn().mockResolvedValue({
+      code: 'K7M2P9',
+      hostId: 'p0',
+      hostToken: 'ht',
+      hostJoinToken: 'jt',
+    });
+    render(
+      <CreateRoom
+        initialHandle="@阿祥"
+        createFn={createFn}
+        navigateFn={vi.fn()}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: /建立房间/ }));
+    await waitFor(() =>
+      expect(createFn).toHaveBeenCalledWith({ mode: '4', handle: '@阿祥' })
+    );
+  });
 });

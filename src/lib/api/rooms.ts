@@ -112,19 +112,38 @@ export interface BotSeat {
   readonly tier: BotDifficulty;
 }
 
+/**
+ * Boolean rule axes accepted by `POST /api/room/create`. Mirrors the
+ * BOOLEAN_RULE_KEYS list in `lib/api/createRoom.ts`. Omitted fields inherit
+ * `DEFAULT_MODE_RULES`. wildcardHeart / lastCallDeclare / steelPlate / triPair
+ * / straightFlushAboveBomb5 are persisted to room state but the v1 game engine
+ * doesn't yet branch on them — display-only until a future engine pass.
+ */
+export interface RoomRuleOverrides {
+  /** Strict A-mode (must win during own A-level round). */
+  readonly strictA?: boolean;
+  /** Require 1st-place on winning team to upgrade (6P / 8P). */
+  readonly must1?: boolean;
+  /** 4P manual tribute (server waits for tribute_select / anti_tribute). */
+  readonly manualTribute?: boolean;
+  /** Heart card of current level acts as wildcard. */
+  readonly wildcardHeart?: boolean;
+  /** Allow declaring "last call" on the last card. */
+  readonly lastCallDeclare?: boolean;
+  /** Allow steel-plate pattern. */
+  readonly steelPlate?: boolean;
+  /** Allow tri-pair pattern. */
+  readonly triPair?: boolean;
+  /** Straight-flush outranks 5-bomb. */
+  readonly straightFlushAboveBomb5?: boolean;
+}
+
 export async function createRoom(
   input: {
     mode: GameMode;
     handle: string;
     bots?: readonly BotSeat[];
-    /**
-     * 4P only. When true, the new round opens with `pendingTribute` set —
-     * players must dispatch `tribute_select` / `anti_tribute` before the
-     * trick begins. When false (default) the server auto-picks tribute
-     * cards and starts the trick immediately.
-     */
-    manualTribute?: boolean;
-  },
+  } & RoomRuleOverrides,
   opts: RoomApiOptions = {}
 ): Promise<CreateRoomResponse> {
   const fetcher = opts.fetcher ?? defaultFetcher;
@@ -136,8 +155,22 @@ export async function createRoom(
   if (input.bots && input.bots.length > 0) {
     body['bots'] = input.bots.map((b) => ({ tier: b.tier }));
   }
-  if (input.manualTribute === true) {
-    body['manualTribute'] = true;
+  // Thread each rule override only when explicitly set. Omitting a key tells
+  // the server to use DEFAULT_MODE_RULES. Keeps the wire payload minimal
+  // (and preserves backward-compat with the original {mode, host} shape).
+  const RULE_KEYS = [
+    'strictA',
+    'must1',
+    'manualTribute',
+    'wildcardHeart',
+    'lastCallDeclare',
+    'steelPlate',
+    'triPair',
+    'straightFlushAboveBomb5',
+  ] as const;
+  for (const key of RULE_KEYS) {
+    const v = input[key];
+    if (v !== undefined) body[key] = v;
   }
   return call<CreateRoomResponse>(
     `${base}/api/room/create`,

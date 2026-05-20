@@ -304,6 +304,78 @@ describe('handleCreateRoom — bot fill at create-time', () => {
     expect(body.error).toBe('invalid_request');
     expect(body.details).toMatch(/manualTribute/);
   });
+
+  // ROOM-2 (2026-05-19): all 7 boolean rule axes accepted from the wire.
+  // Each axis follows the same "persists override / defaults to DEFAULT_MODE_RULES
+  // / rejects non-boolean" contract. Tests below cover the 6 axes added in ROOM-2
+  // (manualTribute already covered above).
+  const ROOM2_AXES = [
+    { key: 'strictA', defaultValue: true, override: false },
+    { key: 'must1', defaultValue: true, override: false },
+    { key: 'wildcardHeart', defaultValue: true, override: false },
+    { key: 'lastCallDeclare', defaultValue: false, override: true },
+    { key: 'steelPlate', defaultValue: true, override: false },
+    { key: 'triPair', defaultValue: false, override: true },
+    { key: 'straightFlushAboveBomb5', defaultValue: true, override: false },
+  ] as const;
+
+  for (const { key, defaultValue, override } of ROOM2_AXES) {
+    it(`persists ${key}=${override} when supplied`, async () => {
+      const deps = DEPS_OK();
+      const res = await handleCreateRoom(
+        req('POST', { mode: '4', host: { handle: '@fufu' }, [key]: override }),
+        deps
+      );
+      expect(res.status).toBe(201);
+      const persisted = await deps.roomStore.get('CODE-1');
+      expect(persisted?.rules[key]).toBe(override);
+    });
+
+    it(`defaults ${key} to ${defaultValue} when omitted`, async () => {
+      const deps = DEPS_OK();
+      const res = await handleCreateRoom(
+        req('POST', { mode: '4', host: { handle: '@fufu' } }),
+        deps
+      );
+      expect(res.status).toBe(201);
+      const persisted = await deps.roomStore.get('CODE-1');
+      expect(persisted?.rules[key]).toBe(defaultValue);
+    });
+
+    it(`rejects non-boolean ${key}`, async () => {
+      const deps = DEPS_OK();
+      const res = await handleCreateRoom(
+        req('POST', { mode: '4', host: { handle: '@fufu' }, [key]: 'yes' }),
+        deps
+      );
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string; details?: string };
+      expect(body.error).toBe('invalid_request');
+      expect(body.details).toMatch(new RegExp(key));
+    });
+  }
+
+  it('persists multiple rule overrides in one request', async () => {
+    const deps = DEPS_OK();
+    const res = await handleCreateRoom(
+      req('POST', {
+        mode: '4',
+        host: { handle: '@fufu' },
+        strictA: false,
+        triPair: true,
+        manualTribute: true,
+      }),
+      deps
+    );
+    expect(res.status).toBe(201);
+    const persisted = await deps.roomStore.get('CODE-1');
+    expect(persisted?.rules.strictA).toBe(false);
+    expect(persisted?.rules.triPair).toBe(true);
+    expect(persisted?.rules.manualTribute).toBe(true);
+    // Untouched axes retain defaults.
+    expect(persisted?.rules.wildcardHeart).toBe(true);
+    expect(persisted?.rules.lastCallDeclare).toBe(false);
+  });
 });
 
 describe('handleCreateRoom — code collision retry', () => {

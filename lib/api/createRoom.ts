@@ -9,7 +9,7 @@ import { createRoom, addBotToRoom } from '../room/lifecycle';
 import { generateRoomCode } from '../room/code';
 import { normalizeHandle, validateHandle } from '../auth/handle';
 import type { RoomStore } from '../storage/roomStore';
-import type { GameMode } from '../game/mode';
+import type { GameMode, ModeRules } from '../game/mode';
 import { DEFAULT_MODE_RULES, positionCount } from '../game/mode';
 import { generateBotName } from '../ai/names';
 
@@ -74,12 +74,16 @@ export async function handleCreateRoom(
   // first attempt lost the race, generate a new one. After RETRY_CAP misses
   // bail with 503 — that's a strong signal of upstream rate-limit issues
   // rather than genuine cardinality exhaustion.
-  // Merge body-supplied rule overrides onto the defaults. Only manualTribute
-  // is currently accepted from the wire (other rule axes still require the
-  // full ROOM-2 milestone plumbing). Defaults to false when omitted.
-  const effectiveRules = {
+  // Merge body-supplied rule overrides onto the defaults. All 7 boolean rule
+  // axes are accepted from the wire (ROOM-2, 2026-05-19). Each field defaults
+  // to DEFAULT_MODE_RULES when omitted; non-boolean values are rejected during
+  // parsing. wildcardHeart / lastCallDeclare / steelPlate / triPair /
+  // straightFlushAboveBomb5 are persisted to RoomState but the v1 game engine
+  // doesn't yet branch on them — they're display-only until a future engine
+  // pass wires them through.
+  const effectiveRules: ModeRules = {
     ...DEFAULT_MODE_RULES,
-    manualTribute: parsed.value.manualTribute,
+    ...parsed.value.rules,
   };
 
   for (let attempt = 0; attempt < ROOM_CODE_RETRY_CAP; attempt++) {
@@ -158,8 +162,23 @@ interface ParsedBody {
   mode: GameMode;
   handle: string;
   bots: BotSeatConfig[];
-  manualTribute: boolean;
+  /** Subset of ModeRules to overlay on DEFAULT_MODE_RULES. */
+  rules: Partial<ModeRules>;
 }
+
+/** Boolean rule axes accepted from the wire. Other ModeRules fields (numeric
+ * tables c4/t6/p6/t8/p8) are server-only and cannot be overridden per-room. */
+const BOOLEAN_RULE_KEYS = [
+  'strictA',
+  'must1',
+  'manualTribute',
+  'wildcardHeart',
+  'lastCallDeclare',
+  'steelPlate',
+  'triPair',
+  'straightFlushAboveBomb5',
+] as const;
+type BooleanRuleKey = (typeof BOOLEAN_RULE_KEYS)[number];
 
 const VALID_TIERS = new Set<BotSeatConfig['tier']>(['easy', 'medium']);
 
@@ -212,19 +231,21 @@ function parseBody(
     }
   }
 
-  // Manual-tribute opt-in. Defaults to false; ignored on 6P/8P (the game
-  // engine only runs tribute for 4P). Rule shipped 2026-05-19 — see
-  // docs/research/SUMMARY.md decision #15 + `lib/game/mode.ts ModeRules`.
-  const manualTributeRaw = obj['manualTribute'];
-  let manualTribute = false;
-  if (manualTributeRaw !== undefined) {
-    if (typeof manualTributeRaw !== 'boolean') {
-      return { ok: false, error: 'manualTribute must be a boolean' };
+  // Rule-axis overrides (ROOM-2, 2026-05-19). Each boolean rule axis is
+  // accepted individually; omitted keys inherit DEFAULT_MODE_RULES. Non-boolean
+  // values reject. The numeric ModeRules tables (c4/t6/p6/t8/p8) are NOT
+  // accepted from the wire — they're tournament-locked at the engine layer.
+  const rules: Partial<ModeRules> = {};
+  for (const key of BOOLEAN_RULE_KEYS) {
+    const raw = obj[key];
+    if (raw === undefined) continue;
+    if (typeof raw !== 'boolean') {
+      return { ok: false, error: `${key} must be a boolean` };
     }
-    manualTribute = manualTributeRaw;
+    rules[key as BooleanRuleKey] = raw;
   }
 
-  return { ok: true, value: { mode: mode as GameMode, handle, bots, manualTribute } };
+  return { ok: true, value: { mode: mode as GameMode, handle, bots, rules } };
 }
 
 function defaultTokenGen(): string {

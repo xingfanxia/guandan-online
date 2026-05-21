@@ -4,7 +4,7 @@
 // margin-left to overlap cards. First child has margin-left: 0. Lifted state
 // applied per-card via Card's `lifted` prop.
 
-import { Card as CardComponent, type CardSize } from './Card';
+import { Card as CardComponent, type CardSize } from './Card.js';
 import { isWildcard, type Card as GameCard } from '@lib/game/cards';
 import type { LevelRank } from '@lib/game/levels';
 

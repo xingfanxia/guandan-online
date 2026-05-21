@@ -1,8 +1,8 @@
 // POST /api/room/[code]/move — Vercel route wrapper.
 
-import { createRealtimeInfra } from '../../../lib/realtime/infra';
-import { handleMove } from '../../../lib/api/move';
-import { createSlidingWindowLimiter } from '../../../lib/security/rateLimit';
+import { createRealtimeInfra } from '../../../lib/realtime/infra.js';
+import { handleMove } from '../../../lib/api/move.js';
+import { createSlidingWindowLimiter } from '../../../lib/security/rateLimit.js';
 
 // Cap per (room, player) at 30 moves per 10 seconds — enough headroom for
 // fast-twitch play, low enough to throttle scripted clients.

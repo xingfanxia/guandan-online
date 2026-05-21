@@ -1,7 +1,7 @@
 // GET /api/room/[code] — Vercel route wrapper.
 
-import { createRealtimeInfra } from '../../lib/realtime/infra';
-import { handleGetRoom } from '../../lib/api/getRoom';
+import { createRealtimeInfra } from '../../lib/realtime/infra.js';
+import { handleGetRoom } from '../../lib/api/getRoom.js';
 
 let infraCache: ReturnType<typeof createRealtimeInfra> | null = null;
 function getInfra() {

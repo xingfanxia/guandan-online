@@ -6,7 +6,7 @@
 // dispatch on it. moveId is a client-generated UUID v4 — the idempotency
 // key for retry-safety (NET-2 consumes this).
 
-import type { CardId } from './messages';
+import type { CardId } from './messages.js';
 
 export interface PlayCommand {
   kind: 'play';

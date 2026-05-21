@@ -8,8 +8,8 @@
 // Semantics MUST stay byte-identical so cross-app result sync stays
 // well-defined when AUTH-2 ships.
 
-import type { FourPlayerPositions, GameMode, ModeRules } from './mode';
-import { winningRankCount } from './mode';
+import type { FourPlayerPositions, GameMode, ModeRules } from './mode.js';
+import { winningRankCount } from './mode.js';
 
 export interface UpgradeInput {
   mode: GameMode;

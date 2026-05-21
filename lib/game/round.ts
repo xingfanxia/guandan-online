@@ -12,13 +12,13 @@
 // stored as `Record<PlayerId, Card[]>` (not Map) so the round is JSON-
 // serializable for Redis persistence (NET-1).
 
-import { deal } from './cards';
-import type { Card, Rank, Suit, DeckId } from './cards';
-import type { LevelRank } from './levels';
-import { positionCount } from './mode';
-import type { GameMode, TeamKey } from './mode';
-import { analyzeHand, canBeat } from './patterns';
-import type { Pattern } from './patterns';
+import { deal } from './cards.js';
+import type { Card, Rank, Suit, DeckId } from './cards.js';
+import type { LevelRank } from './levels.js';
+import { positionCount } from './mode.js';
+import type { GameMode, TeamKey } from './mode.js';
+import { analyzeHand, canBeat } from './patterns.js';
+import type { Pattern } from './patterns.js';
 
 // ─── Identifiers ──────────────────────────────────────────────────────────────
 

@@ -16,12 +16,12 @@
 // `selectTributeCard` / `declareAntiTribute`. These throw on invalid input;
 // the dispatcher wraps the throw into a `MoveResponse { ok: false }`.
 
-import { isWildcard } from './cards';
-import type { Card } from './cards';
-import { startTrick } from './round';
-import type { GameRound, PlayerId, PendingTributeObligation } from './round';
-import { applyTribute } from './tribute';
-import type { TributeExchange, TributeMode } from './tribute';
+import { isWildcard } from './cards.js';
+import type { Card } from './cards.js';
+import { startTrick } from './round.js';
+import type { GameRound, PlayerId, PendingTributeObligation } from './round.js';
+import { applyTribute } from './tribute.js';
+import type { TributeExchange, TributeMode } from './tribute.js';
 
 /**
  * Result of a manual-tribute command. `exchanges` is non-null only on the

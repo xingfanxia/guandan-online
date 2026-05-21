@@ -1,7 +1,7 @@
 // POST /api/room/[code]/start — Vercel route wrapper.
 
-import { createRealtimeInfra } from '../../../lib/realtime/infra';
-import { handleStartGame } from '../../../lib/api/startGame';
+import { createRealtimeInfra } from '../../../lib/realtime/infra.js';
+import { handleStartGame } from '../../../lib/api/startGame.js';
 
 let infraCache: ReturnType<typeof createRealtimeInfra> | null = null;
 function getInfra() {

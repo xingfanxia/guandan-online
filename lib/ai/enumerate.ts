@@ -16,11 +16,11 @@
 //
 // Pure-functional. No state. Caller picks an entry from the returned list.
 
-import type { Card, NaturalRank, NaturalSuit } from '../game/cards';
-import { analyzeHand, canBeat } from '../game/patterns';
-import type { Pattern } from '../game/patterns';
-import { partitionWildcards } from '../game/wildcard';
-import type { LevelRank } from '../game/levels';
+import type { Card, NaturalRank, NaturalSuit } from '../game/cards.js';
+import { analyzeHand, canBeat } from '../game/patterns.js';
+import type { Pattern } from '../game/patterns.js';
+import { partitionWildcards } from '../game/wildcard.js';
+import type { LevelRank } from '../game/levels.js';
 
 // Mirror windows from patterns.ts (kept separate to avoid coupling on private
 // module internals).

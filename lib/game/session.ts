@@ -12,12 +12,12 @@
 // § "A-level rules (A级规则)". Implementation mirrors sibling scorer's
 // rules.js (already ported into aLevel.ts) and config.js defaults.
 
-import { checkALevelRules } from './aLevel';
-import { nextLevel } from './levels';
-import type { LevelRank } from './levels';
-import type { ModeRules, GameMode, TeamKey } from './mode';
-import { resolveRound } from './resolveRound';
-import type { GameRound } from './round';
+import { checkALevelRules } from './aLevel.js';
+import { nextLevel } from './levels.js';
+import type { LevelRank } from './levels.js';
+import type { ModeRules, GameMode, TeamKey } from './mode.js';
+import { resolveRound } from './resolveRound.js';
+import type { GameRound } from './round.js';
 
 export type SessionPhase = 'in_progress' | 'finished';
 

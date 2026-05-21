@@ -1,7 +1,7 @@
 // GET /api/sse/[roomId] — Vercel route wrapper.
 
-import { createRealtimeInfra } from '../../lib/realtime/infra';
-import { handleSse } from '../../lib/api/sse';
+import { createRealtimeInfra } from '../../lib/realtime/infra.js';
+import { handleSse } from '../../lib/api/sse.js';
 
 // Allow the function to run nearly the full 300s ceiling so the 270s
 // rotation has headroom. 300s is the platform default in 2026 but we keep

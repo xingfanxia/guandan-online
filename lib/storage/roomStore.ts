@@ -12,8 +12,8 @@
 // codes via SCAN on the data keys would work, but a dedicated set is
 // O(1) per mutation and far cheaper to enumerate.
 
-import type { RoomState } from '../room/lifecycle';
-import type { RedisLike } from '../realtime/redisClient';
+import type { RoomState } from '../room/lifecycle.js';
+import type { RedisLike } from '../realtime/redisClient.js';
 
 // ─── Memory implementation ────────────────────────────────────────────────────
 //

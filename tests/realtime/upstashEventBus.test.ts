@@ -12,7 +12,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createUpstashEventBus } from '@lib/realtime/eventBus';
 import type { ServerEvent } from '@lib/realtime/messages';
-import { createFakeRedis } from './_fakeRedis';
+import { createFakeRedis } from './_fakeRedis.js';
 
 const sampleEvent: ServerEvent = {
   type: 'heartbeat',

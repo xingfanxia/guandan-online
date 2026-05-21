@@ -21,15 +21,15 @@
 // tier deletion rationale). RoomMember.difficulty narrows down at the bot-
 // fill API boundary.
 
-import { pass, playCards, startTrick } from '../game/round';
-import type { GameRound, PlayerId } from '../game/round';
-import type { RoomState } from '../room/lifecycle';
-import { encodeCards } from '../realtime/cardCodec';
-import { deriveMoveEvent } from '../realtime/deriveMoveEvent';
-import type { AuthorEvent } from '../realtime/buildClientPayload';
-import type { MoveCommand } from '../realtime/commands';
-import type { ISOTimestamp } from '../realtime/messages';
-import { computeBotMove, type BotContext, type BotTier } from './dispatch';
+import { pass, playCards, startTrick } from '../game/round.js';
+import type { GameRound, PlayerId } from '../game/round.js';
+import type { RoomState } from '../room/lifecycle.js';
+import { encodeCards } from '../realtime/cardCodec.js';
+import { deriveMoveEvent } from '../realtime/deriveMoveEvent.js';
+import type { AuthorEvent } from '../realtime/buildClientPayload.js';
+import type { MoveCommand } from '../realtime/commands.js';
+import type { ISOTimestamp } from '../realtime/messages.js';
+import { computeBotMove, type BotContext, type BotTier } from './dispatch.js';
 
 export interface RunBotsInput {
   room: RoomState;

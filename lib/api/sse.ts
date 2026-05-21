@@ -16,13 +16,13 @@
 //
 // On client disconnect (ReadableStream.cancel), unsubscribe + clear timers.
 
-import type { EventBus } from '../realtime/eventBus';
-import type { EventLog } from '../realtime/eventLog';
-import { formatComment, formatEvent } from '../realtime/sse';
-import type { StreamClosingEvent } from '../realtime/messages';
-import type { RoomStore } from '../storage/roomStore';
-import { isValidRoomCode } from '../room/code';
-import { eventLogKey } from '../realtime/publish';
+import type { EventBus } from '../realtime/eventBus.js';
+import type { EventLog } from '../realtime/eventLog.js';
+import { formatComment, formatEvent } from '../realtime/sse.js';
+import type { StreamClosingEvent } from '../realtime/messages.js';
+import type { RoomStore } from '../storage/roomStore.js';
+import { isValidRoomCode } from '../room/code.js';
+import { eventLogKey } from '../realtime/publish.js';
 
 export interface SseDeps {
   roomStore: RoomStore;

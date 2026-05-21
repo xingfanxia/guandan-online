@@ -10,10 +10,10 @@
 // SYNC: docs/research/realtime-sync-deep-dive.md § 7.2 — RoundEndEvent +
 // GameEndEvent shape. SYNC: lib/game/session.ts § applyRoundResult.
 
-import type { TeamKey } from '../game/mode';
-import type { GameSession } from '../game/session';
-import type { RoundResult } from '../game/resolveRound';
-import type { AuthorEvent } from './buildClientPayload';
+import type { TeamKey } from '../game/mode.js';
+import type { GameSession } from '../game/session.js';
+import type { RoundResult } from '../game/resolveRound.js';
+import type { AuthorEvent } from './buildClientPayload.js';
 
 export interface DeriveRoundEndInput {
   /** Session state BEFORE applyRoundResult (for diff context if ever needed). */

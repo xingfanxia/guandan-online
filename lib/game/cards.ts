@@ -9,7 +9,7 @@
 // via isWildcard(card, levelRank) — the card data itself doesn't carry a
 // wildcard flag, since "wildcard" is contextual to the current level.
 
-import type { LevelRank } from './levels';
+import type { LevelRank } from './levels.js';
 
 export type NaturalSuit = 'spades' | 'hearts' | 'clubs' | 'diamonds';
 export type Suit = NaturalSuit | 'joker';

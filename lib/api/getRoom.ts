@@ -5,9 +5,9 @@
 // stolen code cannot escalate to admin or impersonate a member; tokens
 // remain on the host's create-room response and joiners' join responses.
 
-import { isValidRoomCode } from '../room/code';
-import type { RoomState } from '../room/lifecycle';
-import type { RoomStore } from '../storage/roomStore';
+import { isValidRoomCode } from '../room/code.js';
+import type { RoomState } from '../room/lifecycle.js';
+import type { RoomStore } from '../storage/roomStore.js';
 
 export interface GetRoomDeps {
   roomStore: RoomStore;

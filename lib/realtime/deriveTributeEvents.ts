@@ -17,13 +17,13 @@
 //   2. tribute_resolved — emits all card movements (tribute + return per pair).
 //                         Skipped entirely for 'anti_tribute' / 'none'.
 
-import type { TributeExchange, TributeMode } from '../game/tribute';
-import { encodeCard } from './cardCodec';
+import type { TributeExchange, TributeMode } from '../game/tribute.js';
+import { encodeCard } from './cardCodec.js';
 import type {
   AuthorEvent,
   AuthorTributePendingEvent,
-} from './buildClientPayload';
-import type { CardId, TributeResolvedEvent } from './messages';
+} from './buildClientPayload.js';
+import type { CardId, TributeResolvedEvent } from './messages.js';
 
 export interface DeriveTributeEventsInput {
   tributeMode: TributeMode;

@@ -13,9 +13,9 @@
 // automatically when CRON_SECRET / ADMIN_TOKEN is configured in env vars.
 // Manual triggering for tests / ops uses the same header.
 
-import { extractBearerToken } from '../auth/ownershipToken';
-import { isStale } from '../room/lifecycle';
-import type { RoomStore } from '../storage/roomStore';
+import { extractBearerToken } from '../auth/ownershipToken.js';
+import { isStale } from '../room/lifecycle.js';
+import type { RoomStore } from '../storage/roomStore.js';
 
 export interface CleanupRoomsDeps {
   roomStore: RoomStore;

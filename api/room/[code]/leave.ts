@@ -1,7 +1,7 @@
 // POST /api/room/[code]/leave — Vercel route wrapper.
 
-import { createRealtimeInfra } from '../../../lib/realtime/infra';
-import { handleLeaveRoom } from '../../../lib/api/leaveRoom';
+import { createRealtimeInfra } from '../../../lib/realtime/infra.js';
+import { handleLeaveRoom } from '../../../lib/api/leaveRoom.js';
 
 let infraCache: ReturnType<typeof createRealtimeInfra> | null = null;
 function getInfra() {

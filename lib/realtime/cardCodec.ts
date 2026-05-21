@@ -13,8 +13,8 @@
 // game-state Card type. Used by buildClientPayload (game state → ServerEvent
 // payloads) and by the inverse path (POST /move body → game-state cards).
 
-import type { Card, NaturalRank, Rank, Suit } from '../game/cards';
-import type { CardId } from './messages';
+import type { Card, NaturalRank, Rank, Suit } from '../game/cards.js';
+import type { CardId } from './messages.js';
 
 const SUIT_TO_LETTER: Record<Suit, string> = {
   spades: 'S',

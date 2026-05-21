@@ -2,8 +2,8 @@
 // Vercel routes the [code] path segment automatically. We re-parse the URL
 // here so the handler stays free of Vercel framework types.
 
-import { createRealtimeInfra } from '../../../lib/realtime/infra';
-import { handleJoinRoom } from '../../../lib/api/joinRoom';
+import { createRealtimeInfra } from '../../../lib/realtime/infra.js';
+import { handleJoinRoom } from '../../../lib/api/joinRoom.js';
 
 let infraCache: ReturnType<typeof createRealtimeInfra> | null = null;
 function getInfra() {

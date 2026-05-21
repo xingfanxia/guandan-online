@@ -13,11 +13,11 @@
 // fill them with sensible defaults so a future event kind that consumes
 // them won't crash.
 
-import type { CardId, PlayerHandle, PlayerStatus } from './messages';
-import type { PlayerId } from '../game/round';
-import type { RoomState } from '../room/lifecycle';
-import type { TeamKey } from '../game/mode';
-import type { GameState } from './buildClientPayload';
+import type { CardId, PlayerHandle, PlayerStatus } from './messages.js';
+import type { PlayerId } from '../game/round.js';
+import type { RoomState } from '../room/lifecycle.js';
+import type { TeamKey } from '../game/mode.js';
+import type { GameState } from './buildClientPayload.js';
 
 /**
  * Choose a team for a lobby member by position parity (even → t1, odd → t2).

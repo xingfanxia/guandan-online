@@ -6,10 +6,10 @@
 // function returns the new RoomState. The events are then routed through
 // the publishEvent gateway with a lobby-phase GameState builder.
 
-import type { TeamKey } from '../game/mode';
-import type { RoomState } from '../room/lifecycle';
-import type { AuthorEvent } from './buildClientPayload';
-import type { PlayerSummary } from './messages';
+import type { TeamKey } from '../game/mode.js';
+import type { RoomState } from '../room/lifecycle.js';
+import type { AuthorEvent } from './buildClientPayload.js';
+import type { PlayerSummary } from './messages.js';
 
 /**
  * Alternating-team derivation matching startGame.assignSeats: even index

@@ -7,9 +7,9 @@
 //
 // Pure-functional. Returns a new array; input is not mutated.
 
-import type { Card, Suit } from './cards';
-import type { LevelRank } from './levels';
-import { powerRank } from './patterns';
+import type { Card, Suit } from './cards.js';
+import type { LevelRank } from './levels.js';
+import { powerRank } from './patterns.js';
 
 const SUIT_ORDER: Record<Suit, number> = {
   spades: 0,

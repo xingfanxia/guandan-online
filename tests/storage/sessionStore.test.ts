@@ -12,7 +12,7 @@ import {
 } from '@lib/storage/sessionStore';
 import type { GameSession } from '@lib/game/session';
 import { DEFAULT_MODE_RULES } from '@lib/game/mode';
-import { createFakeRedis } from '../realtime/_fakeRedis';
+import { createFakeRedis } from '../realtime/_fakeRedis.js';
 
 function sampleSession(overrides: Partial<GameSession> = {}): GameSession {
   return {

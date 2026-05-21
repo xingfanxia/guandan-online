@@ -4,15 +4,15 @@
 // (req, code, deps) here. Same pure-handler pattern as createRoom for
 // testability.
 
-import { joinRoom } from '../room/lifecycle';
-import { isValidRoomCode } from '../room/code';
-import { normalizeHandle, validateHandle } from '../auth/handle';
-import type { RoomStore } from '../storage/roomStore';
-import type { EventBus } from '../realtime/eventBus';
-import type { EventLog } from '../realtime/eventLog';
-import { publishEvent } from '../realtime/publish';
-import { deriveRoomJoined } from '../realtime/deriveLifecycleEvents';
-import { buildLobbyGameState } from '../realtime/buildLobbyGameState';
+import { joinRoom } from '../room/lifecycle.js';
+import { isValidRoomCode } from '../room/code.js';
+import { normalizeHandle, validateHandle } from '../auth/handle.js';
+import type { RoomStore } from '../storage/roomStore.js';
+import type { EventBus } from '../realtime/eventBus.js';
+import type { EventLog } from '../realtime/eventLog.js';
+import { publishEvent } from '../realtime/publish.js';
+import { deriveRoomJoined } from '../realtime/deriveLifecycleEvents.js';
+import { buildLobbyGameState } from '../realtime/buildLobbyGameState.js';
 
 export interface JoinRoomDeps {
   roomStore: RoomStore;

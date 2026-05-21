@@ -1,8 +1,8 @@
 // POST /api/room/create — Vercel route wrapper.
 // All logic lives in lib/api/createRoom.ts so it stays unit-testable.
 
-import { createRealtimeInfra } from '../../lib/realtime/infra';
-import { handleCreateRoom } from '../../lib/api/createRoom';
+import { createRealtimeInfra } from '../../lib/realtime/infra.js';
+import { handleCreateRoom } from '../../lib/api/createRoom.js';
 
 let infraCache: ReturnType<typeof createRealtimeInfra> | null = null;
 function getInfra() {

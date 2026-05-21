@@ -11,10 +11,10 @@
 // 6/8-player simplification (2026-05): no A-fail counter, no demotion.
 // A-level teams stay at A indefinitely until they satisfy the pass condition.
 
-import type { LevelRank } from './levels';
-import { isALevel } from './levels';
-import type { GameMode, TeamKey } from './mode';
-import { positionCount, tracksAFail } from './mode';
+import type { LevelRank } from './levels.js';
+import { isALevel } from './levels.js';
+import type { GameMode, TeamKey } from './mode.js';
+import { positionCount, tracksAFail } from './mode.js';
 
 export interface ALevelInput {
   winnerKey: TeamKey;

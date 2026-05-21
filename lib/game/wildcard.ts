@@ -14,9 +14,9 @@
 // algorithm (try possible assignments → pick highest-strength valid hand) lives
 // in patterns.ts where it has access to all 10 pattern kinds.
 
-import { isWildcard } from './cards';
-import type { Card, JokerRank } from './cards';
-import type { LevelRank } from './levels';
+import { isWildcard } from './cards.js';
+import type { Card, JokerRank } from './cards.js';
+import type { LevelRank } from './levels.js';
 
 /** Ranks a wildcard can never declare (rule 4). Both jokers. */
 export const WILDCARD_NEVER_RANKS: readonly JokerRank[] = ['BJ', 'RJ'];

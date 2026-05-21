@@ -13,16 +13,16 @@
 // move_played / move_passed / trick_won are pass-through events, so the
 // AuthorEvent shape is structurally identical to ServerEvent.
 
-import { analyzeHand } from '../game/patterns';
-import { decodeCardIds } from './cardCodec';
+import { analyzeHand } from '../game/patterns.js';
+import { decodeCardIds } from './cardCodec.js';
 import type {
   MoveCommand,
   PassCommand,
   PlayCommand,
-} from './commands';
-import type { GameRound, PlayerId } from '../game/round';
-import type { AuthorEvent } from './buildClientPayload';
-import type { ISOTimestamp } from './messages';
+} from './commands.js';
+import type { GameRound, PlayerId } from '../game/round.js';
+import type { AuthorEvent } from './buildClientPayload.js';
+import type { ISOTimestamp } from './messages.js';
 
 /**
  * Derive the AuthorEvents for a single successful move. Returns an array so

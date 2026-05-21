@@ -9,12 +9,12 @@
 // deferred per the same spec lines (~252-253). Caller checks mode before
 // dispatching.
 
-import type { Card, NaturalRank } from './cards';
-import { isWildcard } from './cards';
-import type { LevelRank } from './levels';
-import { powerRank } from './patterns';
-import type { PlayerId, PlayerSeat } from './round';
-import type { TeamKey } from './mode';
+import type { Card, NaturalRank } from './cards.js';
+import { isWildcard } from './cards.js';
+import type { LevelRank } from './levels.js';
+import { powerRank } from './patterns.js';
+import type { PlayerId, PlayerSeat } from './round.js';
+import type { TeamKey } from './mode.js';
 
 export type TributeMode =
   | { kind: 'none' }

@@ -12,8 +12,8 @@
 //   4. If the log no longer contains the missing range (trimmed past), the
 //      server emits a state_resync event instead of partial replay.
 
-import type { ServerEvent } from './messages';
-import type { RedisLike } from './redisClient';
+import type { ServerEvent } from './messages.js';
+import type { RedisLike } from './redisClient.js';
 
 export interface LoggedEvent {
   id: number;

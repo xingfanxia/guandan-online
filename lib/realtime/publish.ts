@@ -15,11 +15,11 @@
 // which IS hidden-state leakage. Per-recipient streams isolate the resume
 // path so each client only re-reads payloads built for them.
 
-import { assertNoOpponentHandLeak, buildClientPayload } from './buildClientPayload';
-import type { AuthorEvent, GameState } from './buildClientPayload';
-import type { EventBus } from './eventBus';
-import type { EventLog } from './eventLog';
-import type { PlayerId } from '../game/round';
+import { assertNoOpponentHandLeak, buildClientPayload } from './buildClientPayload.js';
+import type { AuthorEvent, GameState } from './buildClientPayload.js';
+import type { EventBus } from './eventBus.js';
+import type { EventLog } from './eventLog.js';
+import type { PlayerId } from '../game/round.js';
 
 /**
  * Compose the per-recipient log key. Consumers (handleSse) MUST use this

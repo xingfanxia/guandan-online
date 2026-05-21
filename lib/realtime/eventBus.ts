@@ -15,8 +15,8 @@
 // Errors thrown by handlers are caught and logged, never propagated — one
 // crashed subscriber must not block delivery to others.
 
-import type { ServerEvent } from './messages';
-import type { RedisLike } from './redisClient';
+import type { ServerEvent } from './messages.js';
+import type { RedisLike } from './redisClient.js';
 
 export type Unsubscribe = () => Promise<void>;
 

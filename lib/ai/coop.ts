@@ -10,10 +10,10 @@
 // hard.ts) consumes them. They take the minimal information needed and
 // return a cooperation directive that the caller folds into its choice.
 
-import type { PlayerId } from '../game/round';
-import type { Pattern } from '../game/patterns';
-import { powerRank } from '../game/patterns';
-import type { LevelRank } from '../game/levels';
+import type { PlayerId } from '../game/round.js';
+import type { Pattern } from '../game/patterns.js';
+import { powerRank } from '../game/patterns.js';
+import type { LevelRank } from '../game/levels.js';
 
 export interface CoopContext {
   /** Who currently leads / made the last play. */

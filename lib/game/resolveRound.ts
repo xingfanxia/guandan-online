@@ -6,10 +6,10 @@
 // depends on session-level state (team levels, A-fail counters) not held in
 // the round.
 
-import { calculateUpgrade } from './upgrade';
-import type { UpgradeDetails } from './upgrade';
-import type { ModeRules, TeamKey } from './mode';
-import type { GameRound } from './round';
+import { calculateUpgrade } from './upgrade.js';
+import type { UpgradeDetails } from './upgrade.js';
+import type { ModeRules, TeamKey } from './mode.js';
+import type { GameRound } from './round.js';
 
 export interface RoundResult {
   winnerTeam: TeamKey;

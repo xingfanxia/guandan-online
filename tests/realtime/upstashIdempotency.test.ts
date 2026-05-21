@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { createUpstashIdempotencyCache } from '@lib/realtime/idempotency';
 import type { MoveResponse } from '@lib/realtime/commands';
-import { createFakeRedis } from './_fakeRedis';
+import { createFakeRedis } from './_fakeRedis.js';
 
 const ok: MoveResponse = { ok: true, appliedVersion: 5, result: 'applied' };
 const err: MoveResponse = { ok: false, error: 'invalid_move' };

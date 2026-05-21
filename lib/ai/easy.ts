@@ -13,11 +13,11 @@
 // cooperation. Hard tier (AI-3): LLM-guided. Both share this enumerate +
 // canBeat foundation.
 
-import type { Card } from '../game/cards';
-import { enumerateLegalPlays } from './enumerate';
-import type { Pattern } from '../game/patterns';
-import { powerRank } from '../game/patterns';
-import type { LevelRank } from '../game/levels';
+import type { Card } from '../game/cards.js';
+import { enumerateLegalPlays } from './enumerate.js';
+import type { Pattern } from '../game/patterns.js';
+import { powerRank } from '../game/patterns.js';
+import type { LevelRank } from '../game/levels.js';
 
 export type EasyMove =
   | { kind: 'play'; pattern: Pattern }

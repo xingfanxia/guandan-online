@@ -5,7 +5,7 @@ import { createRealtimeInfra } from '@lib/realtime/infra';
 import type { ServerEvent } from '@lib/realtime/messages';
 import type { RoomState } from '@lib/room/lifecycle';
 import { DEFAULT_MODE_RULES } from '@lib/game/mode';
-import { createFakeRedis } from './_fakeRedis';
+import { createFakeRedis } from './_fakeRedis.js';
 
 const event = (v: number): ServerEvent => ({
   type: 'heartbeat',

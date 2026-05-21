@@ -11,8 +11,8 @@
 // JSON projection — no envelope wrapper because the session has no version
 // counter of its own (event versions are tracked on the round + room).
 
-import type { GameSession } from '../game/session';
-import type { RedisLike } from '../realtime/redisClient';
+import type { GameSession } from '../game/session.js';
+import type { RedisLike } from '../realtime/redisClient.js';
 
 export interface SessionStore {
   get(code: string): Promise<GameSession | null>;

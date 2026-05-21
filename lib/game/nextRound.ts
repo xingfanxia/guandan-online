@@ -10,21 +10,21 @@
 // `finishOrder` drives tribute detection) and the post-applyRoundResult
 // session (whose `teamLevels` + `roundOwner` set the new round's level + owner).
 
-import { buildDeck, shuffleDeck } from './cards';
-import type { GameSession } from './session';
-import { dealRound, startTrick } from './round';
+import { buildDeck, shuffleDeck } from './cards.js';
+import type { GameSession } from './session.js';
+import { dealRound, startTrick } from './round.js';
 import type {
   GameRound,
   PendingTributeObligation,
   PendingTributeState,
   PlayerId,
-} from './round';
+} from './round.js';
 import {
   applyTribute,
   detectTributeMode4P,
   type TributeExchange,
   type TributeMode,
-} from './tribute';
+} from './tribute.js';
 
 export interface DealNextRoundInput {
   prevRound: GameRound;

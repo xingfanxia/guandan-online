@@ -6,8 +6,8 @@
 // We compare against ADMIN_TOKEN, set in the project env vars — the same
 // secret the sibling scorer uses for its admin endpoints.
 
-import { createRealtimeInfra } from '../../lib/realtime/infra';
-import { handleCleanupRooms } from '../../lib/api/cleanupRooms';
+import { createRealtimeInfra } from '../../lib/realtime/infra.js';
+import { handleCleanupRooms } from '../../lib/api/cleanupRooms.js';
 
 let infraCache: ReturnType<typeof createRealtimeInfra> | null = null;
 function getInfra() {

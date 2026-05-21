@@ -6,9 +6,9 @@
 // strings, not full Card objects) lives at NET-3's buildClientPayload; this
 // module is the type-only contract.
 
-import type { LevelRank } from '../game/levels';
-import type { PlayerId } from '../game/round';
-import type { TeamKey } from '../game/mode';
+import type { LevelRank } from '../game/levels.js';
+import type { PlayerId } from '../game/round.js';
+import type { TeamKey } from '../game/mode.js';
 
 // ─── Scalar/wire types ────────────────────────────────────────────────────────
 

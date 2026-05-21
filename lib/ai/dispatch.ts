@@ -10,12 +10,12 @@
 // The previous LLM-backed Hard tier was deleted on 2026-05-19 — see
 // HANDOFF.md 2026-05-19 entry for rationale.
 
-import type { Card } from '../game/cards';
-import type { LevelRank } from '../game/levels';
-import type { Pattern } from '../game/patterns';
-import type { PlayerId } from '../game/round';
-import { chooseEasyMove } from './easy';
-import { chooseMediumMove } from './medium';
+import type { Card } from '../game/cards.js';
+import type { LevelRank } from '../game/levels.js';
+import type { Pattern } from '../game/patterns.js';
+import type { PlayerId } from '../game/round.js';
+import { chooseEasyMove } from './easy.js';
+import { chooseMediumMove } from './medium.js';
 
 export type BotTier = 'easy' | 'medium';
 

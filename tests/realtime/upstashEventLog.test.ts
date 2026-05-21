@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { createUpstashEventLog } from '@lib/realtime/eventLog';
 import type { ServerEvent } from '@lib/realtime/messages';
-import { createFakeRedis } from './_fakeRedis';
+import { createFakeRedis } from './_fakeRedis.js';
 
 const heartbeat = (v: number): ServerEvent => ({
   type: 'heartbeat',

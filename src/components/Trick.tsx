@@ -3,7 +3,7 @@
 // Uses .played-stack CSS class for tighter overlap (8px vs hand's 12px).
 // Renders the lead/follow author + pattern kind label below the stack.
 
-import { Card as CardView, type CardSize } from './Card';
+import { Card as CardView, type CardSize } from './Card.js';
 import { isWildcard, type Card as GameCard } from '@lib/game/cards';
 import type { LevelRank } from '@lib/game/levels';
 

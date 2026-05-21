@@ -5,7 +5,7 @@
 // (lines ~727-731). Uses the event's `version` field as the SSE `id:` for
 // Last-Event-ID resume semantics (NET-2 will consume this).
 
-import type { ServerEvent } from './messages';
+import type { ServerEvent } from './messages.js';
 
 /**
  * Serialize a ServerEvent to a single SSE frame string. Frame layout:

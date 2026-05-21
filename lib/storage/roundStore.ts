@@ -8,8 +8,8 @@
 // successful move bumps the version; clients pass `fromVersion` so retries
 // across crashes are safe.
 
-import type { GameRound } from '../game/round';
-import type { RedisLike } from '../realtime/redisClient';
+import type { GameRound } from '../game/round.js';
+import type { RedisLike } from '../realtime/redisClient.js';
 
 /**
  * What we actually persist. Wrapping the round + version in one cell keeps

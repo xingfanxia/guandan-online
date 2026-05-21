@@ -4,10 +4,10 @@
 // state changes are API-route concerns (api/room/*); this module is the
 // pure state machine.
 
-import type { GameMode, ModeRules } from '../game/mode';
-import { positionCount } from '../game/mode';
-import type { PlayerId } from '../game/round';
-import type { PlayerHandle, PlayerStatus } from '../realtime/messages';
+import type { GameMode, ModeRules } from '../game/mode.js';
+import { positionCount } from '../game/mode.js';
+import type { PlayerId } from '../game/round.js';
+import type { PlayerHandle, PlayerStatus } from '../realtime/messages.js';
 
 export type RoomPhase = 'lobby' | 'in_game';
 

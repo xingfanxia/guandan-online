@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { createRoomStore, createMemoryRoomStore } from '@lib/storage/roomStore';
 import type { RoomState } from '@lib/room/lifecycle';
 import { DEFAULT_MODE_RULES } from '@lib/game/mode';
-import { createFakeRedis } from '../realtime/_fakeRedis';
+import { createFakeRedis } from '../realtime/_fakeRedis.js';
 
 function sampleRoom(code: string, now = 1_700_000_000_000): RoomState {
   return {

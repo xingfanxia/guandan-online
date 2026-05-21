@@ -5,13 +5,13 @@
 // `deps` directly with deterministic codeGen / tokenGen / now to make the
 // happy paths and collision-retry behavior easy to assert.
 
-import { createRoom, addBotToRoom } from '../room/lifecycle';
-import { generateRoomCode } from '../room/code';
-import { normalizeHandle, validateHandle } from '../auth/handle';
-import type { RoomStore } from '../storage/roomStore';
-import type { GameMode, ModeRules } from '../game/mode';
-import { DEFAULT_MODE_RULES, positionCount } from '../game/mode';
-import { generateBotName } from '../ai/names';
+import { createRoom, addBotToRoom } from '../room/lifecycle.js';
+import { generateRoomCode } from '../room/code.js';
+import { normalizeHandle, validateHandle } from '../auth/handle.js';
+import type { RoomStore } from '../storage/roomStore.js';
+import type { GameMode, ModeRules } from '../game/mode.js';
+import { DEFAULT_MODE_RULES, positionCount } from '../game/mode.js';
+import { generateBotName } from '../ai/names.js';
 
 export interface CreateRoomDeps {
   roomStore: RoomStore;

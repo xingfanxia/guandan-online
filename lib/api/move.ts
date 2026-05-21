@@ -17,30 +17,30 @@
 // Event fanout (publishEvent + SSE) lands in API-4 part B alongside SSE; this
 // part A delivers the durable game-logic dispatch + idempotency contract.
 
-import { extractBearerToken } from '../auth/ownershipToken';
-import { isValidRoomCode } from '../room/code';
-import { handleMoveCommand } from '../realtime/handleMove';
-import { moveCommandKind } from '../realtime/commands';
-import type { MoveCommand, MoveResponse } from '../realtime/commands';
-import type { IdempotencyCache } from '../realtime/idempotency';
-import type { RateLimiter } from '../security/rateLimit';
-import type { RoomStore } from '../storage/roomStore';
-import type { RoundStore } from '../storage/roundStore';
-import type { SessionStore } from '../storage/sessionStore';
-import type { EventBus } from '../realtime/eventBus';
-import type { EventLog } from '../realtime/eventLog';
-import { publishEvent } from '../realtime/publish';
-import { buildGameState } from '../realtime/buildGameState';
-import { deriveMoveEvent } from '../realtime/deriveMoveEvent';
-import { deriveRoundEndEvents } from '../realtime/deriveRoundEndEvents';
-import type { AuthorEvent } from '../realtime/buildClientPayload';
-import { applyRoundResult } from '../game/session';
-import { resolveRound } from '../game/resolveRound';
-import { runBots } from '../ai/runBots';
-import { dealNextRound } from '../game/nextRound';
-import { deriveTributeEvents } from '../realtime/deriveTributeEvents';
-import { encodeCards } from '../realtime/cardCodec';
-import type { AuthorDealEvent } from '../realtime/buildClientPayload';
+import { extractBearerToken } from '../auth/ownershipToken.js';
+import { isValidRoomCode } from '../room/code.js';
+import { handleMoveCommand } from '../realtime/handleMove.js';
+import { moveCommandKind } from '../realtime/commands.js';
+import type { MoveCommand, MoveResponse } from '../realtime/commands.js';
+import type { IdempotencyCache } from '../realtime/idempotency.js';
+import type { RateLimiter } from '../security/rateLimit.js';
+import type { RoomStore } from '../storage/roomStore.js';
+import type { RoundStore } from '../storage/roundStore.js';
+import type { SessionStore } from '../storage/sessionStore.js';
+import type { EventBus } from '../realtime/eventBus.js';
+import type { EventLog } from '../realtime/eventLog.js';
+import { publishEvent } from '../realtime/publish.js';
+import { buildGameState } from '../realtime/buildGameState.js';
+import { deriveMoveEvent } from '../realtime/deriveMoveEvent.js';
+import { deriveRoundEndEvents } from '../realtime/deriveRoundEndEvents.js';
+import type { AuthorEvent } from '../realtime/buildClientPayload.js';
+import { applyRoundResult } from '../game/session.js';
+import { resolveRound } from '../game/resolveRound.js';
+import { runBots } from '../ai/runBots.js';
+import { dealNextRound } from '../game/nextRound.js';
+import { deriveTributeEvents } from '../realtime/deriveTributeEvents.js';
+import { encodeCards } from '../realtime/cardCodec.js';
+import type { AuthorDealEvent } from '../realtime/buildClientPayload.js';
 
 export interface MoveDeps {
   roomStore: RoomStore;

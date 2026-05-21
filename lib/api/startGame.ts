@@ -13,26 +13,26 @@
 //   - RoomState updated: phase='in_game', lastActiveAt=now()
 //   - AuthorDealEvent fanned out (per-recipient filter happens in publishEvent)
 
-import { extractBearerToken } from '../auth/ownershipToken';
-import { isValidRoomCode } from '../room/code';
-import { dealRound, startTrick } from '../game/round';
-import type { PlayerSeat } from '../game/round';
-import { buildDeck, shuffleDeck } from '../game/cards';
-import { positionCount } from '../game/mode';
-import type { TeamKey } from '../game/mode';
-import type { LevelRank } from '../game/levels';
-import { createSession } from '../game/session';
-import type { RoomState } from '../room/lifecycle';
-import type { RoomStore } from '../storage/roomStore';
-import type { RoundStore } from '../storage/roundStore';
-import type { SessionStore } from '../storage/sessionStore';
-import type { EventBus } from '../realtime/eventBus';
-import type { EventLog } from '../realtime/eventLog';
-import { publishEvent } from '../realtime/publish';
-import { buildGameState } from '../realtime/buildGameState';
-import { encodeCards } from '../realtime/cardCodec';
-import type { AuthorDealEvent } from '../realtime/buildClientPayload';
-import { runBots } from '../ai/runBots';
+import { extractBearerToken } from '../auth/ownershipToken.js';
+import { isValidRoomCode } from '../room/code.js';
+import { dealRound, startTrick } from '../game/round.js';
+import type { PlayerSeat } from '../game/round.js';
+import { buildDeck, shuffleDeck } from '../game/cards.js';
+import { positionCount } from '../game/mode.js';
+import type { TeamKey } from '../game/mode.js';
+import type { LevelRank } from '../game/levels.js';
+import { createSession } from '../game/session.js';
+import type { RoomState } from '../room/lifecycle.js';
+import type { RoomStore } from '../storage/roomStore.js';
+import type { RoundStore } from '../storage/roundStore.js';
+import type { SessionStore } from '../storage/sessionStore.js';
+import type { EventBus } from '../realtime/eventBus.js';
+import type { EventLog } from '../realtime/eventLog.js';
+import { publishEvent } from '../realtime/publish.js';
+import { buildGameState } from '../realtime/buildGameState.js';
+import { encodeCards } from '../realtime/cardCodec.js';
+import type { AuthorDealEvent } from '../realtime/buildClientPayload.js';
+import { runBots } from '../ai/runBots.js';
 
 export interface StartGameDeps {
   roomStore: RoomStore;

@@ -10,12 +10,12 @@
 // the command must execute exactly once. This function just validates and
 // applies — replay-handling is the cache's job.
 
-import { pass, playCards } from '../game/round';
-import type { GameRound, PlayerId } from '../game/round';
-import { declareAntiTribute, selectTributeCard } from '../game/tributeFlow';
-import type { TributeExchange, TributeMode } from '../game/tribute';
-import { decodeCardIds } from './cardCodec';
-import type { MoveCommand, MoveResponse } from './commands';
+import { pass, playCards } from '../game/round.js';
+import type { GameRound, PlayerId } from '../game/round.js';
+import { declareAntiTribute, selectTributeCard } from '../game/tributeFlow.js';
+import type { TributeExchange, TributeMode } from '../game/tribute.js';
+import { decodeCardIds } from './cardCodec.js';
+import type { MoveCommand, MoveResponse } from './commands.js';
 
 export interface HandleMoveResult {
   newRound: GameRound;

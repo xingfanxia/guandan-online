@@ -19,9 +19,9 @@
 // Wildcard substitution (rule 6): wildcards complete bombs but do NOT change
 // the bomb's natural rank for comparison.
 
-import { partitionWildcards } from './wildcard';
-import type { Card, NaturalRank, NaturalSuit } from './cards';
-import type { LevelRank } from './levels';
+import { partitionWildcards } from './wildcard.js';
+import type { Card, NaturalRank, NaturalSuit } from './cards.js';
+import type { LevelRank } from './levels.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

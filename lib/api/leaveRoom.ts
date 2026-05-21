@@ -5,15 +5,15 @@
 // tokens are minted per-room and rotated when a member re-joins; there is no
 // long-lived secret like AUTH-1's per-handle ownershipToken.
 
-import { leaveRoom } from '../room/lifecycle';
-import { isValidRoomCode } from '../room/code';
-import { extractBearerToken } from '../auth/ownershipToken';
-import type { RoomStore } from '../storage/roomStore';
-import type { EventBus } from '../realtime/eventBus';
-import type { EventLog } from '../realtime/eventLog';
-import { publishEvent } from '../realtime/publish';
-import { deriveRoomLeft } from '../realtime/deriveLifecycleEvents';
-import { buildLobbyGameState } from '../realtime/buildLobbyGameState';
+import { leaveRoom } from '../room/lifecycle.js';
+import { isValidRoomCode } from '../room/code.js';
+import { extractBearerToken } from '../auth/ownershipToken.js';
+import type { RoomStore } from '../storage/roomStore.js';
+import type { EventBus } from '../realtime/eventBus.js';
+import type { EventLog } from '../realtime/eventLog.js';
+import { publishEvent } from '../realtime/publish.js';
+import { deriveRoomLeft } from '../realtime/deriveLifecycleEvents.js';
+import { buildLobbyGameState } from '../realtime/buildLobbyGameState.js';
 
 export interface LeaveRoomDeps {
   roomStore: RoomStore;

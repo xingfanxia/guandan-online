@@ -14,12 +14,12 @@
 // partner reference for snapshot rendering; per-game-mode richer adjacency
 // information is available via state.teams + seat order).
 
-import { encodeCards } from './cardCodec';
-import type { GameState } from './buildClientPayload';
-import type { GameRound, PlayerId } from '../game/round';
-import type { RoomState } from '../room/lifecycle';
-import type { CardId, PlayerHandle, PlayerStatus } from './messages';
-import type { TeamKey } from '../game/mode';
+import { encodeCards } from './cardCodec.js';
+import type { GameState } from './buildClientPayload.js';
+import type { GameRound, PlayerId } from '../game/round.js';
+import type { RoomState } from '../room/lifecycle.js';
+import type { CardId, PlayerHandle, PlayerStatus } from './messages.js';
+import type { TeamKey } from '../game/mode.js';
 
 export function buildGameState(room: RoomState, round: GameRound): GameState {
   const hands: Record<PlayerId, CardId[]> = {};

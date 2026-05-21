@@ -10,7 +10,7 @@
 // SECURITY-CRITICAL: a bug here lets opponents see hidden hands. Tests cover
 // each event kind plus the runtime leak detector.
 
-import type { PlayerId } from '../game/round';
+import type { PlayerId } from '../game/round.js';
 import type {
   CardId,
   DealEvent,
@@ -22,8 +22,8 @@ import type {
   SnapshotEvent,
   StateResyncEvent,
   TributePendingEvent,
-} from './messages';
-import type { TeamKey } from '../game/mode';
+} from './messages.js';
+import type { TeamKey } from '../game/mode.js';
 
 // ─── Authoritative server-side state ──────────────────────────────────────────
 

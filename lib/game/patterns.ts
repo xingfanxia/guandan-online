@@ -12,16 +12,16 @@
 // Bomb detection delegates to bomb.ts; non-bomb detection lives here. The two
 // surfaces share a unified Pattern type so canBeat() can route uniformly.
 
-import { compareBombs, detectBomb } from './bomb';
-import type { Bomb } from './bomb';
-import { partitionWildcards } from './wildcard';
+import { compareBombs, detectBomb } from './bomb.js';
+import type { Bomb } from './bomb.js';
+import { partitionWildcards } from './wildcard.js';
 import type {
   Card,
   NaturalRank,
   NaturalSuit,
   Rank,
-} from './cards';
-import type { LevelRank } from './levels';
+} from './cards.js';
+import type { LevelRank } from './levels.js';
 
 // ─── Pattern type ────────────────────────────────────────────────────────────
 

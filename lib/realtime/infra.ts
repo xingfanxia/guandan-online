@@ -8,25 +8,25 @@
 // (e.g., Redis Cluster, alternative pubsub) a one-file change.
 
 import { Redis } from '@upstash/redis';
-import type { EventBus } from './eventBus';
-import { createMemoryEventBus, createUpstashEventBus } from './eventBus';
-import type { EventLog } from './eventLog';
-import { createMemoryEventLog, createUpstashEventLog } from './eventLog';
-import type { IdempotencyCache } from './idempotency';
+import type { EventBus } from './eventBus.js';
+import { createMemoryEventBus, createUpstashEventBus } from './eventBus.js';
+import type { EventLog } from './eventLog.js';
+import { createMemoryEventLog, createUpstashEventLog } from './eventLog.js';
+import type { IdempotencyCache } from './idempotency.js';
 import {
   createMemoryIdempotencyCache,
   createUpstashIdempotencyCache,
-} from './idempotency';
-import type { RedisLike } from './redisClient';
-import type { RoomStore } from '../storage/roomStore';
-import { createMemoryRoomStore, createRoomStore } from '../storage/roomStore';
-import type { RoundStore } from '../storage/roundStore';
-import { createMemoryRoundStore, createRoundStore } from '../storage/roundStore';
-import type { SessionStore } from '../storage/sessionStore';
+} from './idempotency.js';
+import type { RedisLike } from './redisClient.js';
+import type { RoomStore } from '../storage/roomStore.js';
+import { createMemoryRoomStore, createRoomStore } from '../storage/roomStore.js';
+import type { RoundStore } from '../storage/roundStore.js';
+import { createMemoryRoundStore, createRoundStore } from '../storage/roundStore.js';
+import type { SessionStore } from '../storage/sessionStore.js';
 import {
   createMemorySessionStore,
   createSessionStore,
-} from '../storage/sessionStore';
+} from '../storage/sessionStore.js';
 
 export interface RealtimeInfra {
   bus: EventBus;

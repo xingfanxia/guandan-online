@@ -13,10 +13,10 @@
 // Replacing pickBeating with a solver call requires only swapping the
 // final pickFrom call; the dispatch surface stays the same.
 
-import type { Card } from '../game/cards';
-import { enumerateLegalPlays } from './enumerate';
-import type { Pattern } from '../game/patterns';
-import { decidePartnerCoop, rankByCoop, type CoopContext } from './coop';
+import type { Card } from '../game/cards.js';
+import { enumerateLegalPlays } from './enumerate.js';
+import type { Pattern } from '../game/patterns.js';
+import { decidePartnerCoop, rankByCoop, type CoopContext } from './coop.js';
 
 export type MediumMove =
   | { kind: 'play'; pattern: Pattern }

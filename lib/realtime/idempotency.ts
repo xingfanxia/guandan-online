@@ -11,8 +11,8 @@
 //   - createUpstashIdempotencyCache(redis) — backed by Upstash Redis via
 //     SET NX EX. Live impl wired by api/move.ts in production.
 
-import type { MoveResponse } from './commands';
-import type { RedisLike } from './redisClient';
+import type { MoveResponse } from './commands.js';
+import type { RedisLike } from './redisClient.js';
 
 export type ReserveResult =
   | { status: 'reserved' }

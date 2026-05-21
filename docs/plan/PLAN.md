@@ -377,7 +377,9 @@ Goal: 1 human + 3 Easy bots play a complete 4-player game on landscape mobile. E
 - 6/8-player mode rules are different (point thresholds, no A-fail counter per memory `project_rules_change_2026-05.md`); land in CORE-4
 - Sweep bonus (8P 1-2-3-4 from same team = +4 levels) tested in CORE-4
 
-### AI-1 · Easy + Medium bots inline
+### AI-1 · Easy + Medium bots inline — **SHIPPED 2026-05-21**
+
+**Status**: Easy + Medium tiers live. Bobgy WASM decomposer integrated into Medium as Phase A (commit `8a41c83`, 2026-05-21) at `lib/ai/decomposer/` — see `docs/plan/bobgy/PHASE-A.md` for the design contract and HANDOFF.md for delivery notes. Actual file layout differs from this section's "Deliverables" list — see HANDOFF.md for the authoritative module map (`lib/ai/{easy,coop,medium,dispatch,enumerate,runBots,timing,names}.ts` + `lib/ai/decomposer/`). Phase B (lookahead policy + Hard tier revival via deeper Bobgy search depth) is queued — see `docs/plan/bobgy/PHASE-A.md` §10 and the legacy "AI-2 · Hard tier LLM bot" entry below (LLM Hard tier deleted 2026-05-19 in favor of WASM Hard).
 
 **Goal**: Implement Easy + Medium AI tiers per `ai-implementation-plan.md` §1. Bots are first-class room participants with their own `PlayerView`.
 
@@ -690,7 +692,9 @@ Goal: 6P and 8P fully working. Hard tier LLM bot. Player assistance features.
 **Files to touch**: new — `src/screens/GameTable6P.tsx`, `GameTable8P.tsx`, `src/lib/seating.ts`
 **Effort**: 3-4 days
 
-### AI-2 · Hard tier LLM bot
+### ~~AI-2 · Hard tier LLM bot~~ — **SUPERSEDED 2026-05-19 by Bobgy WASM (Phase B)**
+
+**Status**: LLM Hard tier deleted 2026-05-19 (LLM latency 1.5-3s/move × multiple bots is structurally incompatible with real-time card play; HANDOFF.md 2026-05-19 entry has the rationale). Hard tier returns via the Bobgy `poker-guandan-strategy` solver with lookahead policy on top — Phase A (decomposer) shipped 2026-05-21; Phase B (lookahead + Hard tier UI chip) remains a future session. See `docs/plan/bobgy/PHASE-A.md` §10. The deliverables/acceptance below are kept as historical reference for the LLM design that was rejected.
 
 **Goal**: LLM bot with DeepSeek + candidate pre-filter per `ai-implementation-plan.md` §1.
 

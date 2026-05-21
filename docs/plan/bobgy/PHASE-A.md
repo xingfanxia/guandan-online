@@ -1,6 +1,6 @@
 # Bobgy WASM Phase A — execution plan
 
-**Status**: Planned 2026-05-21. Ready to execute in a fresh session.
+**Status**: **Shipped 2026-05-21** in commit `8a41c83`. All §9 acceptance criteria met (1016/1016 tests, typecheck/build/no-leak clean, GitHub auto-deploy `dpl_*p5ebx6y5z` Ready in 17s). Visual smoke (npm run dev) deferred to a separate manual pass. Phase B (lookahead + Hard tier) remains a future session — see §10.
 
 **Goal**: Get Bobgy's `strategy.cpp` compiled to WebAssembly, vendored into
 the repo with a prebuilt artifact, exposed via a typed TS wrapper, and wired

@@ -10,6 +10,13 @@ build/
 out/
 *.tsbuildinfo
 
+# But DO commit the vendored Bobgy WASM artifact — it's a build product
+# from C++ source that needs Docker + emsdk to rebuild, and we don't want
+# every contributor (or CI) to need that toolchain. Re-run
+# scripts/build-wasm.sh only when lib/ai/decomposer/cpp/ changes.
+!lib/ai/decomposer/dist/
+!lib/ai/decomposer/dist/**
+
 # Vercel
 .vercel/
 

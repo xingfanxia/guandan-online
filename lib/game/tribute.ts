@@ -1,26 +1,35 @@
-// Tribute mode detection (4P).
+// Tribute mode detection.
 //
-// SYNC: docs/research/game-rules.md § "Tribute (进贡 / 还贡)" lines ~196-254.
+// SYNC: docs/research/game-rules.md § "Tribute (进贡 / 还贡)" lines ~196-254
+// + docs/research/tribute-ux-deep-dive.md § "Update 2026-05-17: 6P/8P sweep".
 // Determines whether the upcoming round opens with single tribute, double
-// tribute, or 抗贡 (resist) based on the previous round's finish order and
-// the freshly-dealt hands.
+// tribute, sweep tribute (6P/8P only), or 抗贡 (resist) based on the previous
+// round's finish order and the freshly-dealt hands.
 //
-// 4-PLAYER ONLY: 6P/8P tribute rules vary by regional convention and are
-// deferred per the same spec lines (~252-253). Caller checks mode before
-// dispatching.
+// 4P: detectTributeMode4P. 6P/8P: detectTributeModeMP. The two functions are
+// kept separate because 4P uses position-based discrimination (1,2 vs 1,3 vs
+// 1,4) that doesn't generalize, while 6P/8P uses a sweep-vs-mixed split. Both
+// produce values of TributeMode which downstream callers (applyTribute,
+// deriveTributeEvents) consume uniformly.
 
 import type { Card, NaturalRank } from './cards.js';
 import { isWildcard } from './cards.js';
 import type { LevelRank } from './levels.js';
+import { positionCount, winningRankCount } from './mode.js';
+import type { TeamKey } from './mode.js';
 import { powerRank } from './patterns.js';
 import type { PlayerId, PlayerSeat } from './round.js';
-import type { TeamKey } from './mode.js';
 
 export type TributeMode =
   | { kind: 'none' }
   | { kind: 'single'; from: PlayerId; to: PlayerId; tributeCard?: Card }
   | {
       kind: 'double';
+      obligations: { from: PlayerId; to: PlayerId; tributeCard?: Card }[];
+    }
+  | {
+      /** 6P (3-pair) or 8P (4-pair) sweep — winning team holds positions 1..N. */
+      kind: 'sweep';
       obligations: { from: PlayerId; to: PlayerId; tributeCard?: Card }[];
     }
   | { kind: 'resist' };
@@ -86,6 +95,76 @@ export function detectTributeMode4P(
 
   // Single tribute: 4th place tributes to 1st place.
   return { kind: 'single', from: fourth, to: first };
+}
+
+/**
+ * Tribute detection for 6P and 8P. Both modes use 2 teams (t1/t2) per the
+ * current data model, so every 6P/8P round is "2-teams-of-N". Sweep tribute
+ * triggers when the winning team holds positions 1..N (N = 3 for 6P, 4 for 8P).
+ * Otherwise the mode degrades to a single tribute (last-place → first-place).
+ *
+ * Resist takes precedence: if the losing team collectively holds both red
+ * jokers, no tribute happens regardless of sweep status.
+ *
+ * Pairings (per tribute-ux-deep-dive.md § Update 2026-05-17):
+ *   6P 3-pair: 4→3, 5→2, 6→1  (1-indexed positions)
+ *   8P 4-pair: 5→4, 6→3, 7→2, 8→1
+ */
+export function detectTributeModeMP(
+  mode: '6' | '8',
+  finishOrder: readonly PlayerId[],
+  seats: readonly PlayerSeat[],
+  hands: Readonly<Record<PlayerId, readonly Card[]>>
+): TributeMode {
+  const expected = positionCount(mode);
+  if (finishOrder.length !== expected) {
+    throw new Error(
+      `detectTributeModeMP: finishOrder length ${finishOrder.length} ≠ ${expected} for ${mode}P`
+    );
+  }
+  if (seats.length !== expected) {
+    throw new Error(
+      `detectTributeModeMP: seats length ${seats.length} ≠ ${expected} for ${mode}P`
+    );
+  }
+
+  const seatById = new Map(seats.map((s) => [s.id, s]));
+  const teamOf = (id: PlayerId): TeamKey => seatById.get(id)!.team;
+
+  const winnerTeam = teamOf(finishOrder[0]!);
+  const losers: PlayerId[] = finishOrder.filter((id) => teamOf(id) !== winnerTeam);
+  if (losers.length === 0) {
+    throw new Error('detectTributeModeMP: no losers found — all players on winning team');
+  }
+
+  // Resist precedence: losing team holds both red jokers.
+  if (countRJsHeldBy(losers, hands) === 2) {
+    return { kind: 'resist' };
+  }
+
+  // Sweep check: do positions 1..N (N = winningRankCount) all belong to the
+  // winning team? When yes, build multi-pair obligations: loser at position
+  // (N + i) tributes to winner at position (N - 1 - i), for i in [0..N).
+  const N = winningRankCount(mode);
+  const topNAllWinner = finishOrder.slice(0, N).every((id) => teamOf(id) === winnerTeam);
+  if (topNAllWinner) {
+    const obligations: { from: PlayerId; to: PlayerId }[] = [];
+    for (let i = 0; i < N; i++) {
+      // i=0: last-place loser → first-place winner; i=1: second-to-last → second; ...
+      const fromPos = expected - 1 - i;
+      const toPos = i;
+      obligations.push({ from: finishOrder[fromPos]!, to: finishOrder[toPos]! });
+    }
+    return { kind: 'sweep', obligations };
+  }
+
+  // Mixed finish: degrade to single tribute (last → first). This is Path A from
+  // tribute-ux-deep-dive.md § "Normal (mixed-team finishes)".
+  return {
+    kind: 'single',
+    from: finishOrder[expected - 1]!,
+    to: finishOrder[0]!,
+  };
 }
 
 function countRJsHeldBy(
@@ -215,7 +294,8 @@ export function applyTribute(
             ? { from: mode.from, to: mode.to, tributeCard: mode.tributeCard }
             : { from: mode.from, to: mode.to },
         ]
-      : mode.obligations;
+      : // double | sweep — both carry an obligations array of identical shape
+        mode.obligations;
 
   // Determine first leader: 末游 (4th place / last in finishOrder) leads in
   // single and double tribute scenarios.

@@ -55,7 +55,7 @@ export interface PendingTributeObligation {
  * must explicitly call `anti_tribute` to confirm refusal.
  */
 export interface PendingTributeState {
-  mode: 'single' | 'double' | 'resist';
+  mode: 'single' | 'double' | 'sweep' | 'resist';
   obligations: PendingTributeObligation[];
   /** Snapshot finish order; needed for `applyTribute` first-leader selection. */
   finishOrder: PlayerId[];

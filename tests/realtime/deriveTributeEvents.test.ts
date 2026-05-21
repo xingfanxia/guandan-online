@@ -80,6 +80,92 @@ describe('deriveTributeEvents — double tribute', () => {
   });
 });
 
+describe('deriveTributeEvents — sweep tribute (6P/8P)', () => {
+  const tribute3: Card = { suit: 'clubs', rank: 'Q', deck: 1 };
+  const return3: Card = { suit: 'spades', rank: '4', deck: 1 };
+  const tribute4: Card = { suit: 'diamonds', rank: 'J', deck: 2 };
+  const return4: Card = { suit: 'hearts', rank: '6', deck: 2 };
+
+  it('6P 3-pair sweep emits direction=sweep + 3 obligations + 6 exchange entries', () => {
+    const events = deriveTributeEvents({
+      tributeMode: {
+        kind: 'sweep',
+        obligations: [
+          { from: 'pf', to: 'pa' },
+          { from: 'pd', to: 'pc' },
+          { from: 'pb', to: 'pe' },
+        ],
+      },
+      exchanges: [
+        { from: 'pf', to: 'pa', tribute: tribute1, return: return1 },
+        { from: 'pd', to: 'pc', tribute: tribute2, return: return2 },
+        { from: 'pb', to: 'pe', tribute: tribute3, return: return3 },
+      ],
+      baseVersion: 30,
+    });
+    expect(events).toHaveLength(2);
+
+    const pending = events[0] as AuthorTributePendingEvent;
+    expect(pending.direction).toBe('sweep');
+    expect(pending.obligations).toHaveLength(3);
+    expect(pending.privatePayloads.pa?.owedCard).toBe(encodeCard(tribute1));
+    expect(pending.privatePayloads.pc?.owedCard).toBe(encodeCard(tribute2));
+    expect(pending.privatePayloads.pe?.owedCard).toBe(encodeCard(tribute3));
+
+    const resolved = events[1] as TributeResolvedEvent;
+    expect(resolved.exchanged).toHaveLength(6); // 3 tributes + 3 returns
+  });
+
+  it('8P 4-pair sweep emits direction=sweep + 4 obligations + 8 exchange entries', () => {
+    const events = deriveTributeEvents({
+      tributeMode: {
+        kind: 'sweep',
+        obligations: [
+          { from: 'p8', to: 'p1' },
+          { from: 'p7', to: 'p2' },
+          { from: 'p6', to: 'p3' },
+          { from: 'p5', to: 'p4' },
+        ],
+      },
+      exchanges: [
+        { from: 'p8', to: 'p1', tribute: tribute1, return: return1 },
+        { from: 'p7', to: 'p2', tribute: tribute2, return: return2 },
+        { from: 'p6', to: 'p3', tribute: tribute3, return: return3 },
+        { from: 'p5', to: 'p4', tribute: tribute4, return: return4 },
+      ],
+      baseVersion: 0,
+    });
+    const pending = events[0] as AuthorTributePendingEvent;
+    expect(pending.direction).toBe('sweep');
+    expect(pending.obligations).toHaveLength(4);
+
+    const resolved = events[1] as TributeResolvedEvent;
+    expect(resolved.exchanged).toHaveLength(8);
+    expect(resolved.version).toBe(1);
+  });
+
+  it('sweep with one null return (winner had no eligible card) skips that entry', () => {
+    const events = deriveTributeEvents({
+      tributeMode: {
+        kind: 'sweep',
+        obligations: [
+          { from: 'pf', to: 'pa' },
+          { from: 'pd', to: 'pc' },
+          { from: 'pb', to: 'pe' },
+        ],
+      },
+      exchanges: [
+        { from: 'pf', to: 'pa', tribute: tribute1, return: return1 },
+        { from: 'pd', to: 'pc', tribute: tribute2, return: null },
+        { from: 'pb', to: 'pe', tribute: tribute3, return: return3 },
+      ],
+      baseVersion: 0,
+    });
+    const resolved = events[1] as TributeResolvedEvent;
+    expect(resolved.exchanged).toHaveLength(5); // 3 tributes + 2 returns (one skipped)
+  });
+});
+
 describe('deriveTributeEvents — resist (anti-tribute)', () => {
   it('emits ONLY tribute_pending with direction=anti_tribute, no resolved event', () => {
     const events = deriveTributeEvents({

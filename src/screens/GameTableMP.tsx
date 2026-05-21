@@ -25,12 +25,20 @@ import type {
   ServerEvent,
   SnapshotEvent,
   TrickWonEvent,
+  TributePendingEvent,
+  TributeResolvedEvent,
 } from '@lib/realtime/messages';
 import type { Card as GameCard } from '@lib/game/cards';
 import type { LevelRank } from '@lib/game/levels';
 import type { TeamKey } from '@lib/game/mode';
-import type { PlayCommand, PassCommand } from '@lib/realtime/commands';
+import type {
+  PlayCommand,
+  PassCommand,
+  TributeSelectCommand,
+  AntiTributeCommand,
+} from '@lib/realtime/commands';
 import { assignClockPositions, type TableMode } from '@/lib/seating';
+import { TributeModal, type TributeState } from '@/screens/TributeModal';
 
 export interface GameTableMPProps {
   mode: '6' | '8';
@@ -50,6 +58,21 @@ interface TableState {
   lastPlayed: { player: string; cards: GameCard[]; combinationLabel: string } | null;
   myPlayerId: string | null;
   myTeam: TeamKey | null;
+  /**
+   * Tribute UI state — set by `tribute_pending`, cleared by
+   * `tribute_resolved`. Null when no tribute is in flight. 6P/8P sees sweep
+   * tribute (3-4 obligations) more often than single; same snapshot shape
+   * either way.
+   */
+  tribute: TributePendingSnapshot | null;
+  /** Monotonic round counter — bumped on each `deal` for TributeModal eyebrow. */
+  roundNumber: number;
+}
+
+export interface TributePendingSnapshot {
+  direction: TributePendingEvent['direction'];
+  obligations: TributePendingEvent['obligations'];
+  yourOwedCard?: CardId;
 }
 
 const EMPTY_STATE: TableState = {
@@ -61,6 +84,8 @@ const EMPTY_STATE: TableState = {
   lastPlayed: null,
   myPlayerId: null,
   myTeam: null,
+  tribute: null,
+  roundNumber: 1,
 };
 
 function decodeHand(ids: readonly CardId[]): GameCard[] {
@@ -139,6 +164,44 @@ export function GameTableMP({
     const cmd: PassCommand = { kind: 'pass', fromVersion: version };
     await postCommand(roomId, joinToken, cmd);
   };
+
+  const submitTributeSelect = async (card: GameCard): Promise<void> => {
+    const id = encodeCard(card);
+    if (id === null) return;
+    const cmd: TributeSelectCommand = {
+      kind: 'tribute_select',
+      targetCard: id,
+      fromVersion: version,
+    };
+    await postCommand(roomId, joinToken, cmd);
+  };
+
+  const submitAntiTribute = async (): Promise<void> => {
+    const cmd: AntiTributeCommand = { kind: 'anti_tribute', fromVersion: version };
+    await postCommand(roomId, joinToken, cmd);
+  };
+
+  const tributeModalState = useMemo(
+    () =>
+      buildTributeModalState(
+        state.tribute,
+        state.myHand,
+        state.myPlayerId,
+        state.myTeam,
+        state.players,
+        myLevel,
+        state.roundNumber,
+      ),
+    [
+      state.tribute,
+      state.myHand,
+      state.myPlayerId,
+      state.myTeam,
+      state.players,
+      myLevel,
+      state.roundNumber,
+    ],
+  );
 
   return (
     <div className="mtable" role="application" aria-label={`${mode}-player game table`}>
@@ -250,6 +313,14 @@ export function GameTableMP({
           </button>
         </div>
       </div>
+
+      {tributeModalState ? (
+        <TributeModal
+          state={tributeModalState}
+          onConfirm={(card) => void submitTributeSelect(card)}
+          onDismiss={() => void submitAntiTribute()}
+        />
+      ) : null}
     </div>
   );
 }
@@ -276,6 +347,10 @@ export function reduceEvent(
       return reduceMovePassed(prev, evt);
     case 'trick_won':
       return reduceTrickWon(prev, evt);
+    case 'tribute_pending':
+      return reduceTributePending(prev, evt);
+    case 'tribute_resolved':
+      return reduceTributeResolved(prev, evt);
     default:
       return prev;
   }
@@ -302,7 +377,28 @@ function reduceSnapshot(
 }
 
 function reduceDeal(prev: TableState, evt: DealEvent): TableState {
-  return { ...prev, myHand: decodeHand(evt.yourHand), lastPlayed: null };
+  return {
+    ...prev,
+    myHand: decodeHand(evt.yourHand),
+    lastPlayed: null,
+    tribute: null,
+    roundNumber: prev.roundNumber + 1,
+  };
+}
+
+function reduceTributePending(prev: TableState, evt: TributePendingEvent): TableState {
+  const snapshot: TributePendingSnapshot = {
+    direction: evt.direction,
+    obligations: evt.obligations,
+  };
+  if (evt.yourOwedCard !== undefined) {
+    snapshot.yourOwedCard = evt.yourOwedCard;
+  }
+  return { ...prev, tribute: snapshot };
+}
+
+function reduceTributeResolved(prev: TableState, _evt: TributeResolvedEvent): TableState {
+  return { ...prev, tribute: null };
 }
 
 function reduceRoomJoined(prev: TableState, evt: RoomJoinedEvent): TableState {
@@ -357,6 +453,84 @@ function reduceTrickWon(prev: TableState, evt: TrickWonEvent): TableState {
   return { ...prev, currentTurn: evt.nextLeader, lastPlayed: null };
 }
 
+/**
+ * Pick the TributeModal substate for the local player given the pending
+ * snapshot. Mirrors the 4P logic but generalizes to multi-pair sweep (3 or 4
+ * obligations).
+ *
+ * Mapping:
+ *  - direction='anti_tribute' + losing team → render anti-tribute banner
+ *    (dismiss callback dispatches anti_tribute command).
+ *  - direction in {single, double, sweep} + me as `from` → render pending
+ *    (candidates = all my non-wildcard cards; server enforces "highest" rule).
+ *    progressLabel shows "i/N" when multiple obligations exist (sweep always
+ *    has >1, so this surfaces for every sweep-tribute obligation).
+ *  - direction in {single, double, sweep} + me as `to` + yourOwedCard set →
+ *    render auto display (legacy auto path).
+ *  - otherwise → null (third-party watch state).
+ *
+ * Exported for unit testing.
+ */
+export function buildTributeModalState(
+  snapshot: TributePendingSnapshot | null,
+  myHand: readonly GameCard[],
+  myPlayerId: string | null,
+  myTeam: TeamKey | null,
+  players: Map<string, PlayerSummary>,
+  levelRank: LevelRank,
+  roundNumber: number,
+): TributeState | null {
+  if (!snapshot || !myPlayerId) return null;
+
+  if (snapshot.direction === 'anti_tribute') {
+    if (myTeam === null) return null;
+    const holderHandle = players.get(myPlayerId)?.handle ?? myPlayerId;
+    return { kind: 'anti-tribute', holderHandle, roundNumber };
+  }
+
+  // single / double / sweep — check my role in obligations.
+  const mineIdx = snapshot.obligations.findIndex((o) => o.from === myPlayerId);
+  if (mineIdx >= 0) {
+    const mine = snapshot.obligations[mineIdx]!;
+    const candidateKeys = new Set<string>();
+    for (const card of myHand) {
+      const isWildcard = card.suit === 'hearts' && card.rank === levelRank;
+      if (!isWildcard) candidateKeys.add(cardKey(card));
+    }
+    const winnerHandle = players.get(mine.to)?.handle ?? mine.to;
+    const loserHandle = players.get(myPlayerId)?.handle ?? myPlayerId;
+    const progress =
+      snapshot.obligations.length > 1
+        ? `${mineIdx + 1}/${snapshot.obligations.length}`
+        : undefined;
+    return {
+      kind: 'pending',
+      loserHandle,
+      winnerHandle,
+      hand: myHand,
+      candidateKeys,
+      roundNumber,
+      ...(progress !== undefined ? { progressLabel: progress } : {}),
+      countdownSeconds: 30,
+    };
+  }
+
+  const owed = snapshot.yourOwedCard;
+  if (owed !== undefined) {
+    const card = decodeCardId(owed);
+    const obl = snapshot.obligations.find((o) => o.to === myPlayerId);
+    const fromHandle = obl ? (players.get(obl.from)?.handle ?? obl.from) : '末游';
+    const toHandle = players.get(myPlayerId)?.handle ?? myPlayerId;
+    return { kind: 'auto', fromHandle, toHandle, card, roundNumber };
+  }
+
+  return null;
+}
+
+function cardKey(c: GameCard): string {
+  return `${c.rank}-${c.suit}-${c.deck}`;
+}
+
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
 function teamRing(team: TeamKey | undefined | null): 'A' | 'B' | 'C' | 'D' {
@@ -384,7 +558,7 @@ function removeCards(hand: readonly GameCard[], played: readonly CardId[]): Game
 async function postCommand(
   roomId: string,
   joinToken: string,
-  cmd: PlayCommand | PassCommand
+  cmd: PlayCommand | PassCommand | TributeSelectCommand | AntiTributeCommand,
 ): Promise<void> {
   const url = `/api/room/${encodeURIComponent(roomId)}/move`;
   await fetch(url, {

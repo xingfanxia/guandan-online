@@ -131,6 +131,70 @@ describe('applyTribute — double tribute', () => {
   });
 });
 
+describe('applyTribute — sweep tribute (6P/8P)', () => {
+  it('6P 3-pair sweep: 末游 (last) leads, 3 exchanges recorded', () => {
+    // Use level '5' so no natural rank is a trump (avoids '2' being highest at
+    // level 2, which would otherwise mask plain-A tributes).
+    // 6P sweep finish: a,c,e (t1) take 1,2,3; f,d,b (t2) take 4,5,6.
+    // Pairings: b→a (6→1), d→c (5→2), f→e (4→3)
+    const hands = {
+      a: [c('spades', '3'), c('hearts', '4')],
+      c: [c('clubs', '6'), c('diamonds', '7')],
+      e: [c('spades', '8'), c('hearts', '9')],
+      f: [c('clubs', '10'), c('diamonds', 'J')], // 4th tributes J to e
+      d: [c('clubs', '3'), c('hearts', 'K')],    // 5th tributes K to c
+      b: [c('spades', 'A'), c('diamonds', '2')], // 6th tributes A to a
+    };
+    const result = applyTribute(
+      hands,
+      {
+        kind: 'sweep',
+        obligations: [
+          { from: 'b', to: 'a' },
+          { from: 'd', to: 'c' },
+          { from: 'f', to: 'e' },
+        ],
+      },
+      ['a', 'c', 'e', 'f', 'd', 'b'],
+      '5' // level 5 — no rank-2 trump distortion
+    );
+    expect(result.firstLeader).toBe('b'); // 末游 leads
+    expect(result.exchanges).toHaveLength(3);
+    expect(result.newHands['a']).toContainEqual(c('spades', 'A'));
+    expect(result.newHands['c']).toContainEqual(c('hearts', 'K'));
+    expect(result.newHands['e']).toContainEqual(c('diamonds', 'J'));
+  });
+
+  it('8P 4-pair sweep: 4 exchanges, last position leads', () => {
+    const hands = {
+      a: [c('spades', '3')], b: [c('spades', 'A')],
+      c: [c('clubs', '6')], d: [c('clubs', 'K')],
+      e: [c('hearts', '7')], f: [c('hearts', 'Q')],
+      g: [c('diamonds', '9')], h: [c('diamonds', 'J')],
+    };
+    const result = applyTribute(
+      hands,
+      {
+        kind: 'sweep',
+        obligations: [
+          { from: 'h', to: 'a' },
+          { from: 'f', to: 'c' },
+          { from: 'd', to: 'e' },
+          { from: 'b', to: 'g' },
+        ],
+      },
+      ['a', 'c', 'e', 'g', 'h', 'f', 'd', 'b'],
+      '5'
+    );
+    expect(result.firstLeader).toBe('b');
+    expect(result.exchanges).toHaveLength(4);
+    expect(result.newHands['a']).toContainEqual(c('diamonds', 'J'));
+    expect(result.newHands['c']).toContainEqual(c('hearts', 'Q'));
+    expect(result.newHands['e']).toContainEqual(c('clubs', 'K'));
+    expect(result.newHands['g']).toContainEqual(c('spades', 'A'));
+  });
+});
+
 // ─── Edge: tribute card unavailable ──────────────────────────────────────────
 
 describe('applyTribute — edge cases', () => {

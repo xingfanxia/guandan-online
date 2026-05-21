@@ -53,7 +53,7 @@ export interface AuthorDealEvent {
 export interface AuthorTributePendingEvent {
   type: 'tribute_pending';
   version: number;
-  direction: 'single' | 'double' | 'anti_tribute';
+  direction: 'single' | 'double' | 'sweep' | 'anti_tribute';
   obligations: {
     from: PlayerId;
     to: PlayerId;

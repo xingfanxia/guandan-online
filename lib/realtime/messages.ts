@@ -114,7 +114,13 @@ export interface TrickWonEvent {
 export interface TributePendingEvent {
   type: 'tribute_pending';
   version: number;
-  direction: 'single' | 'double' | 'anti_tribute';
+  /**
+   * `single` / `double` — 4P tribute paths.
+   * `sweep` — 6P/8P multi-pair tribute when the winning team sweeps positions
+   *           1..N (N = winningRankCount). Obligation count is 3 (6P) or 4 (8P).
+   * `anti_tribute` — losing team collectively holds both red jokers and refuses.
+   */
+  direction: 'single' | 'double' | 'sweep' | 'anti_tribute';
   obligations: {
     from: PlayerId;
     to: PlayerId;

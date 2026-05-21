@@ -22,6 +22,7 @@ import type {
 import {
   applyTribute,
   detectTributeMode4P,
+  detectTributeModeMP,
   type TributeExchange,
   type TributeMode,
 } from './tribute.js';
@@ -79,9 +80,16 @@ export interface DealNextRoundResult {
  *   5. Start the first trick.
  *
  * 6P / 8P flow:
- *   - Skip tribute. Leader is the prev round's 1st-place finisher (head-游).
- *     (Sweep-tribute multi-pair flow deferred per game-rules.md §
- *     "Sweep tribute (6P/8P)".)
+ *   1. Shuffle + deal at new level.
+ *   2. Detect tribute via `detectTributeModeMP`. Three outcomes:
+ *      - sweep: winning team holds positions 1..N → multi-pair tribute (3 pairs
+ *        for 6P, 4 pairs for 8P).
+ *      - single: mixed-team top-N finish → 末游 → 头游 fallback.
+ *      - resist: losing team holds both red jokers.
+ *   3. Apply tribute (auto mode) OR defer to manual flow (when room rule set).
+ *   4. Start first trick. AUTO path: leader is 末游 for single/sweep, 1st place
+ *      for resist. MANUAL path: trick stays null until tribute_select /
+ *      anti_tribute commands finalize.
  *
  * Throws when session phase is 'finished' (caller should not call this when
  * the game is over).
@@ -134,39 +142,49 @@ export function dealNextRound(input: DealNextRoundInput): DealNextRoundResult {
       seats,
       newRound.hands
     );
+  } else {
+    // mode === '6' || '8'
+    tributeMode = detectTributeModeMP(
+      mode,
+      input.prevRound.finishOrder,
+      seats,
+      newRound.hands
+    );
+  }
 
-    // Manual-tribute path: when the room opted into manual mode AND there's
-    // an actual obligation to resolve (single/double/resist), defer the swap
-    // to the manual flow. The round returns with hands pre-tribute,
-    // pendingTribute set, and no trick started.
-    //
-    // 'none' falls through to the AUTO tail so the trick still starts — there's
-    // nothing to defer when there's no tribute obligation.
-    if (input.session.rules.manualTribute && tributeMode.kind !== 'none') {
-      const obligations: PendingTributeObligation[] =
-        tributeMode.kind === 'single'
-          ? [{ from: tributeMode.from, to: tributeMode.to, selectedCard: null }]
-          : tributeMode.kind === 'double'
-            ? tributeMode.obligations.map((o) => ({
-                from: o.from,
-                to: o.to,
-                selectedCard: null,
-              }))
-            : []; // 'resist' — obligations stays empty; declarer dispatches anti_tribute
-      const pending: PendingTributeState = {
-        mode: tributeMode.kind,
-        obligations,
-        finishOrder: [...input.prevRound.finishOrder],
-      };
-      const pendingRound: GameRound = { ...newRound, pendingTribute: pending };
-      return {
-        round: pendingRound,
-        tributeMode,
-        exchanges: [],
-        pendingManualTribute: true,
-      };
-    }
+  // Manual-tribute path: when the room opted into manual mode AND there's
+  // an actual obligation to resolve (single/double/sweep/resist), defer the
+  // swap to the manual flow. The round returns with hands pre-tribute,
+  // pendingTribute set, and no trick started.
+  //
+  // 'none' falls through to the AUTO tail so the trick still starts — there's
+  // nothing to defer when there's no tribute obligation.
+  if (input.session.rules.manualTribute && tributeMode.kind !== 'none') {
+    const obligations: PendingTributeObligation[] =
+      tributeMode.kind === 'single'
+        ? [{ from: tributeMode.from, to: tributeMode.to, selectedCard: null }]
+        : tributeMode.kind === 'double' || tributeMode.kind === 'sweep'
+          ? tributeMode.obligations.map((o) => ({
+              from: o.from,
+              to: o.to,
+              selectedCard: null,
+            }))
+          : []; // 'resist' — obligations stays empty; declarer dispatches anti_tribute
+    const pending: PendingTributeState = {
+      mode: tributeMode.kind,
+      obligations,
+      finishOrder: [...input.prevRound.finishOrder],
+    };
+    const pendingRound: GameRound = { ...newRound, pendingTribute: pending };
+    return {
+      round: pendingRound,
+      tributeMode,
+      exchanges: [],
+      pendingManualTribute: true,
+    };
+  }
 
+  if (tributeMode.kind !== 'none') {
     const applied = applyTribute(
       newRound.hands,
       tributeMode,

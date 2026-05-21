@@ -51,12 +51,14 @@ export function deriveTributeEvents(
       ? 'single'
       : tributeMode.kind === 'double'
         ? 'double'
-        : 'anti_tribute';
+        : tributeMode.kind === 'sweep'
+          ? 'sweep'
+          : 'anti_tribute';
 
   const obligations: AuthorTributePendingEvent['obligations'] =
     tributeMode.kind === 'single'
       ? [{ from: tributeMode.from, to: tributeMode.to, constraint: 'highest_non_heart' }]
-      : tributeMode.kind === 'double'
+      : tributeMode.kind === 'double' || tributeMode.kind === 'sweep'
         ? tributeMode.obligations.map((o) => ({
             from: o.from,
             to: o.to,

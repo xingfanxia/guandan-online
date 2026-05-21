@@ -175,7 +175,7 @@ export function declareAntiTribute(
  */
 function finalizeManualTribute(
   round: GameRound,
-  mode: 'single' | 'double' | 'resist',
+  mode: 'single' | 'double' | 'sweep' | 'resist',
   obligations: readonly PendingTributeObligation[],
   finishOrder: readonly PlayerId[],
 ): TributeFlowResult {
@@ -191,14 +191,17 @@ function finalizeManualTribute(
       tributeCard: o.selectedCard!,
     };
   } else {
-    tributeMode = {
-      kind: 'double',
-      obligations: obligations.map((o) => ({
-        from: o.from,
-        to: o.to,
-        tributeCard: o.selectedCard!,
-      })),
-    };
+    // double | sweep — both build an obligations array. Discriminate by mode
+    // so deriveTributeEvents emits the right direction string downstream.
+    const builtObligations = obligations.map((o) => ({
+      from: o.from,
+      to: o.to,
+      tributeCard: o.selectedCard!,
+    }));
+    tributeMode =
+      mode === 'sweep'
+        ? { kind: 'sweep', obligations: builtObligations }
+        : { kind: 'double', obligations: builtObligations };
   }
 
   const applied = applyTribute(round.hands, tributeMode, finishOrder, round.level);

@@ -39,7 +39,7 @@ export interface HandleMoveResult {
    * downstream event-derivation which tribute mode finalized (resist vs
    * single vs double) so it can emit the correct `tribute_resolved` payload.
    */
-  tributeMode?: Extract<TributeMode, { kind: 'single' | 'double' | 'resist' }>;
+  tributeMode?: Extract<TributeMode, { kind: 'single' | 'double' | 'sweep' | 'resist' }>;
 }
 
 export function handleMoveCommand(
@@ -160,7 +160,7 @@ function success(
   newRound: GameRound,
   currentVersion: number,
   tributeExchanges?: TributeExchange[] | null,
-  finalizedMode?: 'single' | 'double' | 'resist',
+  finalizedMode?: 'single' | 'double' | 'sweep' | 'resist',
 ): HandleMoveResult {
   const result: HandleMoveResult = {
     newRound,
@@ -181,15 +181,16 @@ function success(
     } else if (finalizedMode === 'single' && tributeExchanges.length > 0) {
       const ex = tributeExchanges[0]!;
       result.tributeMode = { kind: 'single', from: ex.from, to: ex.to, tributeCard: ex.tribute };
-    } else if (finalizedMode === 'double') {
-      result.tributeMode = {
-        kind: 'double',
-        obligations: tributeExchanges.map((ex) => ({
-          from: ex.from,
-          to: ex.to,
-          tributeCard: ex.tribute,
-        })),
-      };
+    } else if (finalizedMode === 'double' || finalizedMode === 'sweep') {
+      const builtObligations = tributeExchanges.map((ex) => ({
+        from: ex.from,
+        to: ex.to,
+        tributeCard: ex.tribute,
+      }));
+      result.tributeMode =
+        finalizedMode === 'sweep'
+          ? { kind: 'sweep', obligations: builtObligations }
+          : { kind: 'double', obligations: builtObligations };
     }
   }
   return result;

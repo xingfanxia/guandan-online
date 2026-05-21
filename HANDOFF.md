@@ -292,7 +292,39 @@ Pairings (1-indexed positions per spec): 6P sweep = 4→3, 5→2, 6→1; 8P swee
 
 **Remaining substantive work after this session:**
 - **DNS records for `gdo.ax0x.ai`** — unchanged.
-- **Bobgy WASM Phase A+B** — multi-session /big-task ticket (decision logged with AX 2026-05-21). Phase A: compile Bobgy `strategy.cpp` to WASM via Emscripten + integrate as Medium's inner-loop decomposer. Phase B: 2-trick lookahead policy layer + opponent hand-count tracking + re-add Hard chip to UI.
+- **Bobgy WASM Phase A+B** — multi-session /big-task ticket. **Phase A plan now written**: see [`docs/plan/bobgy/PHASE-A.md`](docs/plan/bobgy/PHASE-A.md) for the full execution blueprint (decisions, build pipeline via Docker `emscripten/emsdk`, vendor layout, TS wrapper design, Medium integration, test strategy, risk register, 10-step checklist). Phase B (lookahead policy → Hard tier revival) follows after Phase A lands.
+
+### 2026-05-21 — Bobgy Phase A planning (no code; handoff to next session)
+
+After TRIBUTE-2 shipped, AX redirected from "execute Phase A now" to "plan and handoff for next session". Critical-decision questions surfaced via AskUserQuestion locked three architectural choices:
+
+| Question | Decision |
+|---|---|
+| Source integration | Vendor source + commit prebuilt `.wasm` artifact (no Emscripten in CI) |
+| Integration depth | New `lib/ai/decomposer/` module + thin Medium hook (rule-based heuristic preserved as fallback) |
+| Turn cap | 50 turns for Phase A /goal loop |
+
+Upstream `Bobgy/poker-guandan-strategy` (MIT, © 2018 Yuan Gong) cloned to `/tmp/bobgy-source` for inventory. Three C++ files matter: `strategy.cpp` (430 LOC, contains `EMSCRIPTEN_BINDINGS`), `cc/common.cpp` (249 LOC), `cc/common.hpp` (96 LOC). API: `calc(cards: string, mainRank: char, useOverallValueEstimator: bool)` returning `{minHands: double, solutions: vector<string>}`. Card encoding documented in the plan doc (e.g., spades = `?S`, joker = `XB`/`XR`, rank 10 = `0`).
+
+Toolchain decision: Docker `emscripten/emsdk` rather than `brew install emscripten` — keeps the build pipeline reproducible and avoids forcing every contributor to install emsdk. Build script `scripts/build-wasm.sh` lives in the plan as a ready-to-copy snippet.
+
+Vendor layout (per plan):
+
+```
+lib/ai/decomposer/
+├── cpp/{strategy.cpp,common.cpp,common.hpp,LICENSE-bobgy}
+├── dist/{strategy.js,strategy.wasm}   ← committed artifact
+├── index.ts (public decomposeHand API)
+├── encode.ts (Card[] → Bobgy string)
+├── decode.ts (solutions → Card[][] structured plays)
+└── loader.ts (Node + Vite WASM module loader)
+```
+
+Build flags differ from upstream's `package.json`: add `MODULARIZE=1` + `EXPORT_ES6=1` + `ENVIRONMENT='node,web'` + `ALLOW_MEMORY_GROWTH=1` so the module works in Vitest (Node) + Vite (browser) instead of polluting `window.Module` like upstream's browser-only PWA does.
+
+Integration shape locked: `decomposeHand` returns optimal first play; `lib/ai/medium.ts` validates that play against `enumerateLegalMoves` for the current trick; if it matches, prefer it; else fall back to existing `rankByCoop` heuristic. Preserving the heuristic fallback handles "respond to current trick's bestPattern" cases the decomposer doesn't model (Bobgy decomposes a standalone hand, doesn't know what the trick demands).
+
+No code shipped this session beyond the plan doc. Next session reactivates `autonomous-grind` with the Phase A predicate (50-turn cap), then walks the 10-step checklist in [`docs/plan/bobgy/PHASE-A.md`](docs/plan/bobgy/PHASE-A.md) §8.
 
 ### 2026-05-19 — Backlog A-D executed (LLM deletion + AUTH-2 teardown + UI 3→2 + doc sync)
 

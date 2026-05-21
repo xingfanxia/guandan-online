@@ -7,6 +7,7 @@
 | File | Purpose |
 |---|---|
 | [`PLAN.md`](PLAN.md) | Master execution plan. 6 phases (P0–P5) × ~30 milestones. Each milestone has goal, dependencies, deliverables, acceptance criteria, file paths, effort estimate. |
+| [`bobgy/PHASE-A.md`](bobgy/PHASE-A.md) | Bobgy WASM Phase A execution plan (2026-05-21). Vendor source + commit prebuilt .wasm, new `lib/ai/decomposer/` module + thin Medium hook. 10-step checklist for next-session execution. |
 | `<phase>/PLAN.md` (future) | Per-phase tactical plan with task-level breakdown. Created when each phase enters execution. |
 
 ## High-level structure

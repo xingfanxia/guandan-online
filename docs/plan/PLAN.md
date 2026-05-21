@@ -869,7 +869,7 @@ Goal: anti-cheat baseline + custom domain + observability. Production-ready.
 - Custom domain registered: **gdo.ax0x.ai** (sibling to scorer at gd.ax0x.ai)
 - DNS A/CNAME records configured
 - SSL cert issued (Vercel automatic)
-- Environment variables set: `UPSTASH_REDIS_URL`, `UPSTASH_REDIS_TOKEN`, `DEEPSEEK_API_KEY`, `ADMIN_TOKEN`, `FEATURE_AI_HARD`
+- Environment variables set: `KV_REST_API_URL` + `KV_REST_API_TOKEN` (or UPSTASH-prefixed aliases — see `lib/realtime/infra.ts`), `ADMIN_TOKEN` (for `/api/cron/cleanup-rooms` Bearer auth, fail-closed without)
 - Production deployment promoted
 
 **Acceptance**:
@@ -880,6 +880,9 @@ Goal: anti-cheat baseline + custom domain + observability. Production-ready.
 
 **Files to touch**: `vercel.json`, `.env.example`, Vercel project settings (UI)
 **Effort**: 0.5-1 day
+**Notes**:
+- All relative TS imports MUST end in `.js` (e.g. `from './foo.js'` for `foo.ts`) — required for Vercel cloud builds; @vercel/node's per-function tsc check runs under `nodenext` moduleResolution. Migration applied 2026-05-21 via `scripts/migrations/add-js-extensions.py` (idempotent). Root `tsconfig.json` mirrors `tsconfig.app.json` compilerOptions so the per-function check sees `strict: true` + `types: ["node"]`. If you add new code with extensionless imports, re-run the migration script.
+- GitHub auto-deploy is the canonical path (since 2026-05-21); `vercel deploy --prebuilt --prod` from local is the fallback if cloud builds break.
 
 ### DEPLOY-2 · Client-side latency beacons + p50/p95 monitoring
 
@@ -992,3 +995,4 @@ Launch-ready:
 |---|---|
 | 2026-05-16 | Initial plan drafted from 13 research streams |
 | 2026-05-19 | AUTH-2 cancelled (per-app independent Upstash; no shared key space); AI-2 LLM Hard tier deleted (latency structural, not tuneable — Hard returns post-WASM via deeper Bobgy search depth). See `docs/research/SUMMARY.md` decisions #15 + #16. |
+| 2026-05-21 | DEPLOY-1 GitHub auto-deploy unblocked (commit `edeb6c7`): migrated 275 relative TS imports to `.js` suffixes + added `compilerOptions` to root `tsconfig.json`. DEPLOY-1 env vars list updated (dropped stale `DEEPSEEK_API_KEY` + `FEATURE_AI_HARD` left over from the cancelled AI-2). Project convention: `.js` extensions on all relative TS imports — see `scripts/migrations/add-js-extensions.py`. |

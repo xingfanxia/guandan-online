@@ -293,7 +293,7 @@ After a critical re-review of the AI tier strategy and the just-completed Vercel
 
 **Decision 1 — Independent Upstash per app; cross-app `@handle` sync DROPPED.**
 
-Context: `SUMMARY.md` "Locked decision 8" originally read "Anonymous @handle, **shared namespace with sibling scorer** (Option B)" — purpose was profile sync between guandan-online and guandan-scorer. But gdo's own Upstash got linked yesterday (Marketplace integration auto-provisioning), and the two projects are now on separate Redis instances.
+Context: `SUMMARY.md` "Locked decision 8" originally read "Anonymous @handle, **shared namespace with sibling scorer** (Option B)" — purpose was profile sync between guandan-online and guandan-scorer. But gdo's own Upstash got linked 2026-05-18 (Marketplace integration auto-provisioning), and the two projects are now on separate Redis instances.
 
 Choice made: accept the new reality (per-app namespace, no profile sync). Hobby project doesn't need cross-app identity continuity; independent redis means gdo failures don't cascade to scorer. **AUTH-2 milestone CANCELLED** — the entire "migrate scorer `player:*` → `gs:player:*` prefix" workstream is moot because the two projects no longer share key space.
 

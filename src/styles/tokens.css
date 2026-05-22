@@ -4,6 +4,14 @@
  */
 
 :root {
+  /* Logical viewport height — defaults to the dynamic viewport height. Inside
+   * the `.orientation-rotate-active` wrapper (forced-landscape on portrait
+   * mobile) this gets overridden to `100%` so child screens that use
+   * `var(--vp-h, 100dvh)` size to the rotated wrapper instead of the
+   * un-rotated viewport. See src/components/OrientationLock.tsx and
+   * docs/research/mobile-landscape-ux.md § Update 2026-05-16. */
+  --vp-h: 100dvh;
+
   /* ============ COLOR · oklch base ============ */
 
   /* Surfaces — warm-cold neutral near-black tower */

@@ -102,7 +102,7 @@
 .landing {
   display: grid;
   grid-template-rows: 34px 1fr;
-  height: 100dvh;
+  height: var(--vp-h, 100dvh);
   background: var(--surface-0);
 }
 
@@ -339,7 +339,7 @@
 .create {
   display: grid;
   grid-template-rows: 34px 1fr;
-  height: 100dvh;
+  height: var(--vp-h, 100dvh);
   background: var(--surface-0);
 }
 
@@ -548,7 +548,7 @@
 .waiting {
   display: grid;
   grid-template-rows: 34px 1fr;
-  height: 100dvh;
+  height: var(--vp-h, 100dvh);
   background: var(--surface-0);
 }
 

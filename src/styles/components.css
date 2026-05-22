@@ -363,3 +363,30 @@
   font-size: var(--t-2xs);
   color: var(--ink-3);
 }
+
+/* ─── Orientation rotate wrapper (forced landscape on portrait mobile) ────
+ * Applied by src/components/OrientationLock.tsx when the device is portrait-
+ * mobile. Rotates 90° around its own center, takes the swapped dimensions
+ * (width = viewport height, height = viewport width) so the rotated content
+ * fills the screen. Children that need viewport-sized heights should use
+ * `var(--vp-h, 100dvh)` so they pick up the wrapper's `100%` override here
+ * instead of the un-rotated dynamic viewport. */
+.orientation-rotate-active {
+  /* Fixed-position takes us out of normal flow so rotate doesn't bleed into
+   * sibling layout. Anchored at viewport center then translated by half its
+   * own size, so the rotate origin is the wrapper's center. */
+  position: fixed;
+  inset: 50% auto auto 50%;
+  width: 100dvh;
+  height: 100dvw;
+  transform: translate(-50%, -50%) rotate(90deg);
+  transform-origin: center center;
+  overflow: hidden;
+  /* Override the logical viewport height so children using var(--vp-h)
+   * size to the wrapper (100% of its own height) instead of 100dvh which
+   * still references the un-rotated viewport. */
+  --vp-h: 100%;
+  /* Avoid the iOS rubber-band scroll fighting with the rotated content. */
+  overscroll-behavior: contain;
+  touch-action: manipulation;
+}

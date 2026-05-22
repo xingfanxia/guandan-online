@@ -48,7 +48,10 @@ export function Landing({
   const [handle, setHandleState] = useState<string | null>(
     () => initialHandle ?? getHandle()
   );
-  const [signInOpen, setSignInOpen] = useState(false);
+  // 'auto' = opened on mount (don't autoFocus — would trigger the
+  // OrientationLock bypass before the rotate is visible). 'manual' = user
+  // tapped "登录 @handle" and expects to type immediately.
+  const [signInOpen, setSignInOpen] = useState<false | 'auto' | 'manual'>(false);
   const [signInDraft, setSignInDraft] = useState('');
   const [signInError, setSignInError] = useState<string | null>(null);
 
@@ -66,8 +69,10 @@ export function Landing({
   useEffect(() => {
     if (!handle && !signInOpen) {
       // Intentional: prompt early. The user can dismiss + browse rooms but
-      // CTAs are blocked until set.
-      setSignInOpen(true);
+      // CTAs are blocked until set. Use 'auto' so the modal doesn't snatch
+      // input focus on mount — that focus would flip OrientationLock into
+      // bypass mode and hide the CSS rotate on first paint.
+      setSignInOpen('auto');
     }
     // We only want to fire once on mount; subsequent handle changes don't
     // re-open the modal (intentional UX — once they have a handle, no nag).
@@ -89,7 +94,7 @@ export function Landing({
 
   function openCreate(): void {
     if (!handle) {
-      setSignInOpen(true);
+      setSignInOpen('manual');
       return;
     }
     navigateFn({ kind: 'create' });
@@ -97,7 +102,7 @@ export function Landing({
 
   function openJoin(): void {
     if (!handle) {
-      setSignInOpen(true);
+      setSignInOpen('manual');
       return;
     }
     setJoinError(null);
@@ -155,7 +160,7 @@ export function Landing({
             <button
               type="button"
               className="lobby-nav__signin"
-              onClick={() => setSignInOpen(true)}
+              onClick={() => setSignInOpen('manual')}
               aria-label="换号"
             >
               切换
@@ -165,7 +170,7 @@ export function Landing({
           <button
             type="button"
             className="lobby-nav__signin"
-            onClick={() => setSignInOpen(true)}
+            onClick={() => setSignInOpen('manual')}
           >
             登录 @handle
           </button>
@@ -259,6 +264,7 @@ export function Landing({
           draft={signInDraft}
           setDraft={setSignInDraft}
           error={signInError}
+          autoFocusInput={signInOpen === 'manual'}
           onSubmit={submitHandle}
           onClose={handle ? () => setSignInOpen(false) : undefined}
         />
@@ -282,12 +288,17 @@ function SignInModal({
   draft,
   setDraft,
   error,
+  autoFocusInput,
   onSubmit,
   onClose,
 }: {
   draft: string;
   setDraft: (s: string) => void;
   error: string | null;
+  /** Only autofocus when user explicitly opened the modal — auto-open on
+   * mount skips this so the OrientationLock rotate stays visible on first
+   * paint. See useEffect in parent. */
+  autoFocusInput: boolean;
   onSubmit: () => void;
   onClose?: () => void;
 }): React.JSX.Element {
@@ -299,7 +310,7 @@ function SignInModal({
         <input
           type="text"
           className="modal__input"
-          autoFocus
+          autoFocus={autoFocusInput}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {

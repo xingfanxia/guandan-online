@@ -28,6 +28,27 @@ describe('Landing', () => {
     expect(screen.getByRole('dialog', { name: '登录 handle' })).toBeInTheDocument();
   });
 
+  it('does NOT autofocus the input on auto-opened modal (so OrientationLock rotate stays visible)', () => {
+    render(<Landing initialHandle={null} initialRecent={[]} />);
+    // Modal opens but input is NOT focused — focus stays on body (or whatever
+    // the default focus is). If focus moved to the input, OrientationLock
+    // would flip into bypass mode and hide the CSS rotate.
+    const input = screen.getByLabelText('handle');
+    expect(document.activeElement).not.toBe(input);
+  });
+
+  it('DOES autofocus the input when user manually opens sign-in via header button', () => {
+    render(<Landing initialHandle="@阿祥" initialRecent={[]} />);
+    // Mounted with a handle → auto-open useEffect skipped. User clicks the
+    // header button to open the modal. autoFocus should fire because this
+    // is a 'manual' open path.
+    const headerBtn = screen.getByRole('button', { name: '换号' });
+    fireEvent.click(headerBtn);
+    const input = screen.getByLabelText('handle');
+    // autoFocus on the input fires synchronously on render in jsdom.
+    expect(document.activeElement).toBe(input);
+  });
+
   it('persists handle to localStorage after submit', () => {
     render(<Landing initialHandle={null} initialRecent={[]} />);
     const input = screen.getByLabelText('handle') as HTMLInputElement;

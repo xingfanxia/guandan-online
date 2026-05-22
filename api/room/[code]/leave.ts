@@ -11,12 +11,12 @@ function getInfra() {
   return infraCache;
 }
 
-export default async function handler(req: Request): Promise<Response> {
-  const url = new URL(req.url);
+export async function POST(request: Request): Promise<Response> {
+  const url = new URL(request.url);
   const segments = url.pathname.split('/').filter(Boolean);
   const code = segments[2] ?? '';
   const infra = getInfra();
-  return handleLeaveRoom(req, code, {
+  return handleLeaveRoom(request, code, {
     roomStore: infra.roomStore,
     bus: infra.bus,
     log: infra.log,

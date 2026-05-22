@@ -18,13 +18,13 @@ function getInfra() {
   return infraCache;
 }
 
-export default async function handler(req: Request): Promise<Response> {
-  const url = new URL(req.url);
+export async function GET(request: Request): Promise<Response> {
+  const url = new URL(request.url);
   const segments = url.pathname.split('/').filter(Boolean);
   // /api/sse/<roomId> → segments = ['api', 'sse', '<roomId>']
   const roomId = segments[2] ?? '';
   const infra = getInfra();
-  return handleSse(req, roomId, {
+  return handleSse(request, roomId, {
     roomStore: infra.roomStore,
     bus: infra.bus,
     log: infra.log,

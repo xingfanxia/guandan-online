@@ -11,11 +11,11 @@ function getInfra() {
   return infraCache;
 }
 
-export default async function handler(req: Request): Promise<Response> {
-  const url = new URL(req.url);
+export async function GET(request: Request): Promise<Response> {
+  const url = new URL(request.url);
   const segments = url.pathname.split('/').filter(Boolean);
   // /api/room/<code> → segments[2] = <code>
   const code = segments[2] ?? '';
   const infra = getInfra();
-  return handleGetRoom(req, code, { roomStore: infra.roomStore });
+  return handleGetRoom(request, code, { roomStore: infra.roomStore });
 }

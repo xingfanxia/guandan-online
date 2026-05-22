@@ -12,7 +12,7 @@ function getInfra() {
   return infraCache;
 }
 
-export default async function handler(req: Request): Promise<Response> {
+export async function POST(request: Request): Promise<Response> {
   const infra = getInfra();
-  return handleCreateRoom(req, { roomStore: infra.roomStore });
+  return handleCreateRoom(request, { roomStore: infra.roomStore });
 }

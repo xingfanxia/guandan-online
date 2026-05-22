@@ -17,9 +17,9 @@ function getInfra() {
   return infraCache;
 }
 
-export default async function handler(req: Request): Promise<Response> {
+export async function GET(request: Request): Promise<Response> {
   const infra = getInfra();
-  return handleCleanupRooms(req, {
+  return handleCleanupRooms(request, {
     roomStore: infra.roomStore,
     adminToken: process.env['ADMIN_TOKEN'] ?? process.env['CRON_SECRET'],
   });

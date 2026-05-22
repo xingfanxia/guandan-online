@@ -13,13 +13,13 @@ function getInfra() {
   return infraCache;
 }
 
-export default async function handler(req: Request): Promise<Response> {
-  const url = new URL(req.url);
+export async function POST(request: Request): Promise<Response> {
+  const url = new URL(request.url);
   // Path: /api/room/<code>/join — pull <code> from index 3 of the segments.
   const segments = url.pathname.split('/').filter(Boolean);
   const code = segments[2] ?? '';
   const infra = getInfra();
-  return handleJoinRoom(req, code, {
+  return handleJoinRoom(request, code, {
     roomStore: infra.roomStore,
     bus: infra.bus,
     log: infra.log,

@@ -7,6 +7,7 @@ import {
 } from '@lib/api/joinRoom';
 import { createMemoryRoomStore } from '@lib/storage/roomStore';
 import { handleCreateRoom } from '@lib/api/createRoom';
+import type { RateLimiter } from '@lib/security/rateLimit';
 
 function req(method: string, body: unknown, url = 'http://test/'): Request {
   return new Request(url, {
@@ -141,5 +142,53 @@ describe('handleJoinRoom — lifecycle conflicts', () => {
       { roomStore }
     );
     expect(res.status).toBe(409);
+  });
+});
+
+// ─── R-I5 regression — rate limit on /join ───────────────────────────────────
+
+describe('handleJoinRoom — R-I5: rate limit', () => {
+  it('returns 429 when limiter denies', async () => {
+    const code = VALID_CODES[0]!;
+    const roomStore = await seedRoom(code);
+    const tightLimiter: RateLimiter = {
+      check() {
+        return { allowed: false, retryAfterMs: 3000 };
+      },
+    };
+    const res = await handleJoinRoom(
+      req('POST', { handle: '@fufu' }),
+      code,
+      {
+        roomStore,
+        tokenGen: counter('joiner'),
+        now: () => 1_700_000_000_000,
+        rateLimiter: tightLimiter,
+      }
+    );
+    expect(res.status).toBe(429);
+    expect(res.headers.get('retry-after')).toBe('3');
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe('rate_limited');
+  });
+
+  it('keys rate-limit by extracted identity', async () => {
+    const code = VALID_CODES[0]!;
+    const roomStore = await seedRoom(code);
+    const calls: string[] = [];
+    const limiter: RateLimiter = {
+      check(key) {
+        calls.push(key);
+        return { allowed: true };
+      },
+    };
+    await handleJoinRoom(req('POST', { handle: '@fufu' }), code, {
+      roomStore,
+      tokenGen: counter('joiner'),
+      now: () => 1_700_000_000_000,
+      rateLimiter: limiter,
+      identify: () => '10.0.0.1',
+    });
+    expect(calls).toEqual(['join:10.0.0.1']);
   });
 });

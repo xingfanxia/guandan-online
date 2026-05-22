@@ -95,6 +95,7 @@ function costOf(p: Pattern, levelRank: LevelRank): number {
   if (p.kind === 'jokerBomb') return 100_000;
   if (p.kind === 'bomb') return 80_000 + p.length * 100 + (p.rank === levelRank ? 14 : 0);
   if (p.kind === 'flushStraight') return 75_000;
-  if (p.rank === null) return 50_000;
-  return powerRank(p.rank, levelRank);
+  // G-I4: removed the `if (p.rank === null) return 50_000;` branch — only
+  // jokerBomb has rank=null and the explicit jokerBomb check above catches it.
+  return powerRank(p.rank!, levelRank);
 }

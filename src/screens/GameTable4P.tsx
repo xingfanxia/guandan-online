@@ -10,7 +10,7 @@
 // /api/room/[code]/move. Optimistic-version fromVersion tracks the lastVersion
 // surfaced by the SSE client.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Avatar } from '@/components/Avatar';
 import { Hand } from '@/components/Hand';
 import { Trick } from '@/components/Trick';
@@ -25,6 +25,7 @@ import type {
   PlayerSummary,
   RoomJoinedEvent,
   RoomLeftEvent,
+  RoundEndEvent,
   ServerEvent,
   SnapshotEvent,
   TrickWonEvent,
@@ -78,6 +79,15 @@ interface TableState {
   /** Monotonic round counter — bumped on each `deal` event so TributeModal
    *  can render an eyebrow ("第 N 局") without separate state. */
   roundNumber: number;
+  /**
+   * Winning team of the most-recent round_end event. Used by
+   * `buildTributeModalState` to decide canDeclare on anti_tribute — the server
+   * validates `declarerTeam !== winnerTeam` (NOT joker ownership), so the
+   * losing-team partner WITHOUT a red joker is also eligible.
+   *
+   * Round 2 IMPORTANT-2 fix.
+   */
+  lastRoundWinnerTeam: TeamKey | null;
 }
 
 export interface TributePendingSnapshot {
@@ -97,6 +107,7 @@ const EMPTY_STATE: TableState = {
   partnerId: null,
   tribute: null,
   roundNumber: 1,
+  lastRoundWinnerTeam: null,
 };
 
 function decodeHand(ids: readonly CardId[]): GameCard[] {
@@ -113,6 +124,15 @@ export function GameTable4P({
   const [selected, setSelected] = useState<ReadonlySet<number>>(new Set());
   const [version, setVersion] = useState<number>(fromVersion ?? 0);
   const [connectionState, setConnectionState] = useState<'connecting' | 'live' | 'closed'>('connecting');
+  // Mirror of state.myPlayerId so the SSE callback (created once per mount)
+  // can decide whether a `move_played` event was mine without closing over
+  // stale state. setState's functional updater inside the callback already
+  // gives us fresh state, but the surrounding clear-selected logic runs in
+  // the outer closure where `state` would be stale.
+  const myPlayerIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    myPlayerIdRef.current = state.myPlayerId;
+  }, [state.myPlayerId]);
 
   // Open SSE on mount; close on unmount.
   useEffect(() => {
@@ -126,7 +146,7 @@ export function GameTable4P({
         setConnectionState('live');
         setVersion(evt.version);
         setState((prev) => reduceEvent(prev, evt, myHandle));
-        if (evt.type === 'deal' || evt.type === 'snapshot' || evt.type === 'round_end') {
+        if (shouldClearSelectedOnEvent(evt, myPlayerIdRef.current)) {
           setSelected(new Set());
         }
       },
@@ -193,6 +213,7 @@ export function GameTable4P({
         state.players,
         myLevel,
         state.roundNumber,
+        state.lastRoundWinnerTeam,
       ),
     [
       state.tribute,
@@ -202,6 +223,7 @@ export function GameTable4P({
       state.players,
       myLevel,
       state.roundNumber,
+      state.lastRoundWinnerTeam,
     ],
   );
 
@@ -350,9 +372,23 @@ export function reduceEvent(
       return reduceTributePending(prev, evt);
     case 'tribute_resolved':
       return reduceTributeResolved(prev, evt);
+    case 'round_end':
+      return reduceRoundEnd(prev, evt);
     default:
       return prev;
   }
+}
+
+function reduceRoundEnd(prev: TableState, evt: RoundEndEvent): TableState {
+  // Track the winning team so the next tribute_pending (anti_tribute) can
+  // gate `canDeclare` on team membership rather than red-joker ownership.
+  // Update teamLevels too — the server emits newLevels with the post-round
+  // upgrade applied.
+  return {
+    ...prev,
+    lastRoundWinnerTeam: evt.winnerTeam,
+    teamLevels: { t1: evt.newLevels.t1, t2: evt.newLevels.t2 },
+  };
 }
 
 function reduceSnapshot(prev: TableState, evt: SnapshotEvent, myHandle: PlayerHandle): TableState {
@@ -457,21 +493,57 @@ interface SeatLayout {
 
 /**
  * Map players into the 4P landscape layout positions relative to the local
- * player. Order: me bottom, partner top, opponents on left/right based on
- * server-assigned seat order.
+ * player. Order: me bottom, partner top (12 o'clock), rivals on left
+ * (9 o'clock) and right (3 o'clock).
+ *
+ * Previous implementation iterated `state.players.values()` (Map insertion
+ * order) and took `rivals[0]`/`rivals[1]` as left/right — which gave wrong
+ * placement depending on whether the local player sat at index 0 vs 2 (the
+ * two rivals swap clock positions relative to me). The fix walks the seat
+ * order from my index forward: the next seat CW is partner across the
+ * table; the immediate next seat in `players` (CW from me) is the rival
+ * on my LEFT, and the previous seat (CCW from me) is the rival on my RIGHT.
+ *
+ * Holds even when partnerId is null (snapshot incomplete) — partner falls
+ * back to the N/2-offset seat per assignSeats' alternating-team contract.
  */
 export function splitSeats(state: TableState, myHandle: PlayerHandle): SeatLayout {
   const all = [...state.players.values()];
   if (all.length === 0) return { partner: null, left: null, right: null };
-  const me = all.find((p) => p.handle === myHandle);
-  const partner = state.partnerId
-    ? all.find((p) => p.id === state.partnerId) ?? null
-    : null;
-  const rivals = all.filter((p) => p.id !== me?.id && p.id !== partner?.id);
+  const myIndex = all.findIndex((p) => p.handle === myHandle);
+  if (myIndex < 0) return { partner: null, left: null, right: null };
+
+  const N = all.length;
+  // Partner: prefer the explicit partnerId from the snapshot when set;
+  // otherwise fall back to the player N/2 seats away (alternating-team
+  // assumption from server-side assignSeats).
+  let partner: PlayerSummary | null = null;
+  if (state.partnerId) {
+    partner = all.find((p) => p.id === state.partnerId) ?? null;
+  }
+  if (!partner && N >= 2) {
+    partner = all[(myIndex + Math.floor(N / 2)) % N] ?? null;
+  }
+
+  // Rivals at the seats immediately CW (left, visually) and CCW (right) of
+  // me, skipping over the partner if they happen to be on either side
+  // (only relevant for N=4 when partner sits directly across).
+  const cwRivals: PlayerSummary[] = [];
+  const ccwRivals: PlayerSummary[] = [];
+  for (let step = 1; step < N; step++) {
+    const cwIdx = (myIndex + step) % N;
+    const cwSeat = all[cwIdx];
+    if (cwSeat && cwSeat.id !== partner?.id) cwRivals.push(cwSeat);
+    const ccwIdx = (myIndex - step + N) % N;
+    if (ccwIdx !== cwIdx) {
+      const ccwSeat = all[ccwIdx];
+      if (ccwSeat && ccwSeat.id !== partner?.id) ccwRivals.push(ccwSeat);
+    }
+  }
   return {
     partner: partner ?? null,
-    left: rivals[0] ?? null,
-    right: rivals[1] ?? null,
+    left: cwRivals[0] ?? null,
+    right: ccwRivals[0] ?? null,
   };
 }
 
@@ -520,6 +592,12 @@ async function postCommand(
  *  - otherwise → null (watch state).
  *
  * Exported for unit testing.
+ *
+ * `lastRoundWinnerTeam` is captured from the most-recent `round_end` event.
+ * Used to gate canDeclare on team membership rather than red-joker ownership
+ * (Round 2 IMPORTANT-2 fix). When null (no round_end seen yet, defensive
+ * for snapshot-only resume), falls back to red-joker heuristic so the
+ * scenario where only one joker-holder can declare is at least handled.
  */
 export function buildTributeModalState(
   snapshot: TributePendingSnapshot | null,
@@ -529,24 +607,31 @@ export function buildTributeModalState(
   players: Map<string, PlayerSummary>,
   levelRank: LevelRank,
   roundNumber: number,
+  lastRoundWinnerTeam: TeamKey | null = null,
 ): TributeState | null {
   if (!snapshot || !myPlayerId) return null;
 
-  // Anti-tribute (resist) — show banner to anyone on losing team. Either
-  // can dispatch via the dismiss callback. Winning-team players see nothing.
+  // Anti-tribute (resist) — render the informational banner to anyone with a
+  // team. The explicit "我们抗贡" dispatch CTA is gated to losing-team
+  // players via `canDeclare`.
+  //
+  // Round 2 IMPORTANT-2 fix: the server validates `declarerTeam !== winnerTeam`,
+  // NOT joker ownership. Use the winning team captured from the preceding
+  // round_end event to gate. Falls back to the red-joker heuristic only when
+  // winnerTeam is unknown (defensive — e.g., snapshot-only resume that
+  // missed the round_end event).
   if (snapshot.direction === 'anti_tribute') {
     if (myTeam === null) return null;
-    // The winner is whoever currently leads with `to` slot in the existing
-    // game state — but resist has no obligations. So we infer winning team
-    // from the seats roster: check if I'm on the same team as the winner.
-    // Without explicit finishOrder here we use heuristic: render the resist
-    // banner to all players. Winning team's dismiss is a no-op (server will
-    // reject) — and we don't show the declare CTA to them.
     const holderHandle = players.get(myPlayerId)?.handle ?? myPlayerId;
+    const canDeclare =
+      lastRoundWinnerTeam !== null
+        ? myTeam !== lastRoundWinnerTeam
+        : handHoldsRedJoker(myHand);
     return {
       kind: 'anti-tribute',
       holderHandle,
       roundNumber,
+      canDeclare,
     };
   }
 
@@ -603,4 +688,35 @@ export function buildTributeModalState(
 
 function cardKey(card: GameCard): string {
   return `${card.rank}-${card.suit}-${card.deck}`;
+}
+
+/**
+ * True when the hand holds at least one red joker (RJ). Used as a heuristic
+ * to determine losing-team membership during anti-tribute — the rule trigger
+ * is "losing team collectively holds both red jokers", so any individual on
+ * the losing team is overwhelmingly likely to be holding ≥1 red joker.
+ * Exported for testing.
+ */
+export function handHoldsRedJoker(hand: readonly GameCard[]): boolean {
+  return hand.some((c) => c.suit === 'joker' && c.rank === 'RJ');
+}
+
+/**
+ * Decide whether an incoming SSE event should reset the selected-cards Set.
+ * Clears on (1) any hand-replacing event (deal / snapshot / round_end) and
+ * (2) my own move_played — because the surviving indices in selected then
+ * point to different cards in the shorter hand, which silently corrupts
+ * the next play submission. Exported for testing the F-C2 fix.
+ */
+export function shouldClearSelectedOnEvent(
+  evt: ServerEvent,
+  myPlayerId: string | null,
+): boolean {
+  if (evt.type === 'deal' || evt.type === 'snapshot' || evt.type === 'round_end') {
+    return true;
+  }
+  if (evt.type === 'move_played' && evt.player === myPlayerId) {
+    return true;
+  }
+  return false;
 }

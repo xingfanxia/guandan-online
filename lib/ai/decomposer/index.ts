@@ -8,7 +8,7 @@
 
 import type { Card } from '../../game/cards.js';
 import type { LevelRank } from '../../game/levels.js';
-import { encodeHand } from './encode.js';
+import { encodeHand, rankToBobgyChar } from './encode.js';
 import { decodeSolution, type DecomposerPlay } from './decode.js';
 import { getCppModule } from './loader.js';
 
@@ -71,7 +71,12 @@ export function decomposeHand(
   if (hand.length === 0) return null;
 
   const encoded = encodeHand(hand);
-  const mainRank = levelRank.charCodeAt(0);
+  // G-C3 fix: Bobgy uses single-char rank encoding internally — '0' for rank 10
+  // (NOT '1' from '10'.charCodeAt(0)). Use the same mapping encode.ts applies
+  // to cards. Without this, at level 10 the solver computes mainRank=49 ('1')
+  // while encoded cards carry '0' (48); the wildcard substitution path never
+  // triggers, the C++ falls through assertions, and the catch below returns null.
+  const mainRank = rankToBobgyChar(levelRank).charCodeAt(0);
 
   let result: import('./loader.js').StrategyResult;
   try {

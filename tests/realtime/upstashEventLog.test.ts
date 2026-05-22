@@ -80,8 +80,9 @@ describe('createUpstashEventLog — per-room isolation', () => {
     const events2 = await log.range('room2', null);
     expect(events1).toHaveLength(1);
     expect(events2).toHaveLength(1);
-    expect(events1[0]?.id).toBe(1); // per-room counter
-    expect(events2[0]?.id).toBe(1);
+    // R-C1: id is the event.version, not an independent per-room counter.
+    expect(events1[0]?.id).toBe(1);
+    expect(events2[0]?.id).toBe(2);
   });
 
   it('different keyPrefix instances do not collide', async () => {

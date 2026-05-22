@@ -287,3 +287,156 @@ describe('handleSse — response headers', () => {
     await drain(res);
   });
 });
+
+// ─── R-C1 regression — Last-Event-ID resume aligns with event.version ────────
+//
+// Pre-fix, the memory log used an internal per-room INCR counter as the
+// LoggedEvent.id, and SSE wrote `id: <event.version>` on the wire. For a
+// joiner whose first delivered event had version > 1 (every non-first
+// joiner; every player in a bot-fill room), the seq vs version offset meant
+// `log.range(roomId, lastEventIdFromBrowser)` filtered against the wrong
+// units, missing events on reconnect.
+//
+// After fix: LoggedEvent.id === event.version, so filtering with
+// `e.id > lastEventId` correctly skips events the client has already seen.
+
+// ─── R-I3 regression — subscribe-first + buffer flush avoids race window ────
+//
+// Pre-fix, the SSE handler drained the log FIRST, then subscribed. With the
+// Upstash event bus that seeds its cursor at the current stream top, a
+// publish landing between log.range completing and subscribe seeding was
+// lost (past log.range, skipped by subscribe's >=cursor filter).
+//
+// Post-fix, subscribe-first stashes live events into a buffer while the
+// drain runs; after replay the buffer flushes dedup'd against the replayed
+// set, then live events forward directly. All events delivered exactly once.
+
+describe('handleSse — R-I3: buffered subscribe avoids drain/subscribe race', () => {
+  it('delivers all events when a live publish lands during the drain window', async () => {
+    const fx = await fixture();
+    const logKey = eventLogKey(CODE, fx.p1Id);
+    // Seed backlog at versions 4 + 5.
+    await fx.log.append(logKey, heartbeatEvent(4));
+    await fx.log.append(logKey, heartbeatEvent(5));
+
+    // Race-arming hook: instrument log.range to publish v6 to the bus
+    // BEFORE returning the backlog. With the buggy "drain-first" ordering,
+    // v6 would be published after log.range returns its v4/v5 list and
+    // before bus.subscribe seeds its cursor — lost.
+    const channel = `game:${CODE}:player:${fx.p1Id}`;
+    const racingLog = {
+      ...fx.log,
+      async range(key: string, fromId: number | null) {
+        // Simulate a publish landing mid-drain. With subscribe-first, the
+        // event is buffered; with drain-first it would be lost.
+        await fx.bus.publish(channel, heartbeatEvent(6));
+        return fx.log.range(key, fromId);
+      },
+    };
+
+    const res = await handleSse(
+      getReq({ token: fx.p1Token, lastEventId: '3' }),
+      CODE,
+      {
+        ...fx,
+        log: racingLog,
+        heartbeatMs: 10_000,
+        rotationMs: 60,
+      }
+    );
+    const text = await drain(res);
+    const frames = splitFrames(text).filter((f) => !f.startsWith(':'));
+    const parsed = frames.map(
+      (f) => parseFrame(f + '\n\n').data as ServerEvent
+    );
+    const replayed = parsed.filter((e) => e.type !== 'stream_closing');
+    const versions = replayed.map((e) => e.version).sort((a, b) => a - b);
+    // All three events must be delivered exactly once.
+    expect(versions).toEqual([4, 5, 6]);
+  });
+
+  it('does not double-deliver an event already in the replay set', async () => {
+    // If a live publish arrives DURING the drain at a version already
+    // present in the backlog (rare race where the same payload is in both
+    // log + bus), the dedup must filter it out.
+    const fx = await fixture();
+    const logKey = eventLogKey(CODE, fx.p1Id);
+    await fx.log.append(logKey, heartbeatEvent(7));
+
+    const channel = `game:${CODE}:player:${fx.p1Id}`;
+    const racingLog = {
+      ...fx.log,
+      async range(key: string, fromId: number | null) {
+        // Publish v7 to the live bus — same version that's already in the
+        // backlog. Without dedup, the client would see v7 twice.
+        await fx.bus.publish(channel, heartbeatEvent(7));
+        return fx.log.range(key, fromId);
+      },
+    };
+
+    const res = await handleSse(
+      getReq({ token: fx.p1Token }),
+      CODE,
+      {
+        ...fx,
+        log: racingLog,
+        heartbeatMs: 10_000,
+        rotationMs: 60,
+      }
+    );
+    const text = await drain(res);
+    const frames = splitFrames(text).filter((f) => !f.startsWith(':'));
+    const parsed = frames.map(
+      (f) => parseFrame(f + '\n\n').data as ServerEvent
+    );
+    const replayed = parsed.filter((e) => e.type !== 'stream_closing');
+    const sevens = replayed.filter((e) => e.version === 7);
+    expect(sevens).toHaveLength(1);
+  });
+});
+
+describe('handleSse — R-C1: Last-Event-ID resume aligns with event.version', () => {
+  it('replays events 4+5 when client reconnects with Last-Event-ID: 3', async () => {
+    const fx = await fixture();
+    const logKey = eventLogKey(CODE, fx.p1Id);
+    // Seed events at versions 4 and 5 — recipient missed v1-3 entirely
+    // (typical for a player whose first event was a deal that landed at
+    // version > 1 because lobby lifecycle bumped the counter).
+    await fx.log.append(logKey, heartbeatEvent(4));
+    await fx.log.append(logKey, heartbeatEvent(5));
+
+    const res = await handleSse(
+      getReq({ token: fx.p1Token, lastEventId: '3' }),
+      CODE,
+      { ...fx, heartbeatMs: 10_000, rotationMs: 50 }
+    );
+    const text = await drain(res);
+    const frames = splitFrames(text).filter((f) => !f.startsWith(':'));
+    const parsed = frames.map(
+      (f) => parseFrame(f + '\n\n').data as ServerEvent
+    );
+    // Drop the rotation-closing event the handler emits at end-of-stream.
+    const replayed = parsed.filter((e) => e.type !== 'stream_closing');
+    expect(replayed.map((e) => e.version)).toEqual([4, 5]);
+  });
+
+  it('replays only event 5 when client reconnects with Last-Event-ID: 4', async () => {
+    const fx = await fixture();
+    const logKey = eventLogKey(CODE, fx.p1Id);
+    await fx.log.append(logKey, heartbeatEvent(4));
+    await fx.log.append(logKey, heartbeatEvent(5));
+
+    const res = await handleSse(
+      getReq({ token: fx.p1Token, lastEventId: '4' }),
+      CODE,
+      { ...fx, heartbeatMs: 10_000, rotationMs: 50 }
+    );
+    const text = await drain(res);
+    const frames = splitFrames(text).filter((f) => !f.startsWith(':'));
+    const parsed = frames.map(
+      (f) => parseFrame(f + '\n\n').data as ServerEvent
+    );
+    const replayed = parsed.filter((e) => e.type !== 'stream_closing');
+    expect(replayed.map((e) => e.version)).toEqual([5]);
+  });
+});

@@ -5,6 +5,7 @@ import { handleLeaveRoom } from '@lib/api/leaveRoom';
 import { handleJoinRoom, type JoinRoomResponseBody } from '@lib/api/joinRoom';
 import { handleCreateRoom, type CreateRoomResponseBody } from '@lib/api/createRoom';
 import { createMemoryRoomStore } from '@lib/storage/roomStore';
+import type { RateLimiter } from '@lib/security/rateLimit';
 
 function req(method: string, body: unknown, bearer?: string): Request {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
@@ -140,5 +141,27 @@ describe('handleLeaveRoom — input validation', () => {
       { roomStore: empty }
     );
     expect(res.status).toBe(404);
+  });
+});
+
+// ─── R-I5 regression — rate limit on /leave ─────────────────────────────────
+
+describe('handleLeaveRoom — R-I5: rate limit', () => {
+  it('returns 429 when limiter denies', async () => {
+    const { roomStore, joinerToken } = await seedRoomWithJoiner();
+    const tightLimiter: RateLimiter = {
+      check() {
+        return { allowed: false, retryAfterMs: 2000 };
+      },
+    };
+    const res = await handleLeaveRoom(
+      req('POST', {}, joinerToken),
+      CODE,
+      { roomStore, rateLimiter: tightLimiter }
+    );
+    expect(res.status).toBe(429);
+    expect(res.headers.get('retry-after')).toBe('2');
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe('rate_limited');
   });
 });

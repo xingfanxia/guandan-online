@@ -85,3 +85,43 @@ describe('parseFrame', () => {
     expect(() => parseFrame('id: 5\nevent: heartbeat\n\n')).toThrow(/data/i);
   });
 });
+
+// ─── R-I4 regression — stream_closing must NOT carry an id: line ─────────────
+//
+// Pre-fix, the rotation handler emitted stream_closing via formatEvent which
+// always added `id: <highestVersion+1>`. The browser stored that id as
+// Last-Event-ID. Because stream_closing is NOT appended to the EventLog, the
+// next real event publication that lands at the same numeric version (a
+// per-recipient sequence collision) would be skipped on reconnect — the log
+// range filter `e.id > lastEventId` would exclude it.
+//
+// Fix: formatEvent gains an `includeId` option (default true for backward
+// compat). The SSE handler calls it with includeId=false for stream_closing.
+
+describe('formatEvent — R-I4: includeId option for synthetic frames', () => {
+  it('omits the id line when options.includeId is false', () => {
+    const out = formatEvent(streamClosing, { includeId: false });
+    expect(out).not.toContain('id: ');
+    // The other lines remain intact.
+    expect(out).toContain('event: stream_closing');
+    expect(out).toContain('data: ');
+  });
+
+  it('round-trips through parseFrame with id === null', () => {
+    const out = formatEvent(streamClosing, { includeId: false });
+    const parsed = parseFrame(out);
+    expect(parsed.id).toBeNull();
+    expect(parsed.event).toBe('stream_closing');
+    expect(parsed.data).toEqual(streamClosing);
+  });
+
+  it('default behavior (no options) still includes the id line', () => {
+    const out = formatEvent(streamClosing);
+    expect(out).toContain('id: 99');
+  });
+
+  it('explicit includeId: true is equivalent to default', () => {
+    const out = formatEvent(streamClosing, { includeId: true });
+    expect(out).toContain('id: 99');
+  });
+});

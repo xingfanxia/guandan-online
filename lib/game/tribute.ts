@@ -158,11 +158,18 @@ export function detectTributeModeMP(
     return { kind: 'sweep', obligations };
   }
 
-  // Mixed finish: degrade to single tribute (last → first). This is Path A from
-  // tribute-ux-deep-dive.md § "Normal (mixed-team finishes)".
+  // Mixed finish: degrade to single tribute (lowest-positioned loser → first).
+  // This is Path A from tribute-ux-deep-dive.md § "Normal (mixed-team finishes)".
+  //
+  // G-C2 fix: previously used finishOrder[expected - 1] (literal last place) which
+  // could be a winner-team player if their team didn't fully sweep. Tributing
+  // from winner to teammate is nonsense — must pick the lowest-positioned LOSER.
+  // `losers` is already in finish-order, so the last entry is the lowest-positioned
+  // loser. Empty-losers was rejected above so this index is safe.
+  const lowestLoser = losers[losers.length - 1]!;
   return {
     kind: 'single',
-    from: finishOrder[expected - 1]!,
+    from: lowestLoser,
     to: finishOrder[0]!,
   };
 }

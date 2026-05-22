@@ -44,13 +44,31 @@ export function Avatar({
 }: AvatarProps): React.JSX.Element {
   const classes = ['avatar', `avatar--${size}`, `avatar--${role}`];
   if (active) classes.push('avatar--active');
+  const className = classes.join(' ');
+  const computedLabel = ariaLabel ?? `${handle}${active ? ' — turn active' : ''}`;
 
+  // When onClick is present render a real <button> so keyboard users get
+  // Tab + Enter/Space activation (WCAG 2.1.1). Otherwise <div role="img">
+  // for non-interactive decorations. components.css ships an `avatar--button`
+  // reset that strips the browser's default button chrome.
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        className={`${className} avatar--button`}
+        onClick={onClick}
+        aria-label={computedLabel}
+        data-handle={handle}
+      >
+        {initials(handle)}
+      </button>
+    );
+  }
   return (
     <div
-      className={classes.join(' ')}
-      onClick={onClick}
-      role={onClick ? 'button' : 'img'}
-      aria-label={ariaLabel ?? `${handle}${active ? ' — turn active' : ''}`}
+      className={className}
+      role="img"
+      aria-label={computedLabel}
       data-handle={handle}
     >
       {initials(handle)}

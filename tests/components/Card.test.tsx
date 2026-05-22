@@ -66,13 +66,32 @@ describe('Card', () => {
     expect(el.querySelector('.card__rank')).toBeNull();
   });
 
-  it('fires onClick when clicked and has role=button', () => {
+  it('fires onClick when clicked and renders as a real <button>', () => {
     const handler = vi.fn();
     render(<Card card={heartA} onClick={handler} />);
     const el = screen.getByLabelText(/A of hearts/i);
-    expect(el).toHaveAttribute('role', 'button');
+    // Native <button> gives implicit role + tab focus + Enter/Space activation
+    // — the previous `<div role="button">` had none of that (WCAG 2.1.1).
+    expect(el.tagName).toBe('BUTTON');
+    expect(el).toHaveAttribute('type', 'button');
     fireEvent.click(el);
     expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('keyboard activation fires onClick on interactive Card (WCAG 2.1.1)', () => {
+    const handler = vi.fn();
+    render(<Card card={heartA} onClick={handler} />);
+    const el = screen.getByLabelText(/A of hearts/i);
+    // Native buttons fire onClick on Enter/Space activation. fireEvent.click
+    // is the semantic equivalent.
+    fireEvent.click(el);
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('non-interactive Card renders as <div> (no implicit button role)', () => {
+    render(<Card card={heartA} />);
+    const el = screen.getByLabelText(/A of hearts/i);
+    expect(el.tagName).toBe('DIV');
   });
 
   it('sets data-rank, data-suit, data-deck attributes for natural card', () => {

@@ -66,3 +66,66 @@ describe('Hand', () => {
     expect(container.querySelectorAll('.card')).toHaveLength(27);
   });
 });
+
+// ─── Round 2 MINOR-2 — roving tabindex ─────────────────────────────────────
+
+describe('Hand — Round 2 MINOR-2: roving tabindex', () => {
+  // Pre-fix: every card was a tab stop (27 stops for a 4P hand) — noisy.
+  // Post-fix: only the focused card has tabIndex=0, rest have -1; arrow keys
+  // move focus within the hand; Tab from a card exits to next focusable element.
+
+  function clickable(cards: readonly GameCard[]): readonly GameCard[] {
+    // onCardClick must be provided so Card renders a <button>; otherwise
+    // we get <div>s with no tabIndex contract.
+    return cards;
+  }
+
+  it('on mount, only the first card has tabIndex=0', () => {
+    const { container } = render(
+      <Hand cards={clickable(sample)} levelRank="2" onCardClick={() => undefined} />,
+    );
+    const buttons = container.querySelectorAll('button.card');
+    expect(buttons.length).toBeGreaterThan(1);
+    expect(buttons[0]!.getAttribute('tabindex')).toBe('0');
+    for (let i = 1; i < buttons.length; i++) {
+      expect(buttons[i]!.getAttribute('tabindex')).toBe('-1');
+    }
+  });
+
+  it('ArrowRight moves focus to next card and shifts tabIndex=0', () => {
+    const { container } = render(
+      <Hand cards={clickable(sample)} levelRank="2" onCardClick={() => undefined} />,
+    );
+    const buttons = container.querySelectorAll('button.card');
+    const first = buttons[0]! as HTMLButtonElement;
+    first.focus();
+    fireEvent.keyDown(first, { key: 'ArrowRight' });
+
+    const updated = container.querySelectorAll('button.card');
+    expect(updated[0]!.getAttribute('tabindex')).toBe('-1');
+    expect(updated[1]!.getAttribute('tabindex')).toBe('0');
+  });
+
+  it('ArrowLeft from card 0 stays at 0 (clamped, no wrap)', () => {
+    const { container } = render(
+      <Hand cards={clickable(sample)} levelRank="2" onCardClick={() => undefined} />,
+    );
+    const buttons = container.querySelectorAll('button.card');
+    const first = buttons[0]! as HTMLButtonElement;
+    first.focus();
+    fireEvent.keyDown(first, { key: 'ArrowLeft' });
+
+    const updated = container.querySelectorAll('button.card');
+    expect(updated[0]!.getAttribute('tabindex')).toBe('0');
+  });
+
+  it('Tab from inside hand exits to next focusable element (only one card is a tab stop)', () => {
+    // The contract for roving-tabindex: only ONE element in the group is a
+    // tab stop. We assert this by counting tabindex="0" elements.
+    const { container } = render(
+      <Hand cards={clickable(sample)} levelRank="2" onCardClick={() => undefined} />,
+    );
+    const tabStops = container.querySelectorAll('button.card[tabindex="0"]');
+    expect(tabStops.length).toBe(1);
+  });
+});

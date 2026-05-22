@@ -12,6 +12,10 @@ import { createMemoryRoundStore } from '@lib/storage/roundStore';
 import { createMemorySessionStore } from '@lib/storage/sessionStore';
 import { createMemoryEventBus } from '@lib/realtime/eventBus';
 import { createMemoryEventLog } from '@lib/realtime/eventLog';
+import { createMemoryIdempotencyCache } from '@lib/realtime/idempotency';
+import type { IdempotencyCache } from '@lib/realtime/idempotency';
+import type { MoveResponse } from '@lib/realtime/commands';
+import type { RoomState } from '@lib/room/lifecycle';
 import { eventLogKey } from '@lib/realtime/publish';
 import seedrandom from 'seedrandom';
 
@@ -428,5 +432,258 @@ describe('handleStartGame — 6P + 8P', () => {
     for (const hand of hands) expect(hand).toHaveLength(13);
     const total = hands.reduce((sum, h) => sum + h.length, 0);
     expect(total).toBe(104); // 4 cards reserved for 8P tribute pile
+  });
+});
+
+// ─── R-C3 regression — concurrent start race serialized via idempotency ──────
+//
+// Pre-fix: two simultaneous host-token POSTs both read phase='lobby', both
+// dealt independent shuffles, both wrote to roundStore (last-write wins), and
+// both fanned out `deal` events at the same version with different hands —
+// clients saw conflicting deals depending on which delivery they observed.
+//
+// Fix: a `start-${code}` reservation. The first POST wins, the second hits
+// either 'pending' (returns 409) or 'done' (returns the cached deal version).
+// Tests below verify both branches.
+
+// ─── R-I5 regression — rate limit on /start ─────────────────────────────────
+
+describe('handleStartGame — R-I5: rate limit', () => {
+  it('returns 429 when limiter denies, before any state mutation', async () => {
+    const fx = await fixture();
+    const tightLimiter = {
+      check() {
+        return { allowed: false as const, retryAfterMs: 4_000 };
+      },
+    };
+    const res = await handleStartGame(
+      req({ bearer: fx.hostToken }),
+      CODE,
+      { ...fx.deps, rateLimiter: tightLimiter }
+    );
+    expect(res.status).toBe(429);
+    expect(res.headers.get('retry-after')).toBe('4');
+
+    // Verify nothing was dealt (rate-limit is the gate before any mutation).
+    const envelope = await fx.deps.roundStore.get(CODE);
+    expect(envelope).toBeNull();
+  });
+
+  it('keys the limiter by room + identity (start:<code>:<ident>)', async () => {
+    const fx = await fixture();
+    const calls: string[] = [];
+    const limiter = {
+      check(key: string) {
+        calls.push(key);
+        return { allowed: true as const };
+      },
+    };
+    await handleStartGame(
+      req({ bearer: fx.hostToken }),
+      CODE,
+      { ...fx.deps, rateLimiter: limiter, identify: () => '7.7.7.7' }
+    );
+    expect(calls).toEqual([`start:${CODE}:7.7.7.7`]);
+  });
+});
+
+describe('handleStartGame — R-C3: concurrent start race', () => {
+  it('two simultaneous starts: exactly ONE persists; the other gets serialized rejection', async () => {
+    const fx = await fixture();
+    const idempotency = createMemoryIdempotencyCache(() => 1_700_000_000_000);
+    const deps = { ...fx.deps, idempotency };
+
+    // Fire both in parallel. In the in-memory cache, the first tryReserve
+    // returns 'reserved' synchronously-ish; the second hits 'pending' before
+    // commit lands → 409 start_in_flight. In production (Upstash) the same
+    // race is resolved by Redis SET NX EX; the second POST will get either
+    // 'pending' (if it lands before commit) or 'done' (cached deal). Either
+    // outcome means the round is dealt exactly once.
+    const [resA, resB] = await Promise.all([
+      handleStartGame(req({ bearer: fx.hostToken }), CODE, deps),
+      handleStartGame(req({ bearer: fx.hostToken }), CODE, deps),
+    ]);
+
+    const statuses = [resA.status, resB.status].sort();
+    expect(statuses).toEqual([200, 409]);
+
+    const winner = resA.status === 200 ? resA : resB;
+    const winnerBody = (await winner.json()) as { ok: boolean; version: number };
+    expect(winnerBody.ok).toBe(true);
+    expect(winnerBody.version).toBeGreaterThan(0);
+
+    // RoundStore has a single durable deal — version matches the winner.
+    const envelope = await deps.roundStore.get(CODE);
+    expect(envelope).not.toBeNull();
+    expect(envelope!.version).toBe(winnerBody.version);
+
+    // Room transitioned exactly once.
+    const room = await deps.roomStore.get(CODE);
+    expect(room?.phase).toBe('in_game');
+  });
+
+  it('reservation pending → second concurrent start returns 409 start_in_flight', async () => {
+    const fx = await fixture();
+    // Stub idempotency that always reports 'pending' — simulates the window
+    // between reservation and commit, which is what an in-flight concurrent
+    // POST observes.
+    const stub = {
+      async tryReserve() {
+        return { status: 'pending' as const };
+      },
+      async commit() {},
+    };
+    const res = await handleStartGame(
+      req({ bearer: fx.hostToken }),
+      CODE,
+      { ...fx.deps, idempotency: stub }
+    );
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe('start_in_flight');
+  });
+
+  it('cache hit (status=done) returns the cached version without re-dealing', async () => {
+    const fx = await fixture();
+    // Pre-fill the cache with a known 'done' entry so any new attempt is a
+    // cache hit. The handler should return version=42 without touching the
+    // roundStore.
+    const stub = {
+      async tryReserve() {
+        return {
+          status: 'done' as const,
+          result: {
+            ok: true as const,
+            appliedVersion: 42,
+            result: 'applied' as const,
+          },
+        };
+      },
+      async commit() {},
+    };
+    const res = await handleStartGame(
+      req({ bearer: fx.hostToken }),
+      CODE,
+      { ...fx.deps, idempotency: stub }
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; version: number };
+    expect(body.ok).toBe(true);
+    expect(body.version).toBe(42);
+
+    // Critically: roundStore was NOT written to — no real deal happened.
+    const envelope = await fx.deps.roundStore.get(CODE);
+    expect(envelope).toBeNull();
+  });
+});
+
+// ─── Round 2 CRITICAL fix — idempotency reservation orphaning on throw ──────
+
+describe('handleStartGame — Round 2 critical: idempotency commits on downstream throw', () => {
+  // Pre-fix, when sessionStore.put / roundStore.put / roomStore.put threw
+  // after tryReserve, the reservation stayed in 'pending' state for
+  // START_IDEMPOTENCY_TTL_SECONDS (1h). Concurrent retries got 409
+  // start_in_flight for that full window — the handler was bricked for the
+  // room. Post-fix, the handler catches the throw, commits an
+  // 'internal_error' MoveResponse so the next retry sees a cached error
+  // (status='done') instead of stuck 'pending'.
+
+  it('returns 500 + commits error response when sessionStore.put throws', async () => {
+    const fx = await fixture();
+    const idempotency = createMemoryIdempotencyCache(() => 1_700_000_000_000);
+
+    // Wrap sessionStore so its put throws but get/delete still work.
+    const realSession = fx.deps.sessionStore;
+    const throwingSessionStore = {
+      get: realSession.get.bind(realSession),
+      put: () => {
+        throw new Error('simulated sessionStore.put failure');
+      },
+      delete: realSession.delete.bind(realSession),
+    };
+
+    // Track commits so we can assert the error was committed.
+    const commits: Array<{ key: string; result: MoveResponse }> = [];
+    const trackingCache: IdempotencyCache = {
+      tryReserve: idempotency.tryReserve.bind(idempotency),
+      async commit(key, result, ttl) {
+        commits.push({ key, result });
+        return idempotency.commit(key, result, ttl);
+      },
+    };
+
+    const res = await handleStartGame(
+      req({ bearer: fx.hostToken }),
+      CODE,
+      {
+        ...fx.deps,
+        sessionStore: throwingSessionStore,
+        idempotency: trackingCache,
+      }
+    );
+
+    // (a) Response is 500 with the underlying error message.
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as {
+      ok: boolean;
+      error?: string;
+      details?: string;
+    };
+    expect(body.ok).toBe(false);
+    expect(body.error).toBe('internal_error');
+    expect(body.details).toContain('simulated sessionStore.put failure');
+
+    // (b) idempotency.commit was called with ok: false / internal_error.
+    expect(commits).toHaveLength(1);
+    expect(commits[0]!.key).toBe(`start-${CODE}`);
+    expect(commits[0]!.result.ok).toBe(false);
+    if (!commits[0]!.result.ok) {
+      expect(commits[0]!.result.error).toBe('internal_error');
+    }
+  });
+
+  it('subsequent call with same room gets cached error, NOT pending/409', async () => {
+    const fx = await fixture();
+    const idempotency = createMemoryIdempotencyCache(() => 1_700_000_000_000);
+
+    // First call: roomStore.put throws → handler commits 'internal_error'.
+    let shouldThrow = true;
+    const realRoom = fx.deps.roomStore;
+    const flakyRoomStore = {
+      get: realRoom.get.bind(realRoom),
+      put: (state: RoomState, ttl: number) => {
+        if (shouldThrow) {
+          throw new Error('first attempt fails');
+        }
+        return realRoom.put(state, ttl);
+      },
+      create: realRoom.create.bind(realRoom),
+      delete: realRoom.delete.bind(realRoom),
+      listCodes: realRoom.listCodes.bind(realRoom),
+    };
+
+    const first = await handleStartGame(
+      req({ bearer: fx.hostToken }),
+      CODE,
+      { ...fx.deps, roomStore: flakyRoomStore, idempotency }
+    );
+    expect(first.status).toBe(500);
+
+    // Second call — even if underlying issue is fixed, cached error must
+    // replay. CRITICALLY: must NOT be 409 'start_in_flight' (which would
+    // mean the reservation orphaned).
+    shouldThrow = false;
+    const second = await handleStartGame(
+      req({ bearer: fx.hostToken }),
+      CODE,
+      { ...fx.deps, roomStore: flakyRoomStore, idempotency }
+    );
+    expect(second.status).not.toBe(409);
+    const body = (await second.json()) as {
+      ok: boolean;
+      error?: string;
+    };
+    expect(body.ok).toBe(false);
+    expect(body.error).toBe('internal_error');
   });
 });

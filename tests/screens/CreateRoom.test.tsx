@@ -154,4 +154,29 @@ describe('CreateRoom', () => {
       expect(createFn).toHaveBeenCalledWith({ mode: '4', handle: '@阿祥' })
     );
   });
+
+  // F-C1: handle is now persisted alongside the credentials on create so the
+  // GameTable* components can match `evt.players[].handle === myHandle`
+  // during snapshot reduction.
+  it('persists handle into stored credentials on create', async () => {
+    const createFn = vi.fn().mockResolvedValue({
+      code: 'K7M2P9',
+      hostId: 'p0',
+      hostToken: 'ht',
+      hostJoinToken: 'jt',
+    });
+    render(
+      <CreateRoom
+        initialHandle="@阿祥"
+        createFn={createFn}
+        navigateFn={vi.fn()}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: /建立房间/ }));
+    await waitFor(() => expect(createFn).toHaveBeenCalled());
+    const tokens = JSON.parse(window.localStorage.getItem('guandan.tokens') ?? '[]');
+    expect(tokens[0].handle).toBe('@阿祥');
+    expect(tokens[0].code).toBe('K7M2P9');
+    expect(tokens[0].hostToken).toBe('ht');
+  });
 });

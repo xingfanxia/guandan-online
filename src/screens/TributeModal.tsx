@@ -56,6 +56,14 @@ export interface TributeAntiState {
   nextLeaderHandle?: string;
   /** Optional auto-advance countdown seconds. */
   countdownSeconds?: number;
+  /**
+   * When true, show the explicit "我们抗贡" CTA that fires onDismiss
+   * (=> anti_tribute command to server). Should only be true for players
+   * on the losing team — others see the banner as informational only.
+   * Defaults to false; the parent component opts in when it can
+   * authoritatively determine team membership.
+   */
+  canDeclare?: boolean;
 }
 
 export interface TributeReturnState {
@@ -242,13 +250,17 @@ function AntiTribute({
   state: TributeAntiState;
   onDismiss?: () => void;
 }): React.JSX.Element {
+  // Backdrop click intentionally has NO onClick. A previous version wired
+  // onDismiss to the backdrop, which meant any accidental tap on the veil
+  // (incl. winning-team players who can't even legally declare resist)
+  // would POST anti_tribute and get a confusing server rejection. The
+  // explicit "我们抗贡" button below is the only path to dispatch.
   return (
     <div
       className="tribute-veil tribute-veil--solid"
       role="dialog"
       aria-modal="true"
       aria-label="抗贡"
-      onClick={onDismiss}
     >
       <div className="anti-tribute">
         <div className="tribute-eyebrow tribute-eyebrow--gold">
@@ -278,6 +290,18 @@ function AntiTribute({
             : '即将开始下一局'}
           {state.nextLeaderHandle ? ` · ${state.nextLeaderHandle} 起手` : ''}
         </div>
+        {state.canDeclare && onDismiss ? (
+          <div className="tribute-actions" style={{ marginTop: 16 }}>
+            <button
+              type="button"
+              className="btn btn--primary btn--sm"
+              onClick={onDismiss}
+              aria-label="我们抗贡"
+            >
+              我们抗贡 →
+            </button>
+          </div>
+        ) : null}
       </div>
     </div>
   );

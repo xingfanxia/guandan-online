@@ -165,3 +165,85 @@ describe('enumerateLegalPlays — level rank effects', () => {
     expect(plays.some((p) => p.kind === 'pair')).toBe(false);
   });
 });
+
+// ─── G-C4: wildcards substituting in same-rank family ────────────────────────
+//
+// Per docs/research/game-rules.md lines 70-92 (wildcard rules 1, 6): a wildcard
+// (heart-of-level-rank) substitutes any non-joker card. Previously the byRank
+// loop in enumerate.ts isolated wildcards from natural same-rank plays, so
+// bots could never play pair K / triple K / K-bomb using a wildcard.
+
+describe('enumerateLegalPlays — G-C4: wildcard substitution in same-rank family', () => {
+  it('hand [K♠, K♦, 2♥] at level 2 produces pair K (wildcard substitutes)', () => {
+    // 2♥ is the wildcard at level 2. With two natural Ks + one wildcard,
+    // bot should be able to declare pair K AND triple K.
+    const hand: Card[] = [c('spades', 'K'), c('diamonds', 'K'), c('hearts', '2')];
+    const plays = enumerateLegalPlays(hand, null, '2');
+    const kKinds = plays.filter((p) => p.rank === 'K');
+    expect(kKinds.some((p) => p.kind === 'pair')).toBe(true);
+    expect(kKinds.some((p) => p.kind === 'triple')).toBe(true);
+  });
+
+  it('hand [K♠, K♦, K♣, 2♥] at level 2 produces triple K AND 4-bomb K', () => {
+    // 3 naturals + 1 wildcard. Should enumerate plays of K from size 1..4.
+    const hand: Card[] = [
+      c('spades', 'K'), c('diamonds', 'K'), c('clubs', 'K'),
+      c('hearts', '2'),
+    ];
+    const plays = enumerateLegalPlays(hand, null, '2');
+    const kKinds = plays.filter((p) => p.rank === 'K');
+    expect(kKinds.some((p) => p.kind === 'triple')).toBe(true);
+    expect(kKinds.some((p) => p.kind === 'bomb' && p.length === 4)).toBe(true);
+  });
+
+  it('hand [K♠, 2♥, 2♥] at level 2 produces triple K (2 wildcards + 1 natural)', () => {
+    // 1 natural K + 2 wildcards → triple K. This is the "max wildcards"
+    // case for triple — both wildcards substitute for K.
+    const hand: Card[] = [
+      c('spades', 'K'),
+      c('hearts', '2', 1), c('hearts', '2', 2),
+    ];
+    const plays = enumerateLegalPlays(hand, null, '2');
+    const kTriples = plays.filter((p) => p.kind === 'triple' && p.rank === 'K');
+    expect(kTriples.length).toBeGreaterThan(0);
+  });
+
+  it('hand [2♥] alone at level 2 does NOT produce pair K (need ≥1 natural per rule 6)', () => {
+    // Only a wildcard — can't conjure a pair-K out of thin air. Wildcards
+    // must substitute IN a same-rank set, not stand alone for an arbitrary rank.
+    // Only legal play is single (which the wildcard provides as the level rank).
+    const hand: Card[] = [c('hearts', '2')];
+    const plays = enumerateLegalPlays(hand, null, '2');
+    // No pair / triple / bomb of K — only single (the wildcard played as itself).
+    expect(plays.some((p) => p.rank === 'K')).toBe(false);
+  });
+
+  it('wildcard substitution honors target beat rules (pair K beats pair Q with wildcard)', () => {
+    const target: Pattern = {
+      kind: 'pair', rank: 'Q', length: 2,
+      cards: [c('spades', 'Q'), c('hearts', 'Q')],
+    };
+    const hand: Card[] = [c('spades', 'K'), c('hearts', '2')];
+    const plays = enumerateLegalPlays(hand, target, '2');
+    expect(plays.some((p) => p.kind === 'pair' && p.rank === 'K')).toBe(true);
+  });
+
+  it('wildcard substitution NOT triggered for joker ranks (rule 4)', () => {
+    // Can't form pair-BJ using a wildcard substitution; rule 4 forbids it.
+    // Hand has 1 BJ + 1 wildcard.
+    const hand: Card[] = [c('joker', 'BJ', 1), c('hearts', '2')];
+    const plays = enumerateLegalPlays(hand, null, '2');
+    expect(plays.some((p) => p.kind === 'pair' && p.rank === 'BJ')).toBe(false);
+  });
+
+  it('does NOT double-enumerate plays of level rank when wildcards present', () => {
+    // At level 2, 2♥ is the wildcard. Hand: 2♠, 2♥. The byRank loop already
+    // enumerates pair 2 (both cards have rank '2'). The G-C4 synthesis
+    // would also try to make pair 2 using the wildcard. Verify no duplicate.
+    const hand: Card[] = [c('spades', '2'), c('hearts', '2')];
+    const plays = enumerateLegalPlays(hand, null, '2');
+    const pair2s = plays.filter((p) => p.kind === 'pair' && p.rank === '2');
+    // Exactly one pair-of-2 enumeration. G-C4 skips levelRank to avoid this dup.
+    expect(pair2s.length).toBe(1);
+  });
+});

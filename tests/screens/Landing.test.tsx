@@ -167,4 +167,38 @@ describe('Landing', () => {
     fireEvent.click(screen.getByText('K7M2P9').closest('button')!);
     expect(navigateFn).toHaveBeenCalledWith({ kind: 'wait', code: 'K7M2P9' });
   });
+
+  // F-M2: JoinModal now mirrors SignInModal's tri-state — manual-open
+  // (user-click) autofocuses the input, auto-open (future deep-link
+  // scenarios) does not so OrientationLock CSS-rotate stays visible.
+  it('autofocuses the room-code input when JoinModal is opened by user click', () => {
+    render(<Landing initialHandle="@阿祥" initialRecent={[]} />);
+    fireEvent.click(screen.getByRole('button', { name: '加入房间' }));
+    const input = screen.getByLabelText('room code');
+    expect(document.activeElement).toBe(input);
+  });
+
+  // F-C1: handle is now persisted alongside the credentials on join so the
+  // GameTable* components can use it directly without falling back to the
+  // global handle.
+  it('persists handle into stored credentials on join', async () => {
+    const joinFn = vi.fn().mockResolvedValue({ playerId: 'p1', joinToken: 'jt' });
+    render(
+      <Landing
+        initialHandle="@阿祥"
+        initialRecent={[]}
+        joinFn={joinFn}
+        navigateFn={vi.fn()}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: '加入房间' }));
+    fireEvent.change(screen.getByLabelText('room code'), {
+      target: { value: 'K7M2P9' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '加入' }));
+    await waitFor(() => expect(joinFn).toHaveBeenCalled());
+    const stored = JSON.parse(window.localStorage.getItem('guandan.tokens') ?? '[]');
+    expect(stored[0].handle).toBe('@阿祥');
+    expect(stored[0].code).toBe('K7M2P9');
+  });
 });

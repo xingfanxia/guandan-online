@@ -100,8 +100,30 @@ export function runBots(input: RunBotsInput): RunBotsResult {
 
     const tier: BotTier = member.difficulty ?? 'medium';
 
-    const ctx = buildBotContext(round, currentPlayer, tier, input.rng);
-    const decision = computeBotMove(ctx);
+    // R-C2 defense: wrap computeBotMove in try/catch. If the bot strategy
+    // throws (e.g., "leading with no legal plays", WASM decomposer failure,
+    // assertion in cooperation primitives), bail out cleanly with the partial
+    // result. The next /move handler invocation can retry by re-entering the
+    // loop. Without this, the throw unwinds the entire move handler — the
+    // human's already-applied move is lost (no roundStore.put), and the
+    // idempotency reservation never commits (sits in 'pending' until the 10min
+    // TTL elapses), bricking the room.
+    let ctx: BotContext;
+    let decision: ReturnType<typeof computeBotMove>;
+    try {
+      ctx = buildBotContext(round, currentPlayer, tier, input.rng);
+      decision = computeBotMove(ctx);
+    } catch (err) {
+      console.error(
+        '[runBots] bot strategy threw for',
+        tier,
+        'bot',
+        currentPlayer,
+        ':',
+        (err as Error).message
+      );
+      return { round, version, events };
+    }
 
     // Apply + derive — one decision becomes one MoveCommand for the event
     // derivation. We re-encode the cards into CardId[] form to match the

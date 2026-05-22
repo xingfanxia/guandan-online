@@ -24,6 +24,28 @@ export interface CardProps {
   ariaLabel?: string;
   /** Optional className passthrough (rare; prefer props). */
   className?: string;
+  /**
+   * Override the default `<button>` tabIndex. Used by Hand.tsx to implement
+   * roving-tabindex — only the currently-focused card has tabIndex=0, all
+   * others have -1. Without this override, every card in a hand becomes a
+   * tab stop (27 stops for a 4P deal), creating noisy keyboard navigation
+   * (Round 2 MINOR-2 fix).
+   *
+   * Default behavior (undefined) preserves the prior native `<button>`
+   * tabIndex=0 contract.
+   */
+  tabIndex?: number;
+  /**
+   * Optional ref to the underlying focusable button element. Used by Hand
+   * to programmatically focus the next/prev card on arrow-key navigation.
+   */
+  buttonRef?: React.RefObject<HTMLButtonElement | null>;
+  /**
+   * Optional keyboard handler. Hand uses this to implement arrow-key
+   * navigation across the roving-tabindex hand without wrapping cards in
+   * extra DOM (which would break the .hand .card:first-child CSS selector).
+   */
+  onKeyDown?: React.KeyboardEventHandler<HTMLButtonElement>;
 }
 
 const SUIT_GLYPH: Record<NaturalSuit, string> = {
@@ -67,6 +89,9 @@ export function Card({
   onClick,
   ariaLabel,
   className,
+  tabIndex,
+  buttonRef,
+  onKeyDown,
 }: CardProps): React.JSX.Element {
   const sizeClass = size === 'lg' ? 'card--lg' : size === 'md' ? 'card--md' : '';
 
@@ -77,33 +102,69 @@ export function Card({
   if (card && !faceDown && isRed(card.suit)) classes.push('card--red');
   if (className) classes.push(className);
 
+  // When onClick is present we render a real <button> so keyboard users get
+  // Tab focus + Enter/Space activation for free (WCAG SC 2.1.1). Otherwise
+  // we render a <div> for layout-only cards (face-down opp hands, decorative
+  // trick cards). The `card--button` class lets components.css strip the
+  // browser's default button styling (border/padding) without affecting the
+  // pure-div variant.
+  const finalClassName = classes.filter(Boolean).join(' ');
+  const computedLabel = ariaLabel ?? (faceDown ? 'face-down card' : card ? defaultLabel(card) : 'empty card slot');
+
   if (faceDown || !card) {
-    return (
-      <div
-        className={classes.filter(Boolean).join(' ')}
-        onClick={onClick}
-        role={onClick ? 'button' : undefined}
-        aria-label={ariaLabel ?? (faceDown ? 'face-down card' : 'empty card slot')}
-      />
-    );
+    if (onClick) {
+      return (
+        <button
+          type="button"
+          className={`${finalClassName} card--button`}
+          onClick={onClick}
+          aria-label={computedLabel}
+          {...(tabIndex !== undefined ? { tabIndex } : {})}
+          {...(buttonRef ? { ref: buttonRef } : {})}
+          {...(onKeyDown ? { onKeyDown } : {})}
+        />
+      );
+    }
+    return <div className={finalClassName} aria-label={computedLabel} />;
   }
 
   const rank = RANK_LABEL[card.rank];
   const glyph = suitGlyph(card);
+  const children = (
+    <>
+      <span className="card__rank">{rank}</span>
+      <span className="card__suit">{glyph}</span>
+      <span className="card__center">{glyph}</span>
+    </>
+  );
 
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        className={`${finalClassName} card--button`}
+        onClick={onClick}
+        aria-label={computedLabel}
+        data-rank={card.rank}
+        data-suit={card.suit}
+        data-deck={card.deck}
+        {...(tabIndex !== undefined ? { tabIndex } : {})}
+        {...(buttonRef ? { ref: buttonRef } : {})}
+        {...(onKeyDown ? { onKeyDown } : {})}
+      >
+        {children}
+      </button>
+    );
+  }
   return (
     <div
-      className={classes.filter(Boolean).join(' ')}
-      onClick={onClick}
-      role={onClick ? 'button' : undefined}
-      aria-label={ariaLabel ?? defaultLabel(card)}
+      className={finalClassName}
+      aria-label={computedLabel}
       data-rank={card.rank}
       data-suit={card.suit}
       data-deck={card.deck}
     >
-      <span className="card__rank">{rank}</span>
-      <span className="card__suit">{glyph}</span>
-      <span className="card__center">{glyph}</span>
+      {children}
     </div>
   );
 }

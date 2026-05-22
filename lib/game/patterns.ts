@@ -420,7 +420,34 @@ export function canBeat(
   if (challenger.kind !== target.kind) return false;
   if (challenger.length !== target.length) return false;
   if (challenger.rank === null || target.rank === null) return false;
+
+  // Sequence-type patterns (straight, threePairs, twoTriples) compare via
+  // NATURAL position, NOT lifted powerRank. Per docs/research/game-rules.md
+  // (lines 60-68): "Level-rank cards can participate in sequential hand types
+  // by inserting at their natural numeric position." Mirror bomb.ts:78-82's
+  // flushStraight handling. Without this, at level 5 an A-2-3-4-5 straight
+  // (rank='5', powerRank=14) would beat a 6-10 straight (rank='10', powerRank=9).
+  if (
+    challenger.kind === 'straight' ||
+    challenger.kind === 'threePairs' ||
+    challenger.kind === 'twoTriples'
+  ) {
+    return (
+      sequenceRankValue(challenger.rank) > sequenceRankValue(target.rank)
+    );
+  }
+
   return powerRank(challenger.rank, levelRank) > powerRank(target.rank, levelRank);
+}
+
+/**
+ * Natural-position rank value for sequence comparisons (straight, threePairs,
+ * twoTriples). Level rank is NOT lifted — it occupies its natural slot. Jokers
+ * cannot appear in sequences so they're unreachable here; defensively returns 0.
+ */
+function sequenceRankValue(rank: Rank): number {
+  if (rank === 'BJ' || rank === 'RJ') return 0;
+  return NATURAL_RANK_VALUE[rank as NaturalRank];
 }
 
 function compareBombPatterns(

@@ -186,7 +186,7 @@ export function Waiting({
         <div className="waiting__top-group">
           <span className="waiting__top-key">ROOM</span>
           <span className="waiting__top-val">{code}</span>
-          <span className="chip mono">{seats}P · 宽松 A</span>
+          <span className="chip mono">{seats}P · {aLevelLabel(room.rules)}</span>
           <span className="chip chip--info mono">CONFIGURING</span>
         </div>
         <div className="waiting__top-group">
@@ -345,6 +345,17 @@ function inviteUrl(code: string): string {
     return `https://gdo.ax0x.ai/r/${code}`;
   }
   return `${window.location.origin}/?room=${code}`;
+}
+
+/**
+ * Compose the "A 级" chip label from the room's rule overrides. When the
+ * server hasn't surfaced rules (older API or omitted), fall back to a
+ * generic "A 级" without the strict/loose qualifier — better than the
+ * previous hardcoded "宽松 A" which lied about strict rooms.
+ */
+function aLevelLabel(rules?: import('@/lib/api/rooms').PublicModeRules): string {
+  if (!rules || rules.strictA === undefined) return 'A 级';
+  return rules.strictA ? '严格 A' : '宽松 A';
 }
 
 function avatarInitials(handle: string): string {

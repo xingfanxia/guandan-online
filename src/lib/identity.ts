@@ -19,9 +19,24 @@ export interface RoomCredentials {
   readonly joinToken: string;
   /** Host admin token if we created this room — used for /start, /kick. */
   readonly hostToken?: string;
+  /**
+   * The user's @handle at the time these credentials were minted. The server
+   * assigns the playerId; this carries our display identity so consumers
+   * (GameTable4P/GameTableMP) can match `evt.players[].handle === myHandle`
+   * during snapshot reduction. Optional for back-compat with older entries
+   * persisted before this field existed — readers fall back to getHandle().
+   */
+  readonly handle?: string;
   /** Wall-clock ms at storage time; lets us age out stale credentials. */
   readonly storedAt: number;
 }
+
+/**
+ * Maximum age (in ms) before stored credentials are pruned by storeCredentials.
+ * 7 days matches the typical SSE rotation + lobby timeout horizon — anything
+ * older is almost certainly a dead room.
+ */
+const MAX_CREDENTIAL_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 function isBrowser(): boolean {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
@@ -35,12 +50,20 @@ export function getHandle(): string | null {
 
 export function setHandle(handle: string): void {
   if (!isBrowser()) return;
-  window.localStorage.setItem(HANDLE_KEY, handle);
+  try {
+    window.localStorage.setItem(HANDLE_KEY, handle);
+  } catch (err) {
+    console.warn('[identity] failed to persist handle', err);
+  }
 }
 
 export function clearHandle(): void {
   if (!isBrowser()) return;
-  window.localStorage.removeItem(HANDLE_KEY);
+  try {
+    window.localStorage.removeItem(HANDLE_KEY);
+  } catch (err) {
+    console.warn('[identity] failed to clear handle', err);
+  }
 }
 
 /**
@@ -91,19 +114,42 @@ function readTokens(): RoomCredentials[] {
   }
 }
 
-function writeTokens(list: RoomCredentials[]): void {
-  if (!isBrowser()) return;
-  window.localStorage.setItem(TOKENS_KEY, JSON.stringify(list));
+/**
+ * Persist the credential list. Returns true on success, false when the write
+ * is skipped (SSR) or fails (e.g., QuotaExceededError when localStorage is
+ * full). We never throw — a stale token cache is recoverable; a thrown error
+ * from setItem would kill the calling flow (createRoom, joinRoom).
+ */
+function writeTokens(list: RoomCredentials[]): boolean {
+  if (!isBrowser()) return false;
+  try {
+    window.localStorage.setItem(TOKENS_KEY, JSON.stringify(list));
+    return true;
+  } catch (err) {
+    // Common case: Safari private mode or storage quota exceeded. Log and
+    // continue — the in-flight room flow stays functional, we just can't
+    // rejoin via the recent-rooms list later.
+    console.warn('[identity] failed to persist tokens', err);
+    return false;
+  }
 }
 
 export function getCredentialsForRoom(code: string): RoomCredentials | null {
   return readTokens().find((c) => c.code === code) ?? null;
 }
 
-export function storeCredentials(creds: RoomCredentials): void {
-  const list = readTokens().filter((c) => c.code !== creds.code);
+/**
+ * Persist credentials for a room. Prunes entries older than 7 days first so
+ * the list doesn't grow unbounded across long-running browsers. Returns true
+ * when the write succeeded, false on quota / SSR.
+ */
+export function storeCredentials(creds: RoomCredentials): boolean {
+  const cutoff = Date.now() - MAX_CREDENTIAL_AGE_MS;
+  const list = readTokens()
+    .filter((c) => c.code !== creds.code)
+    .filter((c) => c.storedAt >= cutoff);
   list.push(creds);
-  writeTokens(list);
+  return writeTokens(list);
 }
 
 export function clearCredentials(code: string): void {

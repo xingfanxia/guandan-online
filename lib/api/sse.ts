@@ -4,22 +4,32 @@
 //   1. Validate roomId; auth the requester via ?token=<joinToken> against
 //      room.members. EventSource cannot send custom headers from a browser,
 //      so we accept the token via query string (over HTTPS).
-//   2. Resume: read Last-Event-ID header (or ?lastEventId=) and drain
-//      eventLog.range(roomId, lastEventId) before live subscribe.
-//   3. Subscribe to bus channel `game:<roomId>:player:<playerId>`. Live
-//      events are written as SSE frames via formatEvent.
-//   4. Heartbeat: emit `: ping <ts>\n\n` every heartbeatMs to keep the
+//   2. R-I3: Subscribe to the live bus BEFORE draining the log, buffering
+//      live events while the drain runs. After replay, flush the buffered
+//      events dedup'd against the replayed set.
+//   3. Resume: read Last-Event-ID header (or ?lastEventId=) and drain
+//      eventLog.range(roomId, lastEventId).
+//   4. Live: flush buffer, then forward future subscribe events directly.
+//   5. Heartbeat: emit `: ping <ts>\n\n` every heartbeatMs to keep the
 //      connection alive through proxies + GFW middleboxes.
-//   5. Rotation: after rotationMs, send a stream_closing event and close
+//   6. Rotation: after rotationMs, send a stream_closing event and close
 //      the stream. The client EventSource will reconnect with its last
 //      seen id and we restart from step 1.
 //
 // On client disconnect (ReadableStream.cancel), unsubscribe + clear timers.
+//
+// Why subscribe-then-drain (R-I3): Upstash bus.subscribe seeds its cursor at
+// the current top of the stream. If a publish lands between the log.range
+// call and the subscribe seeding (which happens inside the Upstash impl),
+// the event is BOTH past the log.range result AND skipped by the >=cursor
+// subscribe filter — a lost event. Subscribing first widens the catch
+// window: any event after subscribe-seed lands in the buffer, and the
+// drain+dedup at the end ensures no duplicate delivery from the overlap.
 
 import type { EventBus } from '../realtime/eventBus.js';
 import type { EventLog } from '../realtime/eventLog.js';
 import { formatComment, formatEvent } from '../realtime/sse.js';
-import type { StreamClosingEvent } from '../realtime/messages.js';
+import type { ServerEvent, StreamClosingEvent } from '../realtime/messages.js';
 import type { RoomStore } from '../storage/roomStore.js';
 import { isValidRoomCode } from '../room/code.js';
 import { eventLogKey } from '../realtime/publish.js';
@@ -92,22 +102,28 @@ export async function handleSse(
 
   const logKey = eventLogKey(roomId, member.id);
 
+  // R-I3: subscribe-first + buffer-and-flush. While the log drain runs,
+  // live events accumulate in `liveBuffer`. After the drain replays the
+  // backlog (each version recorded in `replayedVersions`), we flush the
+  // buffer dedup'd against the replay set, then switch to direct controller
+  // writes for any remaining future events.
+  let drainComplete = false;
+  const liveBuffer: ServerEvent[] = [];
+  const replayedVersions = new Set<number>();
+
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
-      // Backlog drain. Per-recipient log key — each player only re-reads
-      // payloads built for them. See publish.ts for why this isolation is
-      // security-critical (preventing yourHand leaks on SSE resume).
-      const backlog = await deps.log.range(logKey, fromId);
-      for (const entry of backlog) {
-        controller.enqueue(encoder.encode(formatEvent(entry.event)));
-        if (entry.event.version > highestVersion) {
-          highestVersion = entry.event.version;
-        }
-      }
-
-      // Live subscribe.
+      // Subscribe FIRST. Buffer live events until the drain completes; once
+      // it does, flush the buffer and continue forwarding directly.
       unsubscribe = await deps.bus.subscribe(channel, (event) => {
         if (closed) return;
+        if (!drainComplete) {
+          liveBuffer.push(event);
+          return;
+        }
+        // Post-drain delivery. Dedup against the replayed set in case a live
+        // event arrived just as the drain was wrapping up.
+        if (replayedVersions.has(event.version)) return;
         try {
           controller.enqueue(encoder.encode(formatEvent(event)));
           if (event.version > highestVersion) {
@@ -118,6 +134,35 @@ export async function handleSse(
           // disconnected; swallow so no unhandled rejections fire.
         }
       });
+
+      // Backlog drain. Per-recipient log key — each player only re-reads
+      // payloads built for them. See publish.ts for why this isolation is
+      // security-critical (preventing yourHand leaks on SSE resume).
+      const backlog = await deps.log.range(logKey, fromId);
+      for (const entry of backlog) {
+        replayedVersions.add(entry.event.version);
+        controller.enqueue(encoder.encode(formatEvent(entry.event)));
+        if (entry.event.version > highestVersion) {
+          highestVersion = entry.event.version;
+        }
+      }
+
+      // Flush the buffer accumulated during the drain, skipping anything
+      // already in the replay set. Then mark drainComplete so the subscribe
+      // handler stops buffering.
+      for (const buffered of liveBuffer) {
+        if (replayedVersions.has(buffered.version)) continue;
+        try {
+          controller.enqueue(encoder.encode(formatEvent(buffered)));
+          if (buffered.version > highestVersion) {
+            highestVersion = buffered.version;
+          }
+        } catch {
+          /* see above */
+        }
+      }
+      liveBuffer.length = 0;
+      drainComplete = true;
 
       // Heartbeats.
       heartbeatTimer = setInterval(() => {
@@ -134,6 +179,12 @@ export async function handleSse(
       // Rotation.
       rotationTimer = setTimeout(() => {
         if (closed) return;
+        // R-I4: stream_closing is a synthetic SSE control frame, NOT a
+        // durable EventLog entry — it never goes through publishEvent and is
+        // not appended to the log. Emit WITHOUT an `id:` line so the browser
+        // doesn't store its version as Last-Event-ID; otherwise the next
+        // real event published at the same numeric value (a per-recipient
+        // sequence collision) would be skipped on reconnect.
         const closingEvent: StreamClosingEvent = {
           type: 'stream_closing',
           version: highestVersion + 1,
@@ -141,7 +192,9 @@ export async function handleSse(
           reason: 'rotation',
         };
         try {
-          controller.enqueue(encoder.encode(formatEvent(closingEvent)));
+          controller.enqueue(
+            encoder.encode(formatEvent(closingEvent, { includeId: false }))
+          );
         } catch {
           /* see above */
         }

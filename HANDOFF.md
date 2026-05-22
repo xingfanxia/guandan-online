@@ -10,6 +10,70 @@
 
 ## Progress
 
+### 2026-05-22 — audit-fix-loop session (1 commit, in flight)
+
+First comprehensive multi-layer audit ever run on the project. Three audit-fix rounds: parallel 4-layer reviewers (game/AI, realtime/API, frontend, infra) → 4 parallel opus fix agents (33 findings) → Round 2 verify + focused re-audit → Round 2 fix (6 more findings) → Round 3 convergence (all clear).
+
+**Critical bugs discovered + fixed:**
+
+| Finding | File | Fix |
+|---|---|---|
+| SSE named-event dispatch silent drop | `src/lib/sseClient.ts` | `addEventListener` per `SERVER_EVENT_TYPES` discriminator (was `es.onmessage` only — caught every event named via `event: <type>` on the wire as silent drop) |
+| Memory infra isolation in local dev | `lib/realtime/sharedInfra.ts` (new) + all 9 routes | Process singleton; routes call `getSharedInfra()` |
+| `canBeat` level-rank straight bug | `lib/game/patterns.ts` | New `sequenceRankValue` helper; non-bomb sequences use natural ordering |
+| `detectTributeModeMP` 6P/8P single fallback | `lib/game/tribute.ts` | Pick lowest-positioned LOSER, not last finisher |
+| Decomposer level-10 encoding | `lib/ai/decomposer/index.ts` | Use `rankToBobgyChar` instead of `levelRank.charCodeAt(0)` |
+| Wildcard enumeration | `lib/ai/enumerate.ts` | Same-rank wildcard synthesis loop |
+| SSE Last-Event-ID resume broken | `lib/realtime/eventLog.ts` | Log id = `event.version` directly (was independent INCR seq) |
+| Bot exception crashes move/start | `lib/ai/runBots.ts` + `lib/api/{move,startGame}.ts` | try/catch around `computeBotMove` + outer defense |
+| Concurrent start race | `lib/api/startGame.ts` | `start-${code}` idempotency reservation |
+| App.tsx myHandle bug | `src/App.tsx` + `src/lib/identity.ts` | `RoomCredentials.handle` field; fallback to `getHandle()` |
+| Card selection desync | `src/screens/GameTable4P.tsx` + `GameTableMP.tsx` | `myPlayerIdRef` + clear on own `move_played` |
+| `vercel.json maxDuration: 300` global | `vercel.json` | Narrow per-route (SSE=300s · cron=60s · move=30s · default=15s) |
+| **Round 2 — idempotency-on-throw orphans reservation** | `lib/api/{move,startGame,createRoom}.ts` | try/catch post-reservation; commit `'internal_error'` response so retries replay cached error instead of stuck `'pending'` |
+
+**Important (19) — abbreviated**: move handler now refreshes `lastActiveAt` (race documented with skipped repro test for future fix), Upstash-backed rate limiter via `@upstash/ratelimit`, SSE log-drain-vs-subscribe race fix (subscribe-first + buffer-and-flush), `stream_closing` version collision fix (omit `id:` line), R-I5 rate-limit + idempotency on all POST endpoints (create / join / leave / start with per-endpoint quotas), tsconfig drift (`noUnusedLocals/Parameters` mirrored to root), `ADMIN_TOKEN` blast radius documented in `.env.example` + `api/cron/cleanup-rooms.ts`, GitHub Actions CI workflow, `scripts/build-wasm.sh` pinned to `emscripten/emsdk:5.0.7`, ESLint dangling reference removed, SSE client `visibilitychange` reconnect + `lastVersion` preservation across remount, `localStorage.setItem` guarded against `QuotaExceededError` + 7-day pruning, anti-tribute backdrop click removal (explicit `我们抗贡` button gated by `canDeclare`), Card/Avatar `<button>` swap for WCAG 2.1.1 keyboard activation, Waiting strict-A chip reads from `room.rules` instead of hardcoded "宽松 A", `canDeclare` heuristic widened to `myTeam !== winnerTeam` (was per-player-holds-red-joker — hid CTA from the OTHER losing partner), createRoom cached idempotency fallthrough treated as cache corruption.
+
+**Minor (11+) — abbreviated**: `.DS_Store` removed from tracking, `tsconfig.node.json` eslint.config.js reference removed, `.gitignore` negate-block comment explains order dependency, JoinModal `false | 'auto' | 'manual'` autofocus pattern, `splitSeats` clock-position ordering, `pickTributeCard`/double-tribute interpretation notes, `cardsMatch` cardKey duplication noted, `sseClient.onClose` fires exactly once, Hand roving-tabindex (Arrow Left/Right within hand), 20+ test-gap items added across the audit reports, comment-code mismatch on idempotency catch behavior corrected.
+
+**New infrastructure shipped this session:**
+
+- `scripts/vite-api-plugin.ts` — Vite Connect-middleware plugin that mounts all 9 Vercel route handlers on `npm run dev` (and the Playwright web server). Converts Node `IncomingMessage` ↔ Web `Request/Response` (stream + abort for SSE). `npm run dev` is now a single-origin SPA + API + SSE surface; no `vercel dev` cold-start.
+- `tests/e2e/` — Playwright suite with 8 spec files + `helpers/{api,ui}.ts`:
+  - `health.spec.ts` — server topology, SSE 400/401
+  - `landing.spec.ts` — sign-in modal (auto-open / autofocus / persist / validate), CTA navigation, recent rooms
+  - `create-room.spec.ts` — default rules, strict-A toggle, 4P + 3 bots, capacity rejection
+  - `game-flow.spec.ts` — create → wait → start → deal (4P), card selection enabled on turn, 6P MP table
+  - `orientation.spec.ts` — CSS rotate portrait / autofocus bypass / landscape pass-through / desktop bare
+  - `join-flow.spec.ts` — 2nd-player join, nonexistent code error, short-code rejection
+  - `error-handling.spec.ts` — MissingCreds, room-ended, API contracts
+  - `full-ui-journey.spec.ts` — end-to-end from Landing through deal without API shortcuts
+- `.github/workflows/ci.yml` — typecheck + unit + security + npm audit (informational) + Playwright chromium-desktop with artifact upload on failure
+- `scripts/ops/verify-all.sh` — full chain (typecheck → unit → security → build → e2e); `--no-e2e` for faster local pass
+- `lib/realtime/sharedInfra.ts` — process-wide singleton for `RealtimeInfra` + rate-limiter cache; dev mode multiplies rate-limit caps by `RATE_LIMIT_DEV_MULTIPLIER` (default 50) so e2e tests don't trip prod-tight quotas; Upstash branch in production takes the unmultiplied path
+
+**Test deltas**: 1022 → **1138 passing + 1 skipped + 47 e2e** (chromium-desktop + mobile-portrait + mobile-landscape; mobile projects scoped to orientation specs to avoid OrientationLock-modal interaction flakiness on small viewports). ~+200 tests overall.
+
+**Verification (full chain green)**:
+- `npm run typecheck` clean
+- `npm test` 1138/1138 + 1 skipped
+- `npm run security:no-leak` green
+- `npm run build` clean (247kB JS gzip 75kB · 42kB CSS gzip 8.8kB)
+- `npm run test:e2e` 47/47
+
+**Files changed**: 70 (+3,633 / −436 lines). No production architecture change — backend topology, AI tier ladder, tribute state machine, and event model are all unchanged. The deltas are pure correctness + robustness + a11y + observability + test coverage.
+
+**Process notes**: 4 parallel opus fix agents worked simultaneously without file conflicts by scoping each to a distinct layer (game/ai, realtime/api, frontend, infra/config). Two findings (SSE named-event dispatch + memory infra isolation) were fixed by the orchestrator directly because they unblocked the e2e baseline — that's the single most valuable result of running the audit-fix-loop: the very first attempt at e2e rendering surfaced two production-breaking silent bugs that no existing test could catch.
+
+**Open items**:
+- Manual unskip + verify the `lastActiveAt` race repro test once a chosen atomic-update approach lands (Redis WATCH/MULTI vs. separate `lastActiveAt:<code>` key vs. Lua/EVAL). Currently documented as `.skip()` with reproduction notes inline.
+- Bobgy WASM Phase B (lookahead policy + Hard tier revival + UI chip) — still a separate future session per `docs/plan/bobgy/PHASE-A.md` §10.
+- DNS records for `gdo.ax0x.ai` at the user's DNS provider.
+
+Full session report: `docs/reports/audit-fix-2026-05-22/SESSION-REPORT.md`.
+
+---
+
 ### 2026-05-17 — P0 kick-off session (4 commits)
 
 | Commit | Milestone | What |

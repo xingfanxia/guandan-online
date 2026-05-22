@@ -13,6 +13,7 @@ import type { EventLog } from '../realtime/eventLog.js';
 import { publishEvent } from '../realtime/publish.js';
 import { deriveRoomJoined } from '../realtime/deriveLifecycleEvents.js';
 import { buildLobbyGameState } from '../realtime/buildLobbyGameState.js';
+import type { RateLimiter } from '../security/rateLimit.js';
 
 export interface JoinRoomDeps {
   roomStore: RoomStore;
@@ -26,6 +27,13 @@ export interface JoinRoomDeps {
    */
   bus?: EventBus;
   log?: EventLog;
+  /**
+   * R-I5: Optional per-IP rate limiter. Caps joins at 10/min to throttle
+   * scripted scraping without affecting honest multi-room scenarios.
+   */
+  rateLimiter?: RateLimiter;
+  /** R-I5: Identity extractor for rate-limit keying. */
+  identify?: (req: Request) => string;
 }
 
 export interface JoinRoomResponseBody {
@@ -45,6 +53,27 @@ export async function handleJoinRoom(
   }
   if (!isValidRoomCode(code)) {
     return json({ error: 'invalid_room_code' }, 400);
+  }
+
+  // R-I5: per-IP rate limiting on join. Honest multi-room players hit a few
+  // per minute; the cap throttles scripted scraping / brute-force-code
+  // guessing.
+  if (deps.rateLimiter) {
+    const ident = deps.identify ? deps.identify(req) : extractIdentity(req);
+    const now = (deps.now ?? Date.now)();
+    const rl = await deps.rateLimiter.check(`join:${ident}`, now);
+    if (!rl.allowed) {
+      const headers: Record<string, string> = {
+        'content-type': 'application/json',
+      };
+      if (rl.retryAfterMs !== undefined) {
+        headers['retry-after'] = Math.ceil(rl.retryAfterMs / 1000).toString();
+      }
+      return new Response(JSON.stringify({ error: 'rate_limited' }), {
+        status: 429,
+        headers,
+      });
+    }
   }
 
   let body: unknown;
@@ -108,6 +137,15 @@ export async function handleJoinRoom(
 
 function defaultTokenGen(): string {
   return crypto.randomUUID();
+}
+
+/** R-I5: read X-Forwarded-For → X-Real-IP → 'anon' fallback. */
+function extractIdentity(req: Request): string {
+  const xff = req.headers.get('x-forwarded-for');
+  if (xff) return xff.split(',')[0]!.trim();
+  const real = req.headers.get('x-real-ip');
+  if (real) return real;
+  return 'anon';
 }
 
 function json(body: unknown, status: number): Response {

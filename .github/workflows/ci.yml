@@ -1,0 +1,53 @@
+# CI for guandan-online.
+#
+# Security note: every `run:` step uses only static strings + npm scripts +
+# tools whose arguments come from this file. No untrusted GitHub-context
+# values (e.g., ${{ github.event.* }}) are interpolated into shell strings,
+# so the workflow-injection class of vulnerability does not apply here.
+# If we ever need PR title / branch name / author etc. in a run step, route
+# them through `env:` instead of inlining ${{ ... }}.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    name: Typecheck + Unit + Security
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run security:no-leak
+      # Audit is informational — don't fail CI on transitive advisories;
+      # surface them so we can decide on upgrades manually.
+      - run: npm audit --production --audit-level=high || true
+
+  e2e:
+    name: Playwright (chromium-desktop)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e -- --project=chromium-desktop
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14

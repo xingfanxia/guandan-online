@@ -12,6 +12,9 @@ import type { RoomStore } from '../storage/roomStore.js';
 import type { GameMode, ModeRules } from '../game/mode.js';
 import { DEFAULT_MODE_RULES, positionCount } from '../game/mode.js';
 import { generateBotName } from '../ai/names.js';
+import type { RateLimiter } from '../security/rateLimit.js';
+import type { IdempotencyCache } from '../realtime/idempotency.js';
+import type { MoveResponse } from '../realtime/commands.js';
 
 export interface CreateRoomDeps {
   roomStore: RoomStore;
@@ -23,6 +26,25 @@ export interface CreateRoomDeps {
   now?: () => number;
   /** RNG for bot-handle picking. Defaults to Math.random. */
   botNameRng?: () => number;
+  /**
+   * R-I5: Optional per-IP rate limiter. When provided, the handler throttles
+   * create-room requests; without it, behavior is identical to the v1 path.
+   * Tests omit it for clarity unless verifying the throttle path.
+   */
+  rateLimiter?: RateLimiter;
+  /**
+   * R-I5: Optional idempotency cache keyed by `Idempotency-Key` header. When
+   * a client retries a create after a network blip, an in-flight request
+   * returns 409; a previously-committed one returns the same response with
+   * `result: 'replayed'`. Without this, duplicate POSTs created duplicate
+   * rooms.
+   */
+  idempotency?: IdempotencyCache;
+  /**
+   * R-I5: How to extract the rate-limit / abuse-tracking identity. Defaults
+   * to parsing X-Forwarded-For or X-Real-IP; tests can inject a stub.
+   */
+  identify?: (req: Request) => string;
 }
 
 /** Bot seat config submitted by the host at create-time. */
@@ -45,6 +67,11 @@ export const ROOM_CODE_RETRY_CAP = 8;
 
 const VALID_MODES = new Set<GameMode>(['4', '6', '8']);
 
+/** R-I5: idempotency TTL for create — 1h. Duplicate POSTs typically arrive
+ * within seconds; 1h covers retried-after-blackhole scenarios without
+ * keeping cache entries longer than the room itself. */
+const CREATE_IDEMPOTENCY_TTL_SECONDS = 3_600;
+
 export async function handleCreateRoom(
   req: Request,
   deps: CreateRoomDeps
@@ -53,82 +80,241 @@ export async function handleCreateRoom(
     return json({ error: 'method_not_allowed' }, 405);
   }
 
-  let body: unknown;
+  // R-I5: per-IP rate limiting. Caps create at 5/min — enough for honest
+  // host workflows (multi-room hosts, retries), low enough to block trivial
+  // spam. The Vercel wrapper passes Upstash-backed limiter for production.
+  if (deps.rateLimiter) {
+    const ident = deps.identify ? deps.identify(req) : extractIdentity(req);
+    const now = (deps.now ?? Date.now)();
+    const rl = await deps.rateLimiter.check(`create:${ident}`, now);
+    if (!rl.allowed) {
+      const headers: Record<string, string> = {
+        'content-type': 'application/json',
+      };
+      if (rl.retryAfterMs !== undefined) {
+        headers['retry-after'] = Math.ceil(rl.retryAfterMs / 1000).toString();
+      }
+      return new Response(JSON.stringify({ error: 'rate_limited' }), {
+        status: 429,
+        headers,
+      });
+    }
+  }
+
+  // R-I5: client-supplied Idempotency-Key dedupes retries. Optional —
+  // absent header → no dedup (same as v1 behavior).
+  const idempotencyKey = req.headers.get('idempotency-key');
+  if (deps.idempotency && idempotencyKey) {
+    const reserve = await deps.idempotency.tryReserve(
+      `create:${idempotencyKey}`,
+      CREATE_IDEMPOTENCY_TTL_SECONDS
+    );
+    if (reserve.status === 'pending') {
+      return json({ error: 'create_in_flight' }, 409);
+    }
+    if (reserve.status === 'done') {
+      // Cached response — we stashed the CreateRoomResponseBody inside a
+      // MoveResponse-shaped envelope (so the existing IdempotencyCache
+      // contract works unchanged). The `details` field carries the JSON
+      // string. Unpack and replay.
+      const cached = reserve.result;
+      if (cached.ok === false) {
+        // Two flavors:
+        //  (a) Success replay — encoded as `error: 'invalid_move'` with the
+        //      JSON-stringified CreateRoomResponseBody in `details`. Decode
+        //      and return 201.
+        //  (b) Error replay — encoded as `error: 'internal_error'` with the
+        //      underlying error message in `details`. Surface 500.
+        if (cached.error === 'internal_error') {
+          return json(
+            { error: 'internal_error', details: cached.details ?? 'unknown' },
+            500
+          );
+        }
+        // IMPORTANT-3 fix: a 'done' cache hit without `details` for the
+        // success-replay flavor is structurally corrupt (we always stash the
+        // body when committing success). Don't fall through to a fresh
+        // create — that would silently duplicate the room. Log + 500 so the
+        // cache corruption surfaces loudly.
+        if (!cached.details) {
+          console.error(
+            '[createRoom] cache corruption: done status without details',
+            { key: idempotencyKey, cached }
+          );
+          return json(
+            { error: 'internal_error', details: 'cache corruption: replay payload missing' },
+            500
+          );
+        }
+        try {
+          const body = JSON.parse(cached.details);
+          return json(body, 201);
+        } catch {
+          // Malformed JSON in details is also a structural error. Don't
+          // fall through to fresh create.
+          console.error(
+            '[createRoom] cache corruption: details not valid JSON',
+            { key: idempotencyKey, details: cached.details }
+          );
+          return json(
+            { error: 'internal_error', details: 'cache corruption: replay payload malformed' },
+            500
+          );
+        }
+      }
+    }
+  }
+
+  // ── Post-reservation try/catch envelope ─────────────────────────────────
+  // CRITICAL fix: any throw between tryReserve and idempotency.commit
+  // orphans the reservation for CREATE_IDEMPOTENCY_TTL_SECONDS (1h).
+  // Concurrent retries with the same Idempotency-Key get 409 'create_in_flight'
+  // for that window. Wrap downstream operations so a throw commits an
+  // 'internal_error' MoveResponse; the catch returns 500 to the first caller,
+  // and the cached error response replays on subsequent retries of the same
+  // Idempotency-Key.
   try {
-    body = await req.json();
-  } catch {
-    return json({ error: 'invalid_json' }, 400);
-  }
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      return json({ error: 'invalid_json' }, 400);
+    }
 
-  const parsed = parseBody(body);
-  if (!parsed.ok) {
-    return json({ error: 'invalid_request', details: parsed.error }, 400);
-  }
+    const parsed = parseBody(body);
+    if (!parsed.ok) {
+      return json({ error: 'invalid_request', details: parsed.error }, 400);
+    }
 
-  const tokenGen = deps.tokenGen ?? defaultTokenGen;
-  const codeGen = deps.codeGen ?? (() => generateRoomCode(Math.random));
-  const now = deps.now ?? Date.now;
-  const botNameRng = deps.botNameRng ?? Math.random;
+    const tokenGen = deps.tokenGen ?? defaultTokenGen;
+    const codeGen = deps.codeGen ?? (() => generateRoomCode(Math.random));
+    const now = deps.now ?? Date.now;
+    const botNameRng = deps.botNameRng ?? Math.random;
 
-  // Collision-retry: room codes are 6.2M-cardinality and we SET NX. If the
-  // first attempt lost the race, generate a new one. After RETRY_CAP misses
-  // bail with 503 — that's a strong signal of upstream rate-limit issues
-  // rather than genuine cardinality exhaustion.
-  // Merge body-supplied rule overrides onto the defaults. All 7 boolean rule
-  // axes are accepted from the wire (ROOM-2, 2026-05-19). Each field defaults
-  // to DEFAULT_MODE_RULES when omitted; non-boolean values are rejected during
-  // parsing. wildcardHeart / lastCallDeclare / steelPlate / triPair /
-  // straightFlushAboveBomb5 are persisted to RoomState but the v1 game engine
-  // doesn't yet branch on them — they're display-only until a future engine
-  // pass wires them through.
-  const effectiveRules: ModeRules = {
-    ...DEFAULT_MODE_RULES,
-    ...parsed.value.rules,
-  };
+    // Collision-retry: room codes are 6.2M-cardinality and we SET NX. If the
+    // first attempt lost the race, generate a new one. After RETRY_CAP misses
+    // bail with 503 — that's a strong signal of upstream rate-limit issues
+    // rather than genuine cardinality exhaustion.
+    // Merge body-supplied rule overrides onto the defaults. All 7 boolean rule
+    // axes are accepted from the wire (ROOM-2, 2026-05-19). Each field defaults
+    // to DEFAULT_MODE_RULES when omitted; non-boolean values are rejected during
+    // parsing. wildcardHeart / lastCallDeclare / steelPlate / triPair /
+    // straightFlushAboveBomb5 are persisted to RoomState but the v1 game engine
+    // doesn't yet branch on them — they're display-only until a future engine
+    // pass wires them through.
+    const effectiveRules: ModeRules = {
+      ...DEFAULT_MODE_RULES,
+      ...parsed.value.rules,
+    };
 
-  for (let attempt = 0; attempt < ROOM_CODE_RETRY_CAP; attempt++) {
-    const code = codeGen();
-    const ts = now();
-    let state = createRoom({
-      code,
-      mode: parsed.value.mode,
-      rules: effectiveRules,
-      host: { id: 'p0', handle: parsed.value.handle },
-      now: ts,
-      tokenGen,
-    });
-
-    // Seat bots before persistence — at create-time the host has already
-    // declared which seats are bot-filled. Bot member IDs follow the same
-    // dense p<n> scheme that joinRoom would assign. Handles come from the
-    // shared pool with per-room uniqueness retry against already-seated
-    // members.
-    for (let i = 0; i < parsed.value.bots.length; i++) {
-      const tier = parsed.value.bots[i]!.tier;
-      const handle = pickUniqueBotHandle(state, tier, botNameRng);
-      state = addBotToRoom({
-        state,
-        id: `p${i + 1}`,
-        handle,
-        difficulty: tier,
+    for (let attempt = 0; attempt < ROOM_CODE_RETRY_CAP; attempt++) {
+      const code = codeGen();
+      const ts = now();
+      let state = createRoom({
+        code,
+        mode: parsed.value.mode,
+        rules: effectiveRules,
+        host: { id: 'p0', handle: parsed.value.handle },
         now: ts,
         tokenGen,
       });
-    }
 
-    const ok = await deps.roomStore.create(state, ROOM_TTL_SECONDS);
-    if (ok) {
-      const hostMember = state.members[0]!;
-      const responseBody: CreateRoomResponseBody = {
-        code: state.code,
-        hostId: state.hostId,
-        hostToken: state.hostToken,
-        hostJoinToken: hostMember.joinToken,
-      };
-      return json(responseBody, 201);
+      // Seat bots before persistence — at create-time the host has already
+      // declared which seats are bot-filled. Bot member IDs follow the same
+      // dense p<n> scheme that joinRoom would assign. Handles come from the
+      // shared pool with per-room uniqueness retry against already-seated
+      // members.
+      for (let i = 0; i < parsed.value.bots.length; i++) {
+        const tier = parsed.value.bots[i]!.tier;
+        const handle = pickUniqueBotHandle(state, tier, botNameRng);
+        state = addBotToRoom({
+          state,
+          id: `p${i + 1}`,
+          handle,
+          difficulty: tier,
+          now: ts,
+          tokenGen,
+        });
+      }
+
+      const ok = await deps.roomStore.create(state, ROOM_TTL_SECONDS);
+      if (ok) {
+        const hostMember = state.members[0]!;
+        const responseBody: CreateRoomResponseBody = {
+          code: state.code,
+          hostId: state.hostId,
+          hostToken: state.hostToken,
+          hostJoinToken: hostMember.joinToken,
+        };
+        // R-I5: stash the response in the idempotency cache so retries with
+        // the same key replay it. We piggyback on the MoveResponse contract
+        // by encoding the body as JSON in the `details` field of an ok:false
+        // error sentinel — the existing cache only knows about MoveResponse.
+        if (deps.idempotency && idempotencyKey) {
+          try {
+            const cached: MoveResponse = {
+              ok: false,
+              error: 'invalid_move', // sentinel — never surfaced; consumer reads details
+              details: JSON.stringify(responseBody),
+            };
+            await deps.idempotency.commit(
+              `create:${idempotencyKey}`,
+              cached,
+              CREATE_IDEMPOTENCY_TTL_SECONDS
+            );
+          } catch (err) {
+            // Benign race or duplicate-commit — the response is still going
+            // out below. Log and continue.
+            console.error('[createRoom] idempotency.commit failed:', err);
+          }
+        }
+        return json(responseBody, 201);
+      }
     }
+    return json({ error: 'code_generation_exhausted' }, 503);
+  } catch (err) {
+    // Downstream operation (parseBody, roomStore.create, addBotToRoom)
+    // threw after the idempotency reservation was taken. Commit an
+    // 'internal_error' response so the next retry sees a cached error
+    // (status='done') instead of a stuck 'pending' (which would 409 for
+    // the full TTL window).
+    const message = err instanceof Error ? err.message : String(err);
+    if (deps.idempotency && idempotencyKey) {
+      const errorResp: MoveResponse = {
+        ok: false,
+        error: 'internal_error',
+        details: message,
+      };
+      try {
+        await deps.idempotency.commit(
+          `create:${idempotencyKey}`,
+          errorResp,
+          CREATE_IDEMPOTENCY_TTL_SECONDS
+        );
+      } catch (commitErr) {
+        // Best-effort — log and continue to surface the original error.
+        console.error('[createRoom] idempotency.commit(error) failed:', commitErr);
+      }
+    }
+    return json({ error: 'internal_error', details: message }, 500);
   }
-  return json({ error: 'code_generation_exhausted' }, 503);
+}
+
+/**
+ * Extract a stable identity for rate-limit / idempotency tracking. Reads
+ * X-Forwarded-For (Vercel's edge sets this) then X-Real-IP, falling back to
+ * 'anon' so the limiter still buckets unknown sources together rather than
+ * silently bypassing the throttle.
+ */
+function extractIdentity(req: Request): string {
+  const xff = req.headers.get('x-forwarded-for');
+  if (xff) {
+    // XFF can be a comma-separated chain; the leftmost is the client.
+    return xff.split(',')[0]!.trim();
+  }
+  const real = req.headers.get('x-real-ip');
+  if (real) return real;
+  return 'anon';
 }
 
 /**

@@ -60,6 +60,8 @@ export interface MoveDeps {
 export const IDEMPOTENCY_TTL_SECONDS = 600;
 export const ROUND_TTL_SECONDS = 86_400;
 export const SESSION_TTL_SECONDS = 86_400;
+/** Room TTL refresh constant used by the lastActiveAt bump (R-I1). */
+export const ROOM_TTL_SECONDS = 86_400;
 const DEFAULT_TURN_TIMEOUT_SECONDS = 30;
 
 export async function handleMove(
@@ -101,7 +103,10 @@ export async function handleMove(
   }
 
   const now = deps.now ?? Date.now;
-  const rl = deps.rateLimiter.check(`move:${code}:${member.id}`, now());
+  // RateLimiter.check now returns RateLimitResult | Promise<RateLimitResult>
+  // (R-I2: Upstash-backed impl is async). The memory impl stays sync; await
+  // tolerates both shapes via the spec's Promise-resolution rules.
+  const rl = await deps.rateLimiter.check(`move:${code}:${member.id}`, now());
   if (!rl.allowed) {
     const headers: Record<string, string> = { 'content-type': 'application/json' };
     if (rl.retryAfterMs !== undefined) {
@@ -128,6 +133,16 @@ export async function handleMove(
     return json(toReplayed(reserve.result), 200);
   }
 
+  // ── Post-reservation try/catch envelope ─────────────────────────────────
+  // CRITICAL fix: any throw between tryReserve and idempotency.commit
+  // orphans the reservation for IDEMPOTENCY_TTL_SECONDS (10 min). Concurrent
+  // retries with the same moveId get 409 'move_in_flight' for that window.
+  // Wrap the entire downstream flow so a throw commits an 'internal_error'
+  // MoveResponse (replayable as cached error). The catch returns the 500
+  // response to the FIRST caller; concurrent retries with the same moveId
+  // hit the cached error and replay it (currently at 200 with the
+  // `ok: false` body — see toReplayed contract).
+  try {
   // ── Load round ──────────────────────────────────────────────────────────
   const envelope = await deps.roundStore.get(code);
   if (!envelope) {
@@ -209,20 +224,30 @@ export async function handleMove(
     // If the next player is a bot, computeBotMove + apply + derive events
     // until we land on a human (or the round finishes). The round-end fanout
     // below still runs once at the end based on the FINAL round after bots.
+    //
+    // R-C2 defense-in-depth: runBots already wraps computeBotMove + playCards /
+    // pass / startTrick in try/catch. This outer wrapper catches anything that
+    // slips past (e.g., a future code path that emits events from inside the
+    // loop). The human's move has already been computed but NOT persisted yet,
+    // so if a bot throws we still want to commit the human's portion.
     let advancedRound = newRound;
     if (advancedRound.phase === 'playing') {
       const lastEventVersion =
         events.length > 0
           ? Math.max(...events.map((e) => e.version))
           : response.appliedVersion;
-      const botResult = runBots({
-        room,
-        round: advancedRound,
-        startVersion: lastEventVersion,
-        turnDeadline,
-      });
-      advancedRound = botResult.round;
-      for (const e of botResult.events) events.push(e);
+      try {
+        const botResult = runBots({
+          room,
+          round: advancedRound,
+          startVersion: lastEventVersion,
+          turnDeadline,
+        });
+        advancedRound = botResult.round;
+        for (const e of botResult.events) events.push(e);
+      } catch (err) {
+        console.error('[move] runBots threw (defense-in-depth):', err);
+      }
     }
 
     // ── Round / game end fanout ───────────────────────────────────────────
@@ -347,19 +372,24 @@ export async function handleMove(
     // If the new round's leader is a bot, advance through any contiguous bot
     // turns. Uses the same runBots helper that fires after a human move; the
     // only difference here is the starting version (post-deal vs post-move).
+    // R-C2 defense-in-depth — same rationale as above.
     if (nextRoundForBots !== null && nextRoundForBots.phase === 'playing') {
       const startVersionForBots =
         events.length > 0
           ? Math.max(...events.map((e) => e.version))
           : response.appliedVersion;
-      const newRoundBots = runBots({
-        room,
-        round: nextRoundForBots,
-        startVersion: startVersionForBots,
-        turnDeadline,
-      });
-      advancedRound = newRoundBots.round;
-      for (const e of newRoundBots.events) events.push(e);
+      try {
+        const newRoundBots = runBots({
+          room,
+          round: nextRoundForBots,
+          startVersion: startVersionForBots,
+          turnDeadline,
+        });
+        advancedRound = newRoundBots.round;
+        for (const e of newRoundBots.events) events.push(e);
+      } catch (err) {
+        console.error('[move] runBots (next round) threw (defense-in-depth):', err);
+      }
     }
 
     const finalVersion =
@@ -385,6 +415,46 @@ export async function handleMove(
       },
       ROUND_TTL_SECONDS
     );
+
+    // R-I1: refresh room.lastActiveAt so the cron cleanup sweep doesn't
+    // garbage-collect a long but quiet mid-game round. Without this, a
+    // multi-hour round (manual play, deliberate slow-thinking, paused tabs)
+    // appears "idle" to the stale-room sweeper since join/leave/start are
+    // the only paths that bump lastActiveAt today.
+    //
+    // Read-modify-write through roomStore.put — we re-read first so we don't
+    // clobber concurrent lifecycle mutations (e.g., a leave that landed
+    // between this handler's initial room read and now).
+    //
+    // KNOWN ISSUE — Round 2 audit IMPORTANT-1 (documented, not yet fixed):
+    // The re-read narrows but does NOT eliminate the race. A concurrent
+    // /leave that lands AFTER this re-read but BEFORE the put() will be
+    // overwritten — the leaving member resurrects with the bumped
+    // lastActiveAt. Production exposure is low (concurrent move+leave from
+    // the same room is rare in practice; the move would also fail authz
+    // against the just-departed member's token), but the failure mode is
+    // real.
+    //
+    // Correct fix (deferred): store lastActiveAt in a separate string key
+    // with TTL (`lastActiveAt:<code>`), updated independently of the room
+    // hash; the cron cleanup reads both `room.lastActiveAt` AND the side
+    // key and takes the more recent. This is a meaningful architecture
+    // change to roomStore + cleanup, so it's tracked as a follow-up.
+    // See tests/api/move.test.ts for the race-reproducing test.
+    const latestRoom = await deps.roomStore.get(code);
+    if (latestRoom !== null) {
+      try {
+        await deps.roomStore.put(
+          { ...latestRoom, lastActiveAt: now() },
+          ROOM_TTL_SECONDS
+        );
+      } catch (err) {
+        // Best-effort bump. Failures here are non-fatal — round state is
+        // already durable. Worst case: the room hits the stale-cleanup
+        // threshold a few hours earlier than necessary.
+        console.error('[move] lastActiveAt refresh failed:', err);
+      }
+    }
 
     // Event fanout. Failures here are logged but never propagated — the
     // move already applied to the durable round state, and SSE replay via
@@ -418,6 +488,32 @@ export async function handleMove(
   );
 
   return json(response, 200);
+  } catch (err) {
+    // Downstream operation (roundStore.get/put, sessionStore.get/put,
+    // roomStore.get/put, dispatch helpers) threw after reservation was
+    // taken. Commit an 'internal_error' MoveResponse so the next retry
+    // with the same moveId sees a cached error (status='done') instead of
+    // a stuck 'pending' (which would 409 for the full 10-min TTL window).
+    // The error response replays as 500 — the client retries with a fresh
+    // moveId.
+    const message = err instanceof Error ? err.message : String(err);
+    const errorResp: MoveResponse = {
+      ok: false,
+      error: 'internal_error',
+      details: message,
+    };
+    try {
+      await deps.idempotency.commit(
+        parsed.value.moveId,
+        errorResp,
+        IDEMPOTENCY_TTL_SECONDS
+      );
+    } catch (commitErr) {
+      // Best-effort — log and continue to surface the original error.
+      console.error('[move] idempotency.commit(error) failed:', commitErr);
+    }
+    return json(errorResp, 500);
+  }
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────

@@ -161,7 +161,10 @@ describe('TributeModal - anti-tribute state (S12)', () => {
     expect(screen.getByText(/2s 后开始下一局/)).toBeInTheDocument();
   });
 
-  it('fires onDismiss on backdrop click', () => {
+  it('does NOT fire onDismiss on backdrop click (avoids accidental dispatch)', () => {
+    // F-I3 fix: prior version had onClick on the backdrop, so a stray tap by
+    // a winning-team player would POST anti_tribute (server rejected, user
+    // confused). Backdrop is now informational-only.
     const onDismiss = vi.fn();
     render(
       <TributeModal
@@ -169,12 +172,45 @@ describe('TributeModal - anti-tribute state (S12)', () => {
           kind: 'anti-tribute',
           holderHandle: '@饭团',
           roundNumber: 6,
+          canDeclare: true,
         }}
         onDismiss={onDismiss}
       />
     );
     fireEvent.click(screen.getByRole('dialog', { name: '抗贡' }));
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  it('fires onDismiss only via explicit 我们抗贡 button when canDeclare', () => {
+    const onDismiss = vi.fn();
+    render(
+      <TributeModal
+        state={{
+          kind: 'anti-tribute',
+          holderHandle: '@饭团',
+          roundNumber: 6,
+          canDeclare: true,
+        }}
+        onDismiss={onDismiss}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: '我们抗贡' }));
     expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides 我们抗贡 button when canDeclare is false / unset (winning team)', () => {
+    render(
+      <TributeModal
+        state={{
+          kind: 'anti-tribute',
+          holderHandle: '@饭团',
+          roundNumber: 6,
+          // canDeclare not set → winning team or unknown → no CTA
+        }}
+        onDismiss={vi.fn()}
+      />
+    );
+    expect(screen.queryByRole('button', { name: '我们抗贡' })).not.toBeInTheDocument();
   });
 });
 

@@ -25,6 +25,7 @@ const EMPTY = {
   myTeam: null,
   tribute: null,
   roundNumber: 1,
+  lastRoundWinnerTeam: null,
 };
 
 describe('GameTableMP reducer', () => {
@@ -322,5 +323,57 @@ describe('buildTributeModalState — 8P sweep', () => {
     };
     const result = buildTributeModalState(singleSnapshot, [], 'p1', 't1', playerMap, '2', 5);
     expect(result).toBeNull();
+  });
+
+  // ─── Round 2 IMPORTANT-2 — canDeclare via winnerTeam (mirrors 4P) ─────────
+
+  it('Round 2 IMPORTANT-2: losing-team partner WITHOUT red joker gets canDeclare=true when lastRoundWinnerTeam is known', () => {
+    const snapshot: TributePendingSnapshot = {
+      direction: 'anti_tribute',
+      obligations: [],
+    };
+    // p7 is on t2 (losing team) but has no red jokers.
+    const handNoRJ: GameCard[] = [
+      { suit: 'spades', rank: 'A', deck: 1 },
+    ];
+    const result = buildTributeModalState(
+      snapshot,
+      handNoRJ,
+      'p7',
+      't2',
+      playerMap,
+      '2',
+      5,
+      't1', // winning team
+    );
+    expect(result?.kind).toBe('anti-tribute');
+    if (result?.kind === 'anti-tribute') {
+      expect(result.canDeclare).toBe(true);
+    }
+  });
+
+  it('Round 2 IMPORTANT-2: winning-team player → canDeclare=false even with red joker', () => {
+    const snapshot: TributePendingSnapshot = {
+      direction: 'anti_tribute',
+      obligations: [],
+    };
+    const handWithRJ: GameCard[] = [
+      { suit: 'joker', rank: 'RJ', deck: 1 },
+    ];
+    // p0 is on t1 (winning team).
+    const result = buildTributeModalState(
+      snapshot,
+      handWithRJ,
+      'p0',
+      't1',
+      playerMap,
+      '2',
+      5,
+      't1',
+    );
+    expect(result?.kind).toBe('anti-tribute');
+    if (result?.kind === 'anti-tribute') {
+      expect(result.canDeclare).toBe(false);
+    }
   });
 });

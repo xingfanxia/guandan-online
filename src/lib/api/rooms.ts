@@ -22,6 +22,23 @@ export interface PublicMember {
   readonly difficulty?: BotDifficulty;
 }
 
+/**
+ * Subset of ModeRules surfaced to the lobby/waiting screen. Server may or
+ * may not populate this depending on the API version. UI must tolerate
+ * absent fields and fall back to generic copy ("A 级" without strict/loose
+ * qualifier) when not present.
+ */
+export interface PublicModeRules {
+  readonly strictA?: boolean;
+  readonly must1?: boolean;
+  readonly manualTribute?: boolean;
+  readonly wildcardHeart?: boolean;
+  readonly lastCallDeclare?: boolean;
+  readonly steelPlate?: boolean;
+  readonly triPair?: boolean;
+  readonly straightFlushAboveBomb5?: boolean;
+}
+
 export interface PublicRoomState {
   readonly code: string;
   readonly mode: GameMode;
@@ -30,6 +47,13 @@ export interface PublicRoomState {
   readonly members: readonly PublicMember[];
   readonly createdAt: number;
   readonly lastActiveAt: number;
+  /**
+   * Server-side rule overrides for this room. Optional — older servers (and
+   * servers that don't yet expose this field) omit it; client falls back to
+   * a generic "A 级" chip. When present, the strictA axis drives the
+   * "严格 A" / "宽松 A" chip in the Waiting screen.
+   */
+  readonly rules?: PublicModeRules;
 }
 
 export interface CreateRoomResponse {

@@ -124,6 +124,46 @@ export function enumerateLegalPlays(
     bucket.push(n);
   }
 
+  // ─── G-C4: wildcards substituting in same-rank family ─────────────────────
+  // Per docs/research/game-rules.md lines 70-92 (wildcard rules 1, 6): a
+  // wildcard substitutes ANY non-joker card. Previously the byRank loop above
+  // keyed by card.rank, so wildcards (heart-of-level-rank) only contributed
+  // to plays of the LEVEL rank — bots could not play pair K / triple K / K-bomb
+  // using a wildcard. Synthesize those here.
+  //
+  // Rules:
+  //   - Skip the level rank itself (already covered by the byRank loop, since
+  //     wildcards have rank===levelRank and live in that bucket).
+  //   - Skip jokers (rule 4: wildcard cannot substitute a joker).
+  //   - Need ≥1 natural of the target rank (rule 6: wildcard fills out a
+  //     same-rank set, doesn't conjure it).
+  //   - For each rank R: pair (2), triple (3), 4..8-bomb. Constrained by
+  //     natural-count and wildcard-count availability.
+  //   - Wildcards capped at hand's count (cards can't be double-spent).
+  if (wildcards.length > 0) {
+    for (const [R, natBucket] of naturalsByRank) {
+      if (R === levelRank) continue; // already in byRank loop
+      if (natBucket.length === 0) continue; // need ≥1 natural
+
+      // Target sizes: pair (2), triple (3), 4..8-bomb. Capped by natural + wildcard
+      // availability AND by the absolute max of 8.
+      const maxSize = Math.min(8, natBucket.length + wildcards.length);
+      for (let size = 2; size <= maxSize; size++) {
+        // Use as many naturals as possible (up to size), fill with wildcards.
+        const naturalsUsed = Math.min(size, natBucket.length);
+        const wildcardsUsed = size - naturalsUsed;
+        if (wildcardsUsed === 0) continue; // already in byRank loop
+        if (wildcardsUsed > wildcards.length) continue;
+
+        const subset: Card[] = [
+          ...natBucket.slice(0, naturalsUsed),
+          ...wildcards.slice(0, wildcardsUsed),
+        ];
+        addIfLegal(analyzeHand(subset, levelRank));
+      }
+    }
+  }
+
   // Straights
   if (hand.length >= 5) {
     for (const window of STRAIGHT_WINDOWS) {

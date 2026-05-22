@@ -290,3 +290,72 @@ describe('detectTributeModeMP — validation', () => {
     ).toThrow(/8/);
   });
 });
+
+// ─── G-C2: mixed-finish single fallback must pick lowest-positioned LOSER ─────
+//
+// Previously detectTributeModeMP used finishOrder[expected - 1] as `from` for
+// the mixed-finish single-tribute fallback. When the last-place player was on
+// the WINNING team (possible because mixed finishes interleave teams), the
+// winner ended up tributing to a teammate. Fix picks the lowest-positioned
+// loser instead.
+
+describe('detectTributeModeMP — G-C2: single fallback picks loser, not literal last place', () => {
+  it('6P: t1 wins positions 1,4,6 (last is t1) → from = lowest t2 player, not last-place t1', () => {
+    // a (t1, 1st), b (t2, 2nd), d (t2, 3rd), c (t1, 4th), f (t2, 5th), e (t1, 6th)
+    // Top-3 NOT all on winning team → mixed → single fallback.
+    // Old buggy code: from = finishOrder[5] = 'e' (t1, winner) — nonsense.
+    // Fix: lowest-positioned loser = 'f' (t2, 5th place).
+    const mode = detectTributeModeMP(
+      '6',
+      ['a', 'b', 'd', 'c', 'f', 'e'],
+      SEATS_6P,
+      emptyHands6P()
+    );
+    expect(mode.kind).toBe('single');
+    if (mode.kind === 'single') {
+      expect(mode.from).toBe('f');
+      // from MUST be a t2 (loser team) player.
+      const fromSeat = SEATS_6P.find((s) => s.id === mode.from);
+      expect(fromSeat?.team).toBe('t2');
+      expect(mode.to).toBe('a');
+    }
+  });
+
+  it('8P: t1 wins 1,3,5,8 (last is t1) → from = lowest t2 player, not last-place t1', () => {
+    // Mixed-team 8P finish where the absolute last-place player is on the winning team.
+    // finishOrder: a(t1,1) b(t2,2) c(t1,3) d(t2,4) e(t1,5) f(t2,6) h(t2,7) g(t1,8)
+    // Top-4 NOT all winners → mixed → single fallback.
+    // Old buggy code: from = finishOrder[7] = 'g' (t1, winner) — nonsense.
+    // Fix: lowest-positioned loser = 'h' (t2, 7th place).
+    const mode = detectTributeModeMP(
+      '8',
+      ['a', 'b', 'c', 'd', 'e', 'f', 'h', 'g'],
+      SEATS_8P,
+      emptyHands8P()
+    );
+    expect(mode.kind).toBe('single');
+    if (mode.kind === 'single') {
+      expect(mode.from).toBe('h');
+      const fromSeat = SEATS_8P.find((s) => s.id === mode.from);
+      expect(fromSeat?.team).toBe('t2');
+      expect(mode.to).toBe('a');
+    }
+  });
+
+  it('6P: when last place is naturally a loser, the result is unchanged from old behavior', () => {
+    // Regression sanity — make sure the fix doesn't break the common case.
+    // Mixed finish where the actual last-place player is a loser.
+    // finishOrder: a(t1) b(t2) c(t1) d(t2) e(t1) f(t2) — f at position 6 IS t2.
+    const mode = detectTributeModeMP(
+      '6',
+      ['a', 'b', 'c', 'd', 'e', 'f'],
+      SEATS_6P,
+      emptyHands6P()
+    );
+    expect(mode.kind).toBe('single');
+    if (mode.kind === 'single') {
+      expect(mode.from).toBe('f');
+      expect(mode.to).toBe('a');
+    }
+  });
+});

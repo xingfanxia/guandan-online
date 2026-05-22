@@ -536,3 +536,54 @@ describe('canBeat — length mismatch disallowed for non-bombs', () => {
     expect(canBeat(pair, single, '5')).toBe(false);
   });
 });
+
+// ─── G-C1 regression: sequence comparison uses NATURAL order (not powerRank) ──
+//
+// Per docs/research/game-rules.md lines 60-68: level-rank cards in sequences
+// occupy their natural slot, NOT the lifted "above A" position. Without this
+// fix, at level 5 an A-2-3-4-5 straight (rank='5') would beat a 6-10 straight
+// because powerRank('5','5')=14 > powerRank('10','5')=9. bomb.ts already
+// applies the same rule to flushStraights.
+
+describe('canBeat — sequence patterns use natural ordering at level rank', () => {
+  it('straight ending at 5 (low end) does NOT beat straight ending at 10 at level 5', () => {
+    // A-2-3-4-5 (stored as rank='5') vs 6-7-8-9-10 (stored as rank='10').
+    // Natural ordering: 10 > 5. Per game rules, level rank does NOT lift in sequences.
+    const low: Pattern = { kind: 'straight', rank: '5', length: 5, cards: [] };
+    const high: Pattern = { kind: 'straight', rank: '10', length: 5, cards: [] };
+    expect(canBeat(low, high, '5')).toBe(false);
+    expect(canBeat(high, low, '5')).toBe(true);
+  });
+
+  it('threePairs ending at 5 does NOT beat threePairs ending at K at level 5', () => {
+    // 3-4-5 window vs J-Q-K window. Without the fix, level-rank '5' would lift
+    // to 14 and incorrectly beat 'K' (12).
+    const low: Pattern = { kind: 'threePairs', rank: '5', length: 6, cards: [] };
+    const high: Pattern = { kind: 'threePairs', rank: 'K', length: 6, cards: [] };
+    expect(canBeat(low, high, '5')).toBe(false);
+    expect(canBeat(high, low, '5')).toBe(true);
+  });
+
+  it('twoTriples ending at 5 does NOT beat twoTriples ending at K at level 5', () => {
+    // 4-5 window vs Q-K window. Same level-lift bug at the twoTriples surface.
+    const low: Pattern = { kind: 'twoTriples', rank: '5', length: 6, cards: [] };
+    const high: Pattern = { kind: 'twoTriples', rank: 'K', length: 6, cards: [] };
+    expect(canBeat(low, high, '5')).toBe(false);
+    expect(canBeat(high, low, '5')).toBe(true);
+  });
+
+  it('straights still compare correctly when neither involves the level rank', () => {
+    // Sanity: untouched ordering — 6-10 > 5-9 at level 2 (no level interaction).
+    const lower: Pattern = { kind: 'straight', rank: '9', length: 5, cards: [] };
+    const higher: Pattern = { kind: 'straight', rank: '10', length: 5, cards: [] };
+    expect(canBeat(higher, lower, '2')).toBe(true);
+    expect(canBeat(lower, higher, '2')).toBe(false);
+  });
+
+  it('straight A-high (10-J-Q-K-A) beats straight 6-10 at level 5', () => {
+    // Top straight wins under natural ordering; A=13, 10=9.
+    const aHigh: Pattern = { kind: 'straight', rank: 'A', length: 5, cards: [] };
+    const tenHigh: Pattern = { kind: 'straight', rank: '10', length: 5, cards: [] };
+    expect(canBeat(aHigh, tenHigh, '5')).toBe(true);
+  });
+});

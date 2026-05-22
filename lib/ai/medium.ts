@@ -67,13 +67,15 @@ export function chooseMediumMove(
     return { kind: 'pass' };
   }
 
-  // Endgame finisher takes priority over both decomposer and heuristic.
+  // Endgame finisher takes priority over decomposer + heuristic.
   const finisher = plays.find((p) => p.cards.length === hand.length);
   if (finisher) return { kind: 'play', pattern: finisher };
 
-  const decompMatch = tryDecomposerMatch(hand, ctx.levelRank, plays);
-  if (decompMatch) return { kind: 'play', pattern: decompMatch };
-
+  // G-I3: skip decomposer on follower turns. Its first-play suggestion is
+  // target-blind (built from the standalone hand without considering the
+  // current trick), so the result almost never matches the target — the
+  // CPU spent on the WASM call is wasted. Fall directly through to the
+  // cooperation-ranked heuristic.
   const ranked = rankByCoop(plays, advice, ctx.levelRank);
   return { kind: 'play', pattern: ranked[0]! };
 }

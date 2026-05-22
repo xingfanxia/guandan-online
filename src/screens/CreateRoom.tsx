@@ -144,6 +144,10 @@ export function CreateRoom({
         playerId: res.hostId,
         joinToken: res.hostJoinToken,
         hostToken: res.hostToken,
+        // Carry our handle so the game-table component can match
+        // `evt.players[].handle === myHandle` during snapshot reduction
+        // (App.tsx prefers this over fetching the global handle separately).
+        handle,
         storedAt: Date.now(),
       });
       navigateFn({ kind: 'wait', code: res.code });

@@ -62,8 +62,11 @@ describe('createMemoryEventLog — per-room isolation', () => {
     const events2 = await log.range('room2', null);
     expect(events1).toHaveLength(1);
     expect(events2).toHaveLength(1);
+    // R-C1: id is the event.version, not an independent per-room counter.
+    // The two rooms get DIFFERENT ids because their events have different
+    // version numbers (1 vs 2 above).
     expect(events1[0]?.id).toBe(1);
-    expect(events2[0]?.id).toBe(1); // ids are per-room
+    expect(events2[0]?.id).toBe(2);
   });
 });
 

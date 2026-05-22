@@ -1,7 +1,13 @@
 {
   "compilerOptions": {
     "target": "ES2023",
-    "lib": ["ES2023"],
+    // DOM included so the api-middleware plugin (scripts/vite-api-plugin.ts)
+    // and its transitive imports of lib/* — which use Request/Response/
+    // Headers/ReadableStream and check `typeof window === 'undefined'` —
+    // typecheck under this config. The runtime is still Node; DOM here is
+    // type-information only (vite.config.ts is loaded via esbuild, no DOM
+    // emit).
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": false,
@@ -18,5 +24,11 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["vite.config.ts", "vitest.config.ts", "eslint.config.js"]
+  // No ESLint by choice — TS strict mode (noUnusedLocals/Parameters/
+  // noUncheckedIndexedAccess), the 1022-test vitest suite,
+  // `scripts/security/grep-no-leak.sh`, and Prettier formatting are the
+  // discipline floor for this project. Reintroduce ESLint only if a
+  // concrete rule (e.g., react-hooks/exhaustive-deps) catches a class of
+  // bug not already caught by tsc + tests.
+  "include": ["vite.config.ts", "vitest.config.ts"]
 }

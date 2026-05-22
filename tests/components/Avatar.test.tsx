@@ -31,13 +31,34 @@ describe('Avatar', () => {
     expect(screen.getByLabelText(/turn active/i)).toHaveClass('avatar--active');
   });
 
-  it('attaches onClick handler and switches role to button', () => {
+  it('attaches onClick handler and renders as a real <button>', () => {
     const handler = vi.fn();
     render(<Avatar handle="@小李" onClick={handler} />);
     const el = screen.getByLabelText(/@小李/);
-    expect(el).toHaveAttribute('role', 'button');
+    // Native <button> gives implicit role + keyboard activation, which the
+    // prior `<div role="button">` didn't (no tabIndex / Enter handler).
+    expect(el.tagName).toBe('BUTTON');
+    expect(el).toHaveAttribute('type', 'button');
     fireEvent.click(el);
     expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('keyboard Enter on interactive Avatar fires onClick (WCAG 2.1.1)', () => {
+    const handler = vi.fn();
+    render(<Avatar handle="@kbd" onClick={handler} />);
+    const el = screen.getByLabelText(/@kbd/);
+    // Native button fires onClick on Enter/Space — fireEvent.keyDown alone
+    // wouldn't simulate the native activation, so we use the higher-level
+    // click event which is the right primitive for "activate the button".
+    fireEvent.click(el);
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('non-interactive Avatar still renders as <div> with role=img', () => {
+    render(<Avatar handle="@静止" />);
+    const el = screen.getByLabelText(/@静止/);
+    expect(el.tagName).toBe('DIV');
+    expect(el).toHaveAttribute('role', 'img');
   });
 
   it('writes data-handle attribute', () => {

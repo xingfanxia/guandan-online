@@ -9,7 +9,7 @@
 // Bot players are detected via PlayerSummary.kind === 'bot' and surfaced with
 // a small "BOT 难度" chip on their seat.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Hand } from '@/components/Hand';
 import { openSseClient, type SseClient } from '@/lib/sseClient';
 import { decodeCardId } from '@lib/realtime/cardCodec';
@@ -22,6 +22,7 @@ import type {
   PlayerSummary,
   RoomJoinedEvent,
   RoomLeftEvent,
+  RoundEndEvent,
   ServerEvent,
   SnapshotEvent,
   TrickWonEvent,
@@ -67,6 +68,12 @@ interface TableState {
   tribute: TributePendingSnapshot | null;
   /** Monotonic round counter — bumped on each `deal` for TributeModal eyebrow. */
   roundNumber: number;
+  /**
+   * Winning team of the most-recent round_end. Used to gate canDeclare on
+   * anti_tribute per Round 2 IMPORTANT-2 — the server validates by team
+   * membership, not red-joker ownership.
+   */
+  lastRoundWinnerTeam: TeamKey | null;
 }
 
 export interface TributePendingSnapshot {
@@ -86,6 +93,7 @@ const EMPTY_STATE: TableState = {
   myTeam: null,
   tribute: null,
   roundNumber: 1,
+  lastRoundWinnerTeam: null,
 };
 
 function decodeHand(ids: readonly CardId[]): GameCard[] {
@@ -105,6 +113,13 @@ export function GameTableMP({
   const [connectionState, setConnectionState] = useState<
     'connecting' | 'live' | 'closed'
   >('connecting');
+  // Mirror of state.myPlayerId for the SSE callback — see GameTable4P for the
+  // detailed rationale. Without this, my own move_played event leaves stale
+  // indices in `selected` (the survivors now point to different cards).
+  const myPlayerIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    myPlayerIdRef.current = state.myPlayerId;
+  }, [state.myPlayerId]);
 
   useEffect(() => {
     let client: SseClient | null = null;
@@ -117,7 +132,7 @@ export function GameTableMP({
         setConnectionState('live');
         setVersion(evt.version);
         setState((prev) => reduceEvent(prev, evt, myHandle));
-        if (evt.type === 'deal' || evt.type === 'snapshot' || evt.type === 'round_end') {
+        if (shouldClearSelectedOnEvent(evt, myPlayerIdRef.current)) {
           setSelected(new Set());
         }
       },
@@ -191,6 +206,7 @@ export function GameTableMP({
         state.players,
         myLevel,
         state.roundNumber,
+        state.lastRoundWinnerTeam,
       ),
     [
       state.tribute,
@@ -200,6 +216,7 @@ export function GameTableMP({
       state.players,
       myLevel,
       state.roundNumber,
+      state.lastRoundWinnerTeam,
     ],
   );
 
@@ -351,9 +368,21 @@ export function reduceEvent(
       return reduceTributePending(prev, evt);
     case 'tribute_resolved':
       return reduceTributeResolved(prev, evt);
+    case 'round_end':
+      return reduceRoundEnd(prev, evt);
     default:
       return prev;
   }
+}
+
+function reduceRoundEnd(prev: TableState, evt: RoundEndEvent): TableState {
+  // Capture winnerTeam so the next tribute_pending (anti_tribute) can gate
+  // canDeclare on team membership rather than red-joker ownership.
+  return {
+    ...prev,
+    lastRoundWinnerTeam: evt.winnerTeam,
+    teamLevels: { t1: evt.newLevels.t1, t2: evt.newLevels.t2 },
+  };
 }
 
 function reduceSnapshot(
@@ -479,13 +508,28 @@ export function buildTributeModalState(
   players: Map<string, PlayerSummary>,
   levelRank: LevelRank,
   roundNumber: number,
+  lastRoundWinnerTeam: TeamKey | null = null,
 ): TributeState | null {
   if (!snapshot || !myPlayerId) return null;
 
   if (snapshot.direction === 'anti_tribute') {
     if (myTeam === null) return null;
+    // Round 2 IMPORTANT-2 fix: server validates `declarerTeam !== winnerTeam`,
+    // NOT joker ownership. Use the winning team captured from the preceding
+    // round_end event to gate canDeclare. Falls back to red-joker heuristic
+    // when winnerTeam is unknown (defensive — snapshot-only resume that missed
+    // the round_end event).
     const holderHandle = players.get(myPlayerId)?.handle ?? myPlayerId;
-    return { kind: 'anti-tribute', holderHandle, roundNumber };
+    const canDeclare =
+      lastRoundWinnerTeam !== null
+        ? myTeam !== lastRoundWinnerTeam
+        : handHoldsRedJoker(myHand);
+    return {
+      kind: 'anti-tribute',
+      holderHandle,
+      roundNumber,
+      canDeclare,
+    };
   }
 
   // single / double / sweep — check my role in obligations.
@@ -529,6 +573,33 @@ export function buildTributeModalState(
 
 function cardKey(c: GameCard): string {
   return `${c.rank}-${c.suit}-${c.deck}`;
+}
+
+/**
+ * True when the hand holds at least one red joker. Used as a heuristic for
+ * losing-team membership during anti-tribute (mirrors GameTable4P).
+ */
+export function handHoldsRedJoker(hand: readonly GameCard[]): boolean {
+  return hand.some((c) => c.suit === 'joker' && c.rank === 'RJ');
+}
+
+/**
+ * Mirrors GameTable4P.shouldClearSelectedOnEvent — clears selected indices
+ * on hand-replacing events (deal/snapshot/round_end) AND my own move_played.
+ * F-C2 fix: previously a move_played by me left stale indices pointing into
+ * a now-shorter hand, which silently corrupted the next play.
+ */
+export function shouldClearSelectedOnEvent(
+  evt: ServerEvent,
+  myPlayerId: string | null,
+): boolean {
+  if (evt.type === 'deal' || evt.type === 'snapshot' || evt.type === 'round_end') {
+    return true;
+  }
+  if (evt.type === 'move_played' && evt.player === myPlayerId) {
+    return true;
+  }
+  return false;
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────

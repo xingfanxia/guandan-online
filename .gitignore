@@ -10,10 +10,15 @@ build/
 out/
 *.tsbuildinfo
 
-# But DO commit the vendored Bobgy WASM artifact — it's a build product
-# from C++ source that needs Docker + emsdk to rebuild, and we don't want
-# every contributor (or CI) to need that toolchain. Re-run
-# scripts/build-wasm.sh only when lib/ai/decomposer/cpp/ changes.
+# Re-include the vendored Bobgy WASM artifact (build product from C++ source
+# that needs Docker + emsdk to rebuild; don't force every contributor / CI
+# to install that toolchain). Re-run scripts/build-wasm.sh only when
+# lib/ai/decomposer/cpp/ changes.
+#
+# Order matters: the broad `dist/` ignore above matches `lib/ai/decomposer/
+# dist/`, so this negate MUST come after it. Moving these negate lines
+# above `dist/` (or removing the parent-dir negate) will silently exclude
+# the WASM artifact from commits and break the GitHub auto-deploy path.
 !lib/ai/decomposer/dist/
 !lib/ai/decomposer/dist/**
 

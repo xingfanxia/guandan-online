@@ -11,17 +11,27 @@
 //   3. Server calls eventLog.range(roomId, K) → replays events K+1, K+2, ...
 //   4. If the log no longer contains the missing range (trimmed past), the
 //      server emits a state_resync event instead of partial replay.
+//
+// LoggedEvent.id IS the event.version (R-C1 fix). SSE writes
+// `id: <event.version>` on the wire, so the client's Last-Event-ID on resume
+// is an event.version — the log range filter MUST be in the same units.
+// Storing an independent per-room internal seq was a bug: when a joiner's
+// first delivered event has version > 1 (every non-first joiner; every player
+// in a bot-fill room), the seq vs version offset caused the wrong range to be
+// selected on reconnect.
 
 import type { ServerEvent } from './messages.js';
 import type { RedisLike } from './redisClient.js';
 
 export interface LoggedEvent {
+  /** Equal to event.version. Kept as a separate field for legacy callers
+   * and for symmetry with the Upstash stream id, which encodes the version. */
   id: number;
   event: ServerEvent;
 }
 
 export interface EventLog {
-  /** Append an event; returns the assigned id (sequential per room from 1). */
+  /** Append an event; returns the assigned id (== event.version). */
   append(roomId: string, event: ServerEvent): Promise<number>;
   /**
    * Read events with id > fromId. Pass null for fromId to read all.
@@ -37,7 +47,6 @@ export interface EventLogOptions {
 
 interface RoomLog {
   events: LoggedEvent[];
-  nextId: number;
 }
 
 export function createMemoryEventLog(options: EventLogOptions = {}): EventLog {
@@ -47,7 +56,7 @@ export function createMemoryEventLog(options: EventLogOptions = {}): EventLog {
   function getRoom(roomId: string): RoomLog {
     let room = rooms.get(roomId);
     if (!room) {
-      room = { events: [], nextId: 1 };
+      room = { events: [] };
       rooms.set(roomId, room);
     }
     return room;
@@ -56,7 +65,8 @@ export function createMemoryEventLog(options: EventLogOptions = {}): EventLog {
   return {
     append(roomId, event) {
       const room = getRoom(roomId);
-      const id = room.nextId++;
+      // R-C1: id is the event.version, not an independent seq.
+      const id = event.version;
       room.events.push({ id, event });
       if (maxPerRoom !== undefined && room.events.length > maxPerRoom) {
         room.events.splice(0, room.events.length - maxPerRoom);
@@ -76,23 +86,27 @@ export function createMemoryEventLog(options: EventLogOptions = {}): EventLog {
 // ─── Upstash Redis implementation ─────────────────────────────────────────────
 //
 // Backing model:
-//   - `events:<room>`      Redis Stream — one entry per event
-//   - `events:<room>:seq`  monotonic counter (INCR) — assigns the numeric id
-//                          surfaced through the LoggedEvent contract
+//   - `events:<room>` Redis Stream — one entry per event
 //
-// Stream entries are written with explicit ids of the form `<n>-0` so the
-// public interface (numeric ids 1, 2, 3...) maps cleanly to stream ids that
-// XADD accepts in monotonic order. The event payload is JSON-encoded into a
-// single `data` field — keeps schema evolution under JSON's belt, not Redis's.
+// Stream entries are written with explicit ids of the form `<event.version>-0`
+// (R-C1 fix). The event payload is JSON-encoded into a single `data` field —
+// keeps schema evolution under JSON's belt, not Redis's. The id mirrors the
+// event.version so that SSE Last-Event-ID resume (which carries the version)
+// can be translated directly into a `(<version>-0` exclusive XRANGE bound.
 //
-// TTL: both keys are refreshed on every append. Default 24h matches the room
-// lifecycle. A reconnecting client that lapses beyond TTL falls back to a
-// state_resync event from the SSE handler (per realtime-sync-deep-dive §7.5).
+// Note: a previous incarnation used an independent INCR counter and stream id
+// pair. That meant the LoggedEvent.id was an internal seq, NOT the event
+// version, and SSE resume could replay the wrong slice for any recipient
+// whose first delivered event had version > 1 (every non-first joiner).
+//
+// TTL: refreshed on every append. Default 24h matches the room lifecycle. A
+// reconnecting client that lapses beyond TTL falls back to a state_resync
+// event from the SSE handler (per realtime-sync-deep-dive §7.5).
 
 export interface UpstashEventLogOptions {
   /** Key namespace prefix. Defaults to 'events:'. */
   keyPrefix?: string;
-  /** TTL in seconds applied to stream + seq keys on every write. Defaults to 24h. */
+  /** TTL in seconds applied to the stream key on every write. Defaults to 24h. */
   ttlSeconds?: number;
 }
 
@@ -104,19 +118,18 @@ export function createUpstashEventLog(
   const ttl = options.ttlSeconds ?? 86_400;
 
   const streamKey = (roomId: string) => `${prefix}${roomId}`;
-  const seqKey = (roomId: string) => `${prefix}${roomId}:seq`;
 
   return {
     async append(roomId, event) {
-      const id = await redis.incr(seqKey(roomId));
+      // R-C1: stream id = event.version. Per-recipient log keys (see
+      // publish.eventLogKey) guarantee monotonic versions per recipient,
+      // so XADD's monotonic-id constraint is satisfied.
+      const id = event.version;
       const streamId = `${id}-0`;
       await redis.xadd(streamKey(roomId), streamId, {
         data: JSON.stringify(event),
       });
-      // Best-effort TTL refresh — independent of the write to keep the
-      // hot path simple. If a key was just created we still set TTL.
       await redis.expire(streamKey(roomId), ttl);
-      await redis.expire(seqKey(roomId), ttl);
       return id;
     },
 

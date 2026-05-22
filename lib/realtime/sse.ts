@@ -7,18 +7,33 @@
 
 import type { ServerEvent } from './messages.js';
 
+export interface FormatEventOptions {
+  /**
+   * When false, omits the `id:` line from the frame. Used for synthetic
+   * frames that aren't durable log entries — e.g., the `stream_closing`
+   * rotation event (R-I4): emitting its `id` would let the browser store it
+   * as Last-Event-ID, and the next real event published at the same numeric
+   * version would be skipped on reconnect.
+   */
+  includeId?: boolean;
+}
+
 /**
  * Serialize a ServerEvent to a single SSE frame string. Frame layout:
  *
- *   id: <version>
+ *   id: <version>           (omitted when options.includeId === false)
  *   event: <type>
  *   data: <JSON payload>
  *   <blank line>
  *
  * The trailing blank line is required by the SSE spec to terminate the frame.
  */
-export function formatEvent(event: ServerEvent): string {
-  const id = `id: ${event.version}\n`;
+export function formatEvent(
+  event: ServerEvent,
+  options: FormatEventOptions = {}
+): string {
+  const includeId = options.includeId ?? true;
+  const id = includeId ? `id: ${event.version}\n` : '';
   const evt = `event: ${event.type}\n`;
   const data = `data: ${JSON.stringify(event)}\n`;
   return `${id}${evt}${data}\n`;

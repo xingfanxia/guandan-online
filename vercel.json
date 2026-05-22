@@ -4,8 +4,17 @@
   "outputDirectory": "dist",
   "framework": "vite",
   "functions": {
-    "api/**/*.ts": {
+    "api/sse/[roomId].ts": {
       "maxDuration": 300
+    },
+    "api/cron/cleanup-rooms.ts": {
+      "maxDuration": 60
+    },
+    "api/room/[code]/move.ts": {
+      "maxDuration": 30
+    },
+    "api/**/*.ts": {
+      "maxDuration": 15
     }
   },
   "crons": [

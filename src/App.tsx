@@ -18,7 +18,7 @@ import { Landing } from '@/screens/Landing';
 import { CreateRoom } from '@/screens/CreateRoom';
 import { Waiting } from '@/screens/Waiting';
 import { parseHash, type Route } from '@/lib/router';
-import { getCredentialsForRoom } from '@/lib/identity';
+import { getCredentialsForRoom, getHandle } from '@/lib/identity';
 import { getRoom, type GameMode } from '@/lib/api/rooms';
 
 export default function App(): React.JSX.Element {
@@ -52,11 +52,19 @@ function RouteSwitch({ route }: { route: Route }): React.JSX.Element {
       if (!creds) {
         return <MissingCreds code={route.code} />;
       }
+      // Prefer the handle stored alongside the credentials (mints during
+      // create/join carry it from this session). For older credentials
+      // persisted before the handle field existed, fall back to the active
+      // global handle. If even that's missing we hand an empty string
+      // through — the snapshot reducer will simply use evt.you.playerId
+      // for myPlayerId, so the rendering still works (HUD just won't show
+      // a friendly handle).
+      const myHandle = creds.handle ?? getHandle() ?? '';
       return (
         <TableSwitch
           code={route.code}
           joinToken={creds.joinToken}
-          myHandle={creds.playerId}
+          myHandle={myHandle}
         />
       );
     }

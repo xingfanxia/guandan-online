@@ -202,4 +202,44 @@ describe('Waiting', () => {
     // "房主" appears as a topnav label AND as a chip on the host slot
     expect(screen.getAllByText('房主').length).toBeGreaterThanOrEqual(2);
   });
+
+  // F-I5: chip label is now driven by room.rules.strictA; previously
+  // hardcoded "宽松 A" regardless of room setting.
+  describe('A-level chip (F-I5)', () => {
+    it('renders "严格 A" when room.rules.strictA is true', () => {
+      render(
+        <Waiting
+          code="K7M2P9"
+          initialCredentials={HOST_CREDS}
+          initialRoom={{ ...ROOM_LOBBY_2OF4, rules: { strictA: true } }}
+          pollMs={0}
+        />
+      );
+      expect(screen.getByText(/4P · 严格 A/)).toBeInTheDocument();
+    });
+
+    it('renders "宽松 A" when room.rules.strictA is false', () => {
+      render(
+        <Waiting
+          code="K7M2P9"
+          initialCredentials={HOST_CREDS}
+          initialRoom={{ ...ROOM_LOBBY_2OF4, rules: { strictA: false } }}
+          pollMs={0}
+        />
+      );
+      expect(screen.getByText(/4P · 宽松 A/)).toBeInTheDocument();
+    });
+
+    it('falls back to generic "A 级" when room.rules is absent (older API)', () => {
+      render(
+        <Waiting
+          code="K7M2P9"
+          initialCredentials={HOST_CREDS}
+          initialRoom={ROOM_LOBBY_2OF4}
+          pollMs={0}
+        />
+      );
+      expect(screen.getByText(/4P · A 级/)).toBeInTheDocument();
+    });
+  });
 });

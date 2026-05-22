@@ -55,7 +55,12 @@ export function Landing({
   const [signInDraft, setSignInDraft] = useState('');
   const [signInError, setSignInError] = useState<string | null>(null);
 
-  const [joinOpen, setJoinOpen] = useState(false);
+  // Mirror the signInOpen tri-state: 'manual' = user-clicked (autofocus the
+  // input for immediate typing), 'auto' = opened programmatically (do NOT
+  // autofocus — focus would flip OrientationLock into bypass mode before the
+  // CSS rotate is visible). Today only the manual path is wired; the tri-
+  // state keeps F-M2 robust against future deep-link or auto-open additions.
+  const [joinOpen, setJoinOpen] = useState<false | 'auto' | 'manual'>(false);
   const [joinCode, setJoinCode] = useState('');
   const [joinBusy, setJoinBusy] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
@@ -107,7 +112,7 @@ export function Landing({
     }
     setJoinError(null);
     setJoinCode('');
-    setJoinOpen(true);
+    setJoinOpen('manual');
   }
 
   async function submitJoin(): Promise<void> {
@@ -125,6 +130,12 @@ export function Landing({
         code,
         playerId: res.playerId,
         joinToken: res.joinToken,
+        // Persist our handle alongside the playerId so the game-table
+        // component can match `evt.players[].handle === myHandle` on
+        // snapshot. Without this, App.tsx falls back to the global
+        // getHandle() — fine for the active user, but breaks if they
+        // changed their handle between joining and entering the table.
+        handle,
         storedAt: Date.now(),
       });
       navigateFn({ kind: 'wait', code });
@@ -276,6 +287,7 @@ export function Landing({
           setCode={setJoinCode}
           busy={joinBusy}
           error={joinError}
+          autoFocusInput={joinOpen === 'manual'}
           onSubmit={submitJoin}
           onClose={() => setJoinOpen(false)}
         />
@@ -340,6 +352,7 @@ function JoinModal({
   setCode,
   busy,
   error,
+  autoFocusInput,
   onSubmit,
   onClose,
 }: {
@@ -347,6 +360,10 @@ function JoinModal({
   setCode: (s: string) => void;
   busy: boolean;
   error: string | null;
+  /** Only autofocus when user explicitly opened the modal — keeps the
+   * OrientationLock CSS-rotate path safe if a future deep-link auto-opens
+   * the join modal on mount. Mirrors SignInModal's autoFocusInput prop. */
+  autoFocusInput: boolean;
   onSubmit: () => void;
   onClose: () => void;
 }): React.JSX.Element {
@@ -358,7 +375,7 @@ function JoinModal({
         <input
           type="text"
           className="modal__input"
-          autoFocus
+          autoFocus={autoFocusInput}
           value={code}
           onChange={(e) => setCode(e.target.value.toUpperCase().slice(0, 6))}
           onKeyDown={(e) => {

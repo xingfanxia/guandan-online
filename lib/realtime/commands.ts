@@ -61,7 +61,15 @@ export type MoveErrorCode =
   | 'not_your_turn'
   | 'invalid_move'
   | 'rate_limited'
-  | 'auth_failed';
+  | 'auth_failed'
+  /**
+   * Catch-all for downstream-throw recovery in the API handlers — e.g., a
+   * roomStore/roundStore/sessionStore put() that throws after an idempotency
+   * reservation. The handler commits a `{ ok: false, error: 'internal_error', ... }`
+   * MoveResponse so concurrent retries see a cached error rather than a
+   * stuck 'pending'. Never surfaced from the game-logic dispatch itself.
+   */
+  | 'internal_error';
 
 export type MoveResponse =
   | { ok: true; appliedVersion: number; result: 'applied' | 'replayed' }

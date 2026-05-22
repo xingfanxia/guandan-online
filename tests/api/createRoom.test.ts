@@ -8,6 +8,11 @@ import {
   type CreateRoomResponseBody,
 } from '@lib/api/createRoom';
 import { createMemoryRoomStore } from '@lib/storage/roomStore';
+import { createMemoryIdempotencyCache } from '@lib/realtime/idempotency';
+import type { RateLimiter } from '@lib/security/rateLimit';
+import type { IdempotencyCache, ReserveResult } from '@lib/realtime/idempotency';
+import type { MoveResponse } from '@lib/realtime/commands';
+import type { RoomState } from '@lib/room/lifecycle';
 
 function req(method: string, body: unknown): Request {
   return new Request('http://test/api/room/create', {
@@ -461,5 +466,290 @@ describe('handleCreateRoom — code collision retry', () => {
     expect(res.status).toBe(503);
     const body = (await res.json()) as { error: string };
     expect(body.error).toBe('code_generation_exhausted');
+  });
+});
+
+// ─── R-I5 regression — rate limit + idempotency on /create ──────────────────
+
+describe('handleCreateRoom — R-I5: rate limit + idempotency', () => {
+  it('returns 429 with retry-after when limiter denies', async () => {
+    const tightLimiter: RateLimiter = {
+      check() {
+        return { allowed: false, retryAfterMs: 1500 };
+      },
+    };
+    const res = await handleCreateRoom(
+      req('POST', { mode: '4', host: { handle: '@fufu' } }),
+      { ...DEPS_OK(), rateLimiter: tightLimiter }
+    );
+    expect(res.status).toBe(429);
+    expect(res.headers.get('retry-after')).toBe('2');
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe('rate_limited');
+  });
+
+  it('passes when limiter allows', async () => {
+    const openLimiter: RateLimiter = {
+      check() {
+        return { allowed: true };
+      },
+    };
+    const res = await handleCreateRoom(
+      req('POST', { mode: '4', host: { handle: '@fufu' } }),
+      { ...DEPS_OK(), rateLimiter: openLimiter }
+    );
+    expect(res.status).toBe(201);
+  });
+
+  it('uses Idempotency-Key to dedup duplicate create attempts', async () => {
+    const deps = { ...DEPS_OK(), idempotency: createMemoryIdempotencyCache(() => 1_700_000_000_000) };
+    const buildReq = () =>
+      new Request('http://test/api/room/create', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': 'dedup-key-1',
+        },
+        body: JSON.stringify({ mode: '4', host: { handle: '@fufu' } }),
+      });
+    const first = await handleCreateRoom(buildReq(), deps);
+    expect(first.status).toBe(201);
+    const firstBody = (await first.json()) as CreateRoomResponseBody;
+
+    // Second POST with the same key — the cache returns the previously
+    // committed response. Code should match (idempotent replay).
+    const second = await handleCreateRoom(buildReq(), deps);
+    expect(second.status).toBe(201);
+    const secondBody = (await second.json()) as CreateRoomResponseBody;
+    expect(secondBody.code).toBe(firstBody.code);
+    expect(secondBody.hostToken).toBe(firstBody.hostToken);
+  });
+
+  it('uses dependency-injected identify() to key the limiter', async () => {
+    const calls: string[] = [];
+    const limiter: RateLimiter = {
+      check(key) {
+        calls.push(key);
+        return { allowed: true };
+      },
+    };
+    await handleCreateRoom(
+      req('POST', { mode: '4', host: { handle: '@fufu' } }),
+      {
+        ...DEPS_OK(),
+        rateLimiter: limiter,
+        identify: () => '203.0.113.42',
+      }
+    );
+    expect(calls).toEqual(['create:203.0.113.42']);
+  });
+});
+
+// ─── Round 2 CRITICAL fix — idempotency reservation orphaning on throw ──────
+
+describe('handleCreateRoom — Round 2 critical: idempotency commits on downstream throw', () => {
+  // Pre-fix, when roomStore.create threw after tryReserve, the reservation
+  // stayed in 'pending' state for CREATE_IDEMPOTENCY_TTL_SECONDS (1h).
+  // Concurrent retries with the same Idempotency-Key got 409 create_in_flight
+  // for that full window. Post-fix, the handler catches the throw, commits an
+  // 'internal_error' MoveResponse so the next retry sees a cached error
+  // (status='done') instead of stuck 'pending'.
+
+  function buildReqWithKey(key: string): Request {
+    return new Request('http://test/api/room/create', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'idempotency-key': key,
+      },
+      body: JSON.stringify({ mode: '4', host: { handle: '@fufu' } }),
+    });
+  }
+
+  it('returns 500 + commits error response when roomStore.create throws', async () => {
+    const base = DEPS_OK();
+    const idempotency = createMemoryIdempotencyCache(() => 1_700_000_000_000);
+
+    const realRoom = base.roomStore;
+    const throwingRoomStore = {
+      get: realRoom.get.bind(realRoom),
+      put: realRoom.put.bind(realRoom),
+      create: () => {
+        throw new Error('simulated roomStore.create failure');
+      },
+      delete: realRoom.delete.bind(realRoom),
+      listCodes: realRoom.listCodes.bind(realRoom),
+    };
+
+    const commits: Array<{ key: string; result: MoveResponse }> = [];
+    const trackingCache: IdempotencyCache = {
+      tryReserve: idempotency.tryReserve.bind(idempotency),
+      async commit(key, result, ttl) {
+        commits.push({ key, result });
+        return idempotency.commit(key, result, ttl);
+      },
+    };
+
+    const res = await handleCreateRoom(buildReqWithKey('throw-key-1'), {
+      ...base,
+      roomStore: throwingRoomStore,
+      idempotency: trackingCache,
+    });
+
+    // (a) Response is 500 with the underlying error message.
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: string; details?: string };
+    expect(body.error).toBe('internal_error');
+    expect(body.details).toContain('simulated roomStore.create failure');
+
+    // (b) idempotency.commit was called with ok: false / internal_error.
+    expect(commits).toHaveLength(1);
+    expect(commits[0]!.key).toBe('create:throw-key-1');
+    expect(commits[0]!.result.ok).toBe(false);
+    if (!commits[0]!.result.ok) {
+      expect(commits[0]!.result.error).toBe('internal_error');
+    }
+  });
+
+  it('subsequent call with same Idempotency-Key gets cached error, NOT pending/409', async () => {
+    const base = DEPS_OK();
+    const idempotency = createMemoryIdempotencyCache(() => 1_700_000_000_000);
+
+    let shouldThrow = true;
+    const realRoom = base.roomStore;
+    const flakyRoomStore = {
+      get: realRoom.get.bind(realRoom),
+      put: realRoom.put.bind(realRoom),
+      create: (state: RoomState, ttl: number) => {
+        if (shouldThrow) {
+          throw new Error('first attempt fails');
+        }
+        return realRoom.create(state, ttl);
+      },
+      delete: realRoom.delete.bind(realRoom),
+      listCodes: realRoom.listCodes.bind(realRoom),
+    };
+
+    const first = await handleCreateRoom(buildReqWithKey('shared-key'), {
+      ...base,
+      roomStore: flakyRoomStore,
+      idempotency,
+    });
+    expect(first.status).toBe(500);
+
+    // Second call must NOT 409. Cached error replays as 500.
+    shouldThrow = false;
+    const second = await handleCreateRoom(buildReqWithKey('shared-key'), {
+      ...base,
+      roomStore: flakyRoomStore,
+      idempotency,
+    });
+    expect(second.status).not.toBe(409);
+    expect(second.status).toBe(500);
+    const body = (await second.json()) as { error: string };
+    expect(body.error).toBe('internal_error');
+  });
+});
+
+// ─── Round 2 IMPORTANT-3 — cached idempotency fallthrough on missing details ──
+
+describe('handleCreateRoom — Round 2 IMPORTANT-3: cache corruption is loud', () => {
+  // Pre-fix, a 'done' cache hit with cached.ok === false AND missing details
+  // silently fell through to a fresh create — duplicating the room.
+  // Post-fix, treat missing-details as cache corruption: log loudly + 500.
+
+  it('returns 500 when cache returns "done" status with missing details', async () => {
+    const stubCache: IdempotencyCache = {
+      async tryReserve(): Promise<ReserveResult> {
+        return {
+          status: 'done',
+          result: {
+            // No details, ok: false — pre-fix this fell through to fresh create.
+            ok: false,
+            error: 'invalid_move', // sentinel — but no details
+          },
+        };
+      },
+      async commit() {},
+    };
+
+    const res = await handleCreateRoom(
+      new Request('http://test/api/room/create', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': 'corrupted',
+        },
+        body: JSON.stringify({ mode: '4', host: { handle: '@fufu' } }),
+      }),
+      { ...DEPS_OK(), idempotency: stubCache }
+    );
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: string; details?: string };
+    expect(body.error).toBe('internal_error');
+    expect(body.details).toMatch(/cache corruption/i);
+  });
+
+  it('returns 500 when cache returns "done" with details that is not valid JSON', async () => {
+    const stubCache: IdempotencyCache = {
+      async tryReserve(): Promise<ReserveResult> {
+        return {
+          status: 'done',
+          result: {
+            ok: false,
+            error: 'invalid_move',
+            details: '{not-json-at-all',
+          },
+        };
+      },
+      async commit() {},
+    };
+
+    const res = await handleCreateRoom(
+      new Request('http://test/api/room/create', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': 'corrupted-2',
+        },
+        body: JSON.stringify({ mode: '4', host: { handle: '@fufu' } }),
+      }),
+      { ...DEPS_OK(), idempotency: stubCache }
+    );
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe('internal_error');
+  });
+
+  it('error replay (cached internal_error) returns 500, NOT a fresh create', async () => {
+    const stubCache: IdempotencyCache = {
+      async tryReserve(): Promise<ReserveResult> {
+        return {
+          status: 'done',
+          result: {
+            ok: false,
+            error: 'internal_error',
+            details: 'previous attempt failed',
+          },
+        };
+      },
+      async commit() {},
+    };
+
+    const res = await handleCreateRoom(
+      new Request('http://test/api/room/create', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': 'error-replay',
+        },
+        body: JSON.stringify({ mode: '4', host: { handle: '@fufu' } }),
+      }),
+      { ...DEPS_OK(), idempotency: stubCache }
+    );
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: string; details?: string };
+    expect(body.error).toBe('internal_error');
+    expect(body.details).toBe('previous attempt failed');
   });
 });

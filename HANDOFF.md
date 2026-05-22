@@ -1,6 +1,6 @@
-# Handoff — guandan-online v1.0 (backend + all UI + Easy/Medium AI + ROOM-2 rule axes + production deploy + GitHub auto-deploy unblocked + TRIBUTE-2 sweep + Bobgy WASM Phase A)
+# Handoff — guandan-online v1.0 (backend + all UI + Easy/Medium AI + ROOM-2 rule axes + production deploy + GitHub auto-deploy unblocked + TRIBUTE-2 sweep + Bobgy WASM Phase A + UI-7 CSS rotate + Vercel route signature fix)
 
-**Date**: 2026-05-21 (Bobgy WASM Phase A delivery — decomposer wired into Medium tier; TRIBUTE-2 6P/8P sweep tribute end-to-end + GitHub auto-deploy unblocked earlier same day)
+**Date**: 2026-05-21 (Vercel route signature fix unblocking all 9 API routes from 504 timeout; UI-7 CSS rotate replacing the rotate-prompt as primary mobile UX; Landing autofocus polish so rotate is visible on first paint. Bobgy WASM Phase A + TRIBUTE-2 6P/8P sweep + GitHub auto-deploy unblock all shipped earlier same day.)
 **Status**: backend feature-complete + **all UI tracks shipped (UI-1/2/3/4/5/6)** + bot dispatch wired in the move handler + **Easy + Medium AI tiers (LLM Hard tier deleted 2026-05-19)** + host-controlled bot fill at game-start + TRIBUTE-1 part D auto-tribute realtime wiring + TRIBUTE-1 part E manual tribute commands + **ROOM-2 all 7 boolean rule axes plumbed through** (`strictA` / `must1` / `manualTribute` / `wildcardHeart` / `lastCallDeclare` / `steelPlate` / `triPair` / `straightFlushAboveBomb5`) + **production deploy live via BOTH prebuilt (`vercel deploy --prebuilt --prod`) AND GitHub auto-deploy** (commit `edeb6c7` migrated 275 relative TS imports to `.js` suffixes + added root tsconfig compilerOptions so Vercel's per-function tsc check accepts the codebase under `nodenext` moduleResolution); SSO-gated until `gdo.ax0x.ai` DNS resolves. 9 HTTP/SSE routes plus the complete React 19 game surface — lobby flow (Landing / CreateRoom / Waiting), GameTable4P + shared GameTableMP for 6P/8P, TributeModal (4 substates), RoundEnd / ALevelFinal / Victory, and two AI tiers (Easy rule-based + 30% noise, Medium rule-based + partner cooperation). All 7 boolean rule axes plumbed through `POST /api/room/create` → `ModeRules` (ROOM-2, 2026-05-19); v1 engine branches on `strictA` + `manualTribute`, the other 5 are persisted display-only for future engine consumption. The session lifecycle is fully event-driven end-to-end: `room_joined` / `room_left` from lobby, `deal` from game-start, `move_played` / `move_passed` / `trick_won` / `round_end` / `game_end` / `tribute_pending` / `tribute_resolved` / next-round `deal` from gameplay — all flowing through the single publishEvent gateway with per-recipient log keys and a contiguous version namespace across the lobby → game boundary so a single SSE `Last-Event-ID` resumes cleanly across phase transitions. After a human's move applies, an in-handler synchronous bot run-loop (`lib/ai/runBots.ts`) computes + publishes bot turns until landing on a human or round-end. `lib/realtime/handleMove.ts` dispatches `tribute_select` + `anti_tribute` commands through `lib/game/tributeFlow.ts` pure transitions; auto-mode at round-start is unchanged (`pendingTribute` setting is a future phase). Tests **956/956** · TS strict clean · `npm run build` green (42 modules → 242kB JS / 42kB CSS gzip 74kB + 8.5kB) · grep-no-leak gate green. Vercel project `panpanmao/guandan-online` linked (separate from sibling scorer `guandan-calc`); Upstash Redis provisioned via Marketplace integration as an **independent instance** (no shared key space with sibling). `ADMIN_TOKEN` env var set on Production. First production deploy live (`dpl_Fjt8FhpeNrQ4cppPZdwZRneH3AZq`, aliases routed: `guandan-online-panpanmao.vercel.app` + `guandan-online-henna.vercel.app` + `guandan-online-xingfanxia-panpanmao.vercel.app`) — accessible behind team SSO (`ssoProtection.deploymentType: "all_except_custom_domains"`). The end-to-end integration test (`tests/integration/full-game-flow.test.ts`) walks create → join × 3 → start → SSE → play → pass. Remaining substantive work: **`gdo.ax0x.ai` DNS records (TXT + CNAME — see below)** to expose the deploy publicly, manual-tribute round-start wiring polish (dispatcher accepts commands; `dealNextRound` honors the rule but UI smoke not yet captured on hardware), Bobgy WASM port to bring Hard tier back via deeper search depth (separate 7-10 day ticket). AUTH-2 sibling KV migration is **cancelled** (per-app independent Upstash; no shared key space).
 **Repo**: https://github.com/xingfanxia/guandan-online
 **Vercel project**: `panpanmao/guandan-online` (linked 2026-05-18; deploy pending)
@@ -356,6 +356,66 @@ Phase A executed end-to-end in a single autonomous /goal loop following the prio
 4. `useOverallValueEstimator=true` (Bobgy's default in our wrapper) returns floats like `minCost: -1.05` for bomb-heavy hands — initial test assertion `toBeGreaterThan(0)` was wrong; relaxed to `typeof === 'number'`.
 
 **Verification** — `npm test` 1016/1016 (987 → 1016) · `npm run typecheck` clean · `npm run build` clean (244kB JS / 42kB CSS gzip 74kB + 8.5kB — no client-side bundle bump because WASM is server-only) · `npm run security:no-leak` green. GitHub auto-deploy `dpl_*p5ebx6y5z` completed Ready in 17s. Visual smoke (`npm run dev`) deferred to a manual pass — not blocking, but the Medium bot should now produce visibly stronger card choices in browser play. **Phase B** (lookahead policy + Hard tier revival + UI chip) remains a separate future session — see `docs/plan/bobgy/PHASE-A.md` §10.
+
+### 2026-05-21 — Vercel route fix + UI-7 CSS rotate + Landing autofocus polish (commits `cf347e8`, `2cc6fce`, `0093e20`)
+
+**Why a fresh session minutes after Phase A shipped**: AX pointed out a screenshot showing the production iPhone displaying the "请横屏游戏" rotate-prompt overlay — questioned why we weren't using CSS rotate. Re-read `docs/research/mobile-landscape-ux.md` and discovered a § Update 2026-05-16 section at the bottom that overrode the original § 1.2 conclusion. Implementation had been written against the obsolete § 1.2; the Update was never reflected in code. Same session also surfaced a P0 production bug (every API route hanging 300s) — they're documented together because they shipped in the same session.
+
+**P0 — commit `cf347e8` fix(api)**: production POST /api/room/create returning 504 Vercel Runtime Timeout 300s on AX's create-room payload `{mode:"4", host:{handle:"@axax"}, bots:[3× easy]}`. Root cause from prod logs:
+
+```
+WARN: default export returned a Response.
+      The default-export signature is (req, res) => void — returns are ignored.
+      You likely meant the Web fetch-style API.
+Vercel Runtime Timeout Error: Task timed out after 300 seconds
+```
+
+All 9 `api/*.ts` routes used `export default async function handler(req: Request): Promise<Response>`. Vercel runtime treats default exports as Express-style `(req, res) => void` and silently ignores returned `Promise<Response>`. Cron also broke separately on `request.headers.get is not a function` (default-export fallback passes Node IncomingMessage, not Web Request) — same root cause.
+
+Fix: migrated all 9 routes to named HTTP method exports per Vercel docs.
+
+| Route | Method |
+|---|---|
+| `api/health.ts` | `GET` |
+| `api/room/[code].ts` | `GET` |
+| `api/sse/[roomId].ts` | `GET` (preserved `export const config = { maxDuration: 300 }`) |
+| `api/cron/cleanup-rooms.ts` | `GET` |
+| `api/room/create.ts` | `POST` |
+| `api/room/[code]/{join,leave,start,move}.ts` | `POST` |
+
+All `lib/api/*.ts` handler functions unchanged — fix purely at the route wrapper boundary. Verified via `vercel dev` locally: POST /api/room/create with AX's payload returns 201 in 519ms (was hanging 300s). GitHub auto-deploy `dpl_7fqaoqai0` Ready in 16s.
+
+**Future-routes-must-use-named-exports** — this is now a hard rule. Anyone writing a new `api/*.ts` route MUST use `export async function POST(request)` / `GET(request)` / etc. `export default` is the trap.
+
+**P1 — commit `2cc6fce` feat(ui)**: UI-7 CSS rotate for forced landscape on portrait mobile.
+
+Source-of-truth alignment: `docs/research/mobile-landscape-ux.md` § Update 2026-05-16 was the actual decision. It overrode § 1.2's "CSS rotate is a trap" conclusion based on:
+- Modern iOS Safari 16+ and Chrome 90+ correctly translate pointer events through CSS transform — the original "touch coordinate mismatch" concern was outdated.
+- Viewport-units breakage is mitigable with `--vp-h` CSS var pattern (`100dvh` default at `:root`, `100%` override inside rotate wrapper).
+- Virtual keyboard issue mitigated by exiting rotate mode on text-input focus.
+- Production proof: Majsoul (雀魂) ships this on Cocos Creator canvas; 4399 H5 games + WeChat mini-games on DOM.
+
+Implementation:
+- `src/components/OrientationLock.tsx` rewritten. When `state === 'portrait-mobile'` AND no text input focused → wrap children in `<div className="orientation-rotate-active">`. When text input focused → wrap in `<div className="orientation-rotate-bypass">` (no rotate, input stays mounted — unmounting closes the iOS keyboard immediately).
+- `src/styles/tokens.css` adds `:root { --vp-h: 100dvh }`. `.orientation-rotate-active` (in `components.css`) overrides to `--vp-h: 100%`. Wrapper geometry: `position: fixed; inset: 50% auto auto 50%; width: 100dvh; height: 100dvw; transform: translate(-50%,-50%) rotate(90deg)`.
+- The 6 existing `100dvh` declarations in `multi-table.css` / `screens.css` / `round-end.css` migrated to `var(--vp-h, 100dvh)` so children size to the rotated wrapper (390px on iPhone 14 Pro portrait) instead of the un-rotated viewport (844px, would overflow).
+- `RotatePrompt.tsx` retained for emergency-only fallback (not wired to OrientationLock currently).
+
+Visual verification via chrome-devtools-mcp on emulated iPhone 14 Pro portrait (390×844): after dismissing the auto-modal, `.orientation-rotate-active` computed style = `width: 844px / height: 390px / transform: matrix(0,1,-1,0,-422,-195) / --vp-h: 100%`. Screenshot saved to `docs/reports/ui7/portrait-iphone-rotated.png`.
+
+**P2 — commit `0093e20` fix(ui)**: Landing autofocus polish. The sign-in modal auto-opens on mount when no @handle stored. Its input had `autoFocus`, immediately triggering OrientationLock's input-bypass and **defeating the CSS rotate on first portrait paint** — user saw portrait UI with modal, never the intended rotated landscape.
+
+Differential fix: `signInOpen` state went from `boolean` to `false | 'auto' | 'manual'`. Auto-open useEffect sets 'auto' (no autofocus → rotate stays visible). Header sign-in button / blocked-CTA click handlers set 'manual' (autofocus on → typing immediate). `SignInModal` accepts `autoFocusInput` prop and applies `autoFocus` conditionally.
+
+**Verification** (across all 3 commits): `npm test` 1022/1022 (1016 → 1022: +4 OrientationLock + +2 Landing) · `npm run typecheck` clean · `npm run build` clean (244kB JS / 42kB CSS gzip 74kB + 8.5kB) · `npm run security:no-leak` green · `vercel dev` curl returns 201 for create-room · chrome-devtools-mcp confirms `.orientation-rotate-active` applied with correct transform/dimensions on iPhone 14 Pro portrait emulation.
+
+**Files touched this session**:
+
+| Group | Files |
+|---|---|
+| Route signature fix | 9 routes: `api/{health,cron/cleanup-rooms}.ts`, `api/room/[code].ts`, `api/room/[code]/{join,leave,start,move}.ts`, `api/room/create.ts`, `api/sse/[roomId].ts`. All handler bodies preserved verbatim — only the export signature changed. |
+| UI-7 CSS rotate | `src/components/OrientationLock.tsx` (rewritten with bypass logic), `src/styles/tokens.css` (+--vp-h var), `src/styles/components.css` (+.orientation-rotate-active CSS), `src/styles/{multi-table,screens,round-end}.css` (6 × `100dvh` → `var(--vp-h, 100dvh)`), `tests/components/OrientationLock.test.tsx` (rewritten — 4 new tests). |
+| Autofocus polish | `src/screens/Landing.tsx` (signInOpen discriminated union + manual/auto open paths), `tests/screens/Landing.test.tsx` (+2 tests). |
 
 ### 2026-05-19 — Backlog A-D executed (LLM deletion + AUTH-2 teardown + UI 3→2 + doc sync)
 

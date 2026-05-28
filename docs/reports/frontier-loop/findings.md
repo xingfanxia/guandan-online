@@ -27,7 +27,8 @@ Baseline (2026-05-28): `npm test` 1138 passed | 1 skipped · typecheck clean · 
 | id | axis | severity | status | anchor | evidence |
 |---|---|---|---|---|---|
 | F1 | product | HIGH | FIXED_PENDING_CONFIRMATION | `tests/api/move.test.ts:1343` it.skip | lastActiveAt read-modify-write race resurrects departed member → fixed via roomStore side-key (touchActivity/getActivity); cron reads max; skipped test unskipped + 6 new tests |
-| F2 | evaluator+product | HIGH | OPEN | brief "AI quality matters" | no benchmark proves Medium > Easy > random; tier strength unmeasured (T5 gap) |
+| F2 | evaluator+product | HIGH | FIXED_PENDING_CONFIRMATION | brief "AI quality matters" | `benchmarks/ai-strength/` + `tests/ai/strength.test.ts` prove monotonic ladder over 120 seeded games: medium 62.5% > easy, easy 79.2% > random, medium 94.2% > random |
+| F13 | product | HIGH | OPEN | discovered by F2 benchmark | move generator (enumerate/easy/medium) and `playCards` disagree on wildcard interpretation of an ambiguous full house → generator labels `7,7,7+5,5` (fullHouse-7, beats target) but `playCards` re-`analyzeHand`s the same cards greedily as `5,5,5+7,7` (fullHouse-5) and rejects. In prod `runBots` catches+bails → bot turn stalls. Root cause: `analyzeHand` picks a non-maximal wildcard reading |
 | F3 | evaluator | MED | OPEN | `vitest.config.ts:26` | coverage gate is `lib/**` only — `src/**` (React screens/components) ungated → silent UI regressions |
 | F4 | evaluator | MED | OPEN | `playwright.config.ts` mobile projects | mobile e2e scoped to orientation specs; modal flows (sign-in/create/tribute) untested at mobile sizing |
 | F5 | product | MED | OPEN | EXCHANGE-1 | optional 换牌 rule unimplemented |

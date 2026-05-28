@@ -1,0 +1,131 @@
+/* Player-assistance UI (AI-3): suggestion hint banner, wildcard-substitution
+   dialog, endgame clearing-line hint. Tokens from tokens.css; the wildcard
+   dialog reuses .modal / .modal-backdrop from screens.css. */
+
+/* ─── SuggestionHint ──────────────────────────────────────────────────── */
+
+.suggestion-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--accent-tint);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--r-2);
+  font-size: var(--t-sm);
+}
+.suggestion-hint__label {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--ink-3);
+}
+.suggestion-hint__value {
+  font-weight: 600;
+  color: var(--accent);
+}
+.suggestion-hint__cards {
+  display: inline-flex;
+  gap: 4px;
+}
+.suggestion-hint__chip {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--ink-2);
+}
+
+/* ─── WildcardSubDialog (overlays .modal) ─────────────────────────────── */
+
+.wildcard-sub__cards {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.wildcard-sub__chip {
+  font-family: var(--font-mono);
+  font-size: var(--t-sm);
+  padding: 4px 8px;
+  border-radius: var(--r-1);
+  background: var(--surface-2);
+  color: var(--ink-1);
+}
+.wildcard-sub__options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.wildcard-sub__option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r-2);
+  background: var(--surface-0);
+  cursor: pointer;
+  text-align: left;
+  font-size: var(--t-sm);
+}
+.wildcard-sub__option:hover {
+  border-color: var(--rule-3);
+  background: var(--surface-2);
+}
+.wildcard-sub__option--active {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+.wildcard-sub__option-label {
+  flex: 1;
+}
+.wildcard-sub__badge {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--gold);
+  border: 1px solid var(--gold);
+  border-radius: var(--r-1);
+  padding: 1px 6px;
+}
+
+/* ─── EndgameAssist ───────────────────────────────────────────────────── */
+
+.endgame-assist {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--surface-1);
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r-2);
+  font-size: var(--t-sm);
+}
+.endgame-assist__label {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--gold);
+}
+.endgame-assist__steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.endgame-assist__step {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  font-variant-numeric: tabular-nums;
+  padding: 2px 8px;
+  background: var(--surface-2);
+  border-radius: var(--r-1);
+  color: var(--ink-1);
+}
+.endgame-assist__empty,
+.endgame-assist__note {
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+}

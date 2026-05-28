@@ -14,6 +14,7 @@ import { runMatchup, type MatchupResult } from '../../benchmarks/ai-strength/har
 import {
   easyStrategy,
   mediumStrategy,
+  hardStrategy,
   randomStrategy,
 } from '../../benchmarks/ai-strength/strategies.js';
 import { preloadDecomposer } from '@lib/ai/decomposer/index.js';
@@ -49,4 +50,29 @@ describe('AI strength ladder (F2)', () => {
     console.log(fmt('medium vs random', r));
     expect(r.winRateA).toBeGreaterThan(0.6);
   });
+
+  // F12 HONESTY GATE. The Bobgy Phase-B plan calls a decisive Hard>Medium
+  // lookahead "research-grade work" needing its own design phase. The
+  // heuristic Hard tier (decomposition-aware following + deny-the-finisher
+  // aggression) is decomposer-CLASS — it dominates random like Medium does,
+  // but it is NOT yet measurably stronger than Medium (benchmarks ~50%).
+  // We assert the TRUE state, not a false "Hard is stronger" claim: Hard is
+  // at least Medium-class (not materially weaker) and crushes random. Exposing
+  // a "Hard" difficulty chip is deliberately withheld until the lookahead
+  // policy actually moves this number — shipping a chip at 50% would be the
+  // fake-difficulty AI-slop this very benchmark exists to prevent.
+  // Hard decomposes per candidate beat (1-ply structural lookahead), so these
+  // matchups are decomposer-heavy → a generous timeout vs the 5s default.
+  it('hard is at least medium-class (not materially weaker)', () => {
+    const r = runMatchup(hardStrategy, mediumStrategy, SEEDS);
+    console.log(fmt('hard vs medium', r));
+    expect(r.games).toBeGreaterThan(0);
+    expect(r.winRateA).toBeGreaterThanOrEqual(0.45);
+  }, 30_000);
+
+  it('hard dominates random by a wide margin (decomposer-class)', () => {
+    const r = runMatchup(hardStrategy, randomStrategy, SEEDS);
+    console.log(fmt('hard vs random', r));
+    expect(r.winRateA).toBeGreaterThan(0.6);
+  }, 30_000);
 });

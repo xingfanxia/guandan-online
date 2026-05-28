@@ -16,8 +16,9 @@ import type { Pattern } from '../game/patterns.js';
 import type { PlayerId } from '../game/round.js';
 import { chooseEasyMove } from './easy.js';
 import { chooseMediumMove } from './medium.js';
+import { chooseHardMove } from './hard.js';
 
-export type BotTier = 'easy' | 'medium';
+export type BotTier = 'easy' | 'medium' | 'hard';
 
 export type BotDecision =
   | { kind: 'play'; pattern: Pattern }
@@ -48,6 +49,17 @@ export function computeBotMove(ctx: BotContext): BotDecision {
       return chooseEasyMove(ctx.hand, ctx.target, ctx.levelRank, ctx.rng);
     case 'medium':
       return chooseMediumMove(ctx.hand, {
+        target: ctx.target,
+        lastPlayer: ctx.lastPlayer,
+        me: ctx.me,
+        partner: ctx.partner,
+        partnerHandCount: ctx.partnerHandCount,
+        opponentHandCounts: ctx.opponentHandCounts,
+        levelRank: ctx.levelRank,
+        myHandCount: ctx.hand.length,
+      });
+    case 'hard':
+      return chooseHardMove(ctx.hand, {
         target: ctx.target,
         lastPlayer: ctx.lastPlayer,
         me: ctx.me,

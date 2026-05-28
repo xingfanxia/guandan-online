@@ -27,7 +27,7 @@ export interface SeatView {
 
 export type Strategy = (view: SeatView) => BotDecision;
 
-function toCtx(view: SeatView, tier: 'easy' | 'medium'): BotContext {
+function toCtx(view: SeatView, tier: 'easy' | 'medium' | 'hard'): BotContext {
   return {
     tier,
     hand: view.hand,
@@ -46,6 +46,8 @@ export const easyStrategy: Strategy = (view) => computeBotMove(toCtx(view, 'easy
 
 export const mediumStrategy: Strategy = (view) =>
   computeBotMove(toCtx(view, 'medium'));
+
+export const hardStrategy: Strategy = (view) => computeBotMove(toCtx(view, 'hard'));
 
 /**
  * Uniform-random legal play. When leading, plays a random legal pattern
@@ -68,5 +70,6 @@ export const randomStrategy: Strategy = (view) => {
 export const STRATEGIES: Record<string, Strategy> = {
   easy: easyStrategy,
   medium: mediumStrategy,
+  hard: hardStrategy,
   random: randomStrategy,
 };

@@ -78,21 +78,10 @@ export function playRound(
     }
     const me = round.currentTrick.currentPlayer;
     const decision = strategies[me]!(buildSeatView(round, me, rng));
-    if (decision.kind === 'pass') {
-      round = pass(round);
-      continue;
-    }
-    try {
-      round = playCards(round, decision.pattern.cards);
-    } catch {
-      // A proposed play can be rejected when the move generator and
-      // playCards disagree on wildcard interpretation (finding F13). When
-      // following, fall back to a pass — the realistic outcome of a play
-      // that won't apply. (Leading never throws here: canBeat only runs
-      // against a non-null target.) This affects all strategies equally,
-      // so it does not bias the matchup.
-      round = pass(round);
-    }
+    round =
+      decision.kind === 'play'
+        ? playCards(round, decision.pattern.cards)
+        : pass(round);
   }
   return round;
 }

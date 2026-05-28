@@ -196,6 +196,45 @@ describe('analyzeHand — fullHouse', () => {
     expect(p).toMatchObject({ kind: 'fullHouse', rank: 'K', length: 5 });
   });
 
+  it('wildcard split picks the MAXIMAL triple rank (regression F13)', () => {
+    // 7♣ + two heart-2 wildcards + 5♦ + 5♣ at level 2. These cards admit two
+    // readings: 7,7,7 + 5,5 (rank 7) and 5,5,5 + 7,7 (rank 5). The documented
+    // "defaults to largest hand" convention requires the maximal triple rank.
+    const p = analyzeHand(
+      [
+        c('clubs', '7', 2),
+        c('hearts', '2', 1), c('hearts', '2', 2),
+        c('diamonds', '5', 2), c('clubs', '5', 1),
+      ],
+      '2'
+    );
+    expect(p).toMatchObject({ kind: 'fullHouse', rank: '7', length: 5 });
+  });
+
+  it('maximal wildcard fullHouse beats a lower natural fullHouse (F13)', () => {
+    // The generator/playCards round-trip: a wildcard fullHouse must re-analyze
+    // to the same (maximal) pattern it was played as, so it still beats the
+    // target it was chosen to beat.
+    const target = analyzeHand(
+      [
+        c('spades', '6'), c('spades', '6', 2), c('hearts', '6', 2),
+        c('spades', 'Q'), c('clubs', 'Q', 2),
+      ],
+      '2'
+    )!;
+    const play = analyzeHand(
+      [
+        c('clubs', '7', 2),
+        c('hearts', '2', 1), c('hearts', '2', 2),
+        c('diamonds', '5', 2), c('clubs', '5', 1),
+      ],
+      '2'
+    )!;
+    expect(target).toMatchObject({ kind: 'fullHouse', rank: '6' });
+    expect(play).toMatchObject({ kind: 'fullHouse', rank: '7' });
+    expect(canBeat(play, target, '2')).toBe(true);
+  });
+
   it('pair+pair (4 cards 2 of each rank) → null', () => {
     expect(
       analyzeHand(

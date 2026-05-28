@@ -255,17 +255,28 @@ function tryFullHouse(
     const [r1, r2] = ranks as [NaturalRank, NaturalRank];
     const c1 = counts.get(r1)!;
     const c2 = counts.get(r2)!;
-    // Try every wildcard split (a to r1, w-a to r2).
+    // Try every wildcard split (a to r1, w-a to r2). When more than one split
+    // is valid (e.g. 1×7 + 2×5 + 2 wildcards can be 7,7,7+5,5 OR 5,5,5+7,7),
+    // pick the MAXIMAL triple rank per the "defaults to largest hand"
+    // convention. Returning the first valid split instead made the move
+    // generator and playCards disagree on wildcard full houses (finding F13).
+    let best: NaturalRank | null = null;
     for (let a = 0; a <= wildcards.length; a++) {
       const b = wildcards.length - a;
       const f1 = c1 + a;
       const f2 = c2 + b;
-      const high = Math.max(f1, f2);
-      const low = Math.min(f1, f2);
-      if (high === 3 && low === 2) {
+      if (Math.max(f1, f2) === 3 && Math.min(f1, f2) === 2) {
         const tripleRank = f1 === 3 ? r1 : r2;
-        return { kind: 'fullHouse', rank: tripleRank, length: 5, cards };
+        if (
+          best === null ||
+          powerRank(tripleRank, levelRank) > powerRank(best, levelRank)
+        ) {
+          best = tripleRank;
+        }
       }
+    }
+    if (best !== null) {
+      return { kind: 'fullHouse', rank: best, length: 5, cards };
     }
     return null;
   }

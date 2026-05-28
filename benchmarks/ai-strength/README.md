@@ -42,9 +42,10 @@ Monotonic: **medium > easy > random**. The test asserts the ordering (with
 margin), not the exact figures, so it stays green across engine tweaks while
 still catching a tier collapse.
 
-## Known limitation (finding F13)
+## Doubles as a consistency guard
 
-The move generator and `playCards` can disagree on how to interpret wildcard
-(heart-of-level-rank) cards in an ambiguous full house, so a proposed play is
-occasionally rejected. The harness falls back to a pass in that case (affects
-all strategies equally). Tracked in `docs/reports/frontier-loop/findings.md`.
+The harness applies each proposed play directly through `playCards` with no
+fallback, so any disagreement between the move generator and `playCards` (e.g.
+the wildcard full-house interpretation bug F13, now fixed) surfaces as a crash.
+Running this benchmark therefore also guards generator↔validator agreement
+across thousands of real game states.

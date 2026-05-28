@@ -54,6 +54,23 @@ export default defineConfig({
       use: { ...devices['iPhone 14 Pro'] },
       testMatch: /orientation\.spec\.ts/,
     },
+    {
+      // Modal flows (sign-in/join/create) at mobile sizing — finding F4
+      // (modals were only ever exercised at desktop sizing). Uses the
+      // chromium engine with an iPhone-14-Pro-landscape viewport + touch so
+      // CI runs it on the already-installed chromium (iPhone WebKit devices
+      // aren't installed in CI). Landscape dims skip the OrientationLock CSS
+      // rotate, keeping modal + input interactions stable.
+      name: 'mobile-modals',
+      use: {
+        browserName: 'chromium',
+        viewport: { width: 844, height: 390 },
+        isMobile: true,
+        hasTouch: true,
+        deviceScaleFactor: 3,
+      },
+      testMatch: /mobile-modals\.spec\.ts/,
+    },
   ],
   webServer: {
     command: 'npm run dev',

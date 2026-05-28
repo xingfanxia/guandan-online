@@ -31,14 +31,14 @@ Baseline (2026-05-28): `npm test` 1138 passed | 1 skipped · typecheck clean · 
 | F13 | product | HIGH | FIXED_PENDING_CONFIRMATION | discovered by F2 benchmark | `tryFullHouse` 2-rank branch returned the FIRST valid wildcard split instead of the maximal triple rank, so the generator (maximal) and `playCards` (re-analyze) disagreed on ambiguous wildcard full houses → bot turn stalls in prod. Fixed `lib/game/patterns.ts` to pick max triple rank per the "defaults to largest" convention; 2 new tests; benchmark band-aid removed (now runs clean at 400 games/matchup) |
 | F3 | evaluator | MED | FIXED_PENDING_CONFIRMATION | `vitest.config.ts:26` | coverage gate now per-path: lib/** held at 80%, src/** ratchet-gated at 75/65/68/73 (just below its 77.6% floor) so it can no longer silently regress. +App.tsx +RotatePrompt tests lifted the floor from 73.6%. Raise toward 80% as GameTable reducer coverage grows |
 | F4 | evaluator | MED | FIXED_PENDING_CONFIRMATION | `playwright.config.ts` mobile projects | new `mobile-modals` project (chromium engine, iPhone-landscape viewport+touch) + `tests/e2e/mobile-modals.spec.ts` (4 green) cover sign-in / join / create modals at mobile sizing. NOTE: CI auto-run of this project is a 1-line `ci.yml` change blocked by the workflow-injection security hook — needs manual approval to wire (`--project=chromium-desktop --project=mobile-modals`) |
-| F5 | product | MED | OPEN | EXCHANGE-1 | optional 换牌 rule unimplemented |
-| F6 | product | MED | OPEN | SEC-2 | IP throttle + same-room IP warning unimplemented |
-| F7 | product | MED | OPEN | SEC-3 | report button + admin dashboard unimplemented |
-| F8 | product | LOW | OPEN | SEC-4 | Vercel BotID unimplemented (logic testable; deploy-gated acceptance) |
-| F9 | product | MED | OPEN | AI-3 | player assistance (auto-sort/suggest/wildcard) unimplemented |
-| F10 | product | MED | OPEN | AI-4 | mid-game DC→bot takeover unimplemented |
-| F11 | observability | LOW | OPEN | DEPLOY-2 | latency beacons + p50/p95 unimplemented (traffic-gated acceptance) |
-| F12 | product | LOW | OPEN | Bobgy Phase B | Hard tier lookahead + UI chip; materially harder, separate session per `docs/plan/bobgy/PHASE-A.md §10` |
+| F5 | product | MED | FIXED_PENDING_CONFIRMATION | EXCHANGE-1 | 换牌: exchange.ts/exchangeFlow.ts vote→select→swap state machine + 2 commands + 4 events (exchange_completed deal-filtered) + dealNextRound trigger + dispatch + ExchangeVote/SelectModal wired into both tables. Off-by-default room rule. Manual-tribute+exchange interleave deferred (documented edge) |
+| F6 | product | MED | FIXED_PENDING_CONFIRMATION | SEC-2 | ipThrottle (5/IP/24h) + ipHash (salted, raw IP never stored) + findSharedIpGroups host-gated in getRoom + createHandle route + HostIPWarning wired into Waiting |
+| F7 | product | MED | FIXED_PENDING_CONFIRMATION | SEC-3 | profileStore + reportStore (1/pair/game) + api/report + admin reports/ban/reset (ADMIN_TOKEN fail-closed) + AdminDashboard at #/admin + ReportButton per opponent |
+| F8 | product | LOW | FIXED_PENDING_CONFIRMATION | SEC-4 | botId verdict reader + botGate (403/pass, fail-open unknown) wired into create/move/join. Edge activation (BotID SDK + challenge) deploy-gated |
+| F9 | product | MED | FIXED_PENDING_CONFIRMATION | AI-3 | assist sort/suggest libs + SortButton/SuggestionHint/WildcardSubDialog/EndgameAssist wired into both tables |
+| F10 | product | MED | FIXED_PENDING_CONFIRMATION | AI-4 | dcDetection + botTakeover + reclaim + seenStore (SSE-heartbeat liveness, race-free) + dcCheck cron + PlayerStatusBadge. Cron hydrates lastSeenAt so live players aren't taken over (regression-tested) |
+| F11 | observability | LOW | FIXED_PENDING_CONFIRMATION | DEPLOY-2 | latency beacon (wired around /move) + ingest route + nearest-rank p50/p95/p99 per region + AdminDashboard panel. Real-traffic acceptance deploy-gated |
+| F12 | product | LOW | FIXED_PENDING_CONFIRMATION (scoped) | Bobgy Phase B | Hard tier scaffolding (decomposition-aware following + deny-the-finisher) + dispatch route + benchmark. BENCHMARK FINDING: heuristic Hard ≈ Medium (~50%), so the Hard UI chip is deliberately withheld (anti-slop) — decisive Hard>Medium is the research-grade lookahead the plan defers. Hard dominates random 89% |
 
 ## Working order (leverage × verifiability)
 

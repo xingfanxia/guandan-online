@@ -20,6 +20,19 @@ export interface RoomMember {
   status: PlayerStatus;
   /** Bot difficulty when status === 'bot'; undefined otherwise. */
   difficulty?: 'easy' | 'medium';
+  /**
+   * SEC-2: salted hash of the joining client's IP, set at join time. Used by
+   * the same-room IP-collision check (lib/room/ipWarning.ts). Never exposed
+   * through the public room view — it is a moderation signal, not player data.
+   */
+  ipHash?: string;
+  /**
+   * AI-4: when a human seat is taken over by a bot after a disconnect, the
+   * original human's reclaim credentials are stashed here so a reconnecting
+   * client with the matching joinToken can resume the seat. Absent for
+   * genuine bots (host-added fill) and live humans.
+   */
+  takenOverFrom?: { handle: PlayerHandle; joinToken: string };
 }
 
 export interface RoomState {
@@ -46,6 +59,13 @@ export interface RoomState {
    * version 1.
    */
   eventVersion: number;
+  /**
+   * AI-4: per-player last-seen wall-clock timestamps, bumped on SSE connect
+   * and on each move. The dc-check cron (api/cron/dcCheck.ts) reads this to
+   * find humans who have been silent past the disconnect threshold during an
+   * in-game round. Optional — absent on freshly-created rooms.
+   */
+  lastSeenAt?: Record<PlayerId, number>;
 }
 
 // ─── createRoom ───────────────────────────────────────────────────────────────

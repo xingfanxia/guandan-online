@@ -31,6 +31,10 @@ export function createMemoryRoomStore(
 ): RoomStore {
   const store = new Map<string, MemoryEntry>();
   const activeCodes = new Set<string>();
+  // Activity side-store: keyed by code, holds the last-active timestamp
+  // independently of the room hash. See touchActivity for why this is
+  // separate (R-I1 race fix).
+  const activity = new Map<string, { value: number; expiresAt: number }>();
 
   function alive(entry: MemoryEntry | undefined): entry is MemoryEntry {
     if (!entry) return false;
@@ -69,9 +73,25 @@ export function createMemoryRoomStore(
     async delete(code) {
       store.delete(code);
       activeCodes.delete(code);
+      activity.delete(code);
     },
     async listCodes() {
       return [...activeCodes];
+    },
+    async touchActivity(code, timestamp, ttlSeconds) {
+      activity.set(code, {
+        value: timestamp,
+        expiresAt: clock() + ttlSeconds * 1000,
+      });
+    },
+    async getActivity(code) {
+      const entry = activity.get(code);
+      if (!entry) return null;
+      if (entry.expiresAt <= clock()) {
+        activity.delete(code);
+        return null;
+      }
+      return entry.value;
     },
   };
 }
@@ -99,6 +119,21 @@ export interface RoomStore {
    * MUST handle a null get() by calling delete() to reconcile the index.
    */
   listCodes(): Promise<string[]>;
+  /**
+   * R-I1 race fix: bump the room's last-active timestamp on a SEPARATE key,
+   * never touching the room hash. The move handler calls this on every move
+   * so the cron sweep doesn't GC a long-but-quiet round. Writing to a side
+   * key (instead of read-modify-write on the room hash) means a concurrent
+   * /leave's mutation can never be clobbered by an activity bump. The cron
+   * staleness check reads max(room.lastActiveAt, getActivity(code)).
+   */
+  touchActivity(
+    code: string,
+    timestamp: number,
+    ttlSeconds: number
+  ): Promise<void>;
+  /** Read the side-key activity timestamp, or null if unset/expired. */
+  getActivity(code: string): Promise<number | null>;
 }
 
 export interface RoomStoreOptions {
@@ -113,6 +148,7 @@ export function createRoomStore(
   const prefix = options.keyPrefix ?? 'room:';
   const k = (code: string) => `${prefix}${code}`;
   const indexKey = `${prefix}active`;
+  const activeAtKey = (code: string) => `${prefix}active-at:${code}`;
 
   return {
     async get(code) {
@@ -139,10 +175,22 @@ export function createRoomStore(
     async delete(code) {
       await redis.del(k(code));
       await redis.srem(indexKey, code);
+      await redis.del(activeAtKey(code));
     },
 
     async listCodes() {
       return redis.smembers(indexKey);
+    },
+
+    async touchActivity(code, timestamp, ttlSeconds) {
+      await redis.set(activeAtKey(code), JSON.stringify(timestamp), {
+        ex: ttlSeconds,
+      });
+    },
+
+    async getActivity(code) {
+      const v = await redis.get<number>(activeAtKey(code));
+      return typeof v === 'number' ? v : null;
     },
   };
 }

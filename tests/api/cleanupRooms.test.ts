@@ -133,6 +133,30 @@ describe('handleCleanupRooms — staleness pruning', () => {
     expect(await store.get('CCC333')).toBeNull();
   });
 
+  it('R-I1: a stale room hash is kept alive by a fresh activity side key', async () => {
+    const store = createMemoryRoomStore();
+    const NOW = 1_700_000_000_000;
+    // Room hash looks 12h idle, but a move bumped the activity side key 1 min
+    // ago — the room is mid-game and must NOT be GC'd.
+    await store.create(sampleRoom('LIVE01', NOW - 12 * 60 * 60 * 1000), 86_400);
+    await store.touchActivity('LIVE01', NOW - 1 * 60 * 1000, 86_400);
+    // A second room is stale on the hash with NO side-key activity → deleted.
+    await store.create(sampleRoom('DEAD01', NOW - 12 * 60 * 60 * 1000), 86_400);
+
+    const res = await handleCleanupRooms(req({ bearer: ADMIN_TOKEN }), {
+      roomStore: store,
+      adminToken: ADMIN_TOKEN,
+      now: () => NOW,
+      stalenessMs: 4 * 60 * 60 * 1000,
+    });
+    const body = (await res.json()) as CleanupRoomsResponseBody;
+    expect(body.scanned).toBe(2);
+    expect(body.stale).toBe(1); // only DEAD01
+    expect(body.deleted).toBe(1);
+    expect(await store.get('LIVE01')).not.toBeNull();
+    expect(await store.get('DEAD01')).toBeNull();
+  });
+
   it('removes ghost index entries when the room data has TTL-expired', async () => {
     let now = 1_700_000_000_000;
     const store = createMemoryRoomStore(() => now);

@@ -439,18 +439,20 @@ describe('handleMove — rate limit', () => {
   });
 });
 
-// ─── R-I1 regression — handleMove refreshes room.lastActiveAt ────────────────
+// ─── R-I1 regression — handleMove refreshes room activity on a side key ──────
 //
 // Pre-fix, createRoom/joinRoom/leaveRoom/startGame/addBotToRoom all bumped
 // room.lastActiveAt but `move` never did. A long quiet mid-game round (e.g.,
 // 4h+ of deliberate play with no lobby churn) appeared idle to the
 // stale-room cron sweep and was eligible for deletion mid-game.
 //
-// After fix, every successful move re-reads the room and writes back with
-// lastActiveAt=now(), keeping the room's TTL fresh.
+// After fix, every successful move bumps a SEPARATE activity key via
+// touchActivity — never the room hash — so the cron sweep stays fresh
+// (it reads max(room.lastActiveAt, getActivity(code))) without any
+// read-modify-write race against concurrent lifecycle mutations.
 
-describe('handleMove — R-I1: refreshes room.lastActiveAt on successful play', () => {
-  it('bumps lastActiveAt to deps.now() after a successful move', async () => {
+describe('handleMove — R-I1: refreshes room activity on successful play', () => {
+  it('bumps the activity side key to deps.now(), leaving the room hash untouched', async () => {
     const fx = await fixture();
     const round = buildInitialRound();
     await fx.deps.roundStore.put(
@@ -459,8 +461,8 @@ describe('handleMove — R-I1: refreshes room.lastActiveAt on successful play', 
       86_400
     );
 
-    // Manually stale-date the room so we can observe the bump. Use a
-    // deps.now() that returns a moment AFTER the staled timestamp.
+    // Manually stale-date the room hash so we can observe that the bump
+    // writes the side key, not the hash.
     const STALE_TS = 1_000_000_000_000; // arbitrary "old"
     const FRESH_TS = 1_700_000_000_000; // == fx.deps.now()
     const staleRoom = (await fx.deps.roomStore.get(CODE))!;
@@ -483,23 +485,18 @@ describe('handleMove — R-I1: refreshes room.lastActiveAt on successful play', 
     );
     expect(res.status).toBe(200);
 
+    // Side key carries the fresh timestamp; the room hash is unchanged.
+    expect(await fx.deps.roomStore.getActivity(CODE)).toBe(FRESH_TS);
     const after = await fx.deps.roomStore.get(CODE);
-    expect(after?.lastActiveAt).toBe(FRESH_TS);
+    expect(after?.lastActiveAt).toBe(STALE_TS);
   });
 
-  it('does NOT bump lastActiveAt on a failed (stale_version) move', async () => {
+  it('does NOT bump the activity side key on a failed (stale_version) move', async () => {
     const fx = await fixture();
     const round = buildInitialRound();
     await fx.deps.roundStore.put(
       CODE,
       { round, version: 5, updatedAt: 0 },
-      86_400
-    );
-
-    const STALE_TS = 1_000_000_000_000;
-    const initialRoom = (await fx.deps.roomStore.get(CODE))!;
-    await fx.deps.roomStore.put(
-      { ...initialRoom, lastActiveAt: STALE_TS },
       86_400
     );
 
@@ -513,8 +510,8 @@ describe('handleMove — R-I1: refreshes room.lastActiveAt on successful play', 
       fx.deps
     );
 
-    const after = await fx.deps.roomStore.get(CODE);
-    expect(after?.lastActiveAt).toBe(STALE_TS);
+    // No successful move → no activity bump.
+    expect(await fx.deps.roomStore.getActivity(CODE)).toBeNull();
   });
 });
 
@@ -1340,20 +1337,12 @@ describe('handleMove — Round 2 critical: idempotency commits on downstream thr
     }
   });
 
-  it.skip('REPRO (Round 2 IMPORTANT-1, known issue): lastActiveAt overwrites concurrent leave between read and write', async () => {
-    // This test REPRODUCES the read-modify-write race in move.ts's
-    // lastActiveAt bump. Skipped because the fix is deferred (see source
-    // comment at the lastActiveAt block in lib/api/move.ts) — the proper
-    // fix moves lastActiveAt to a separate string key updated atomically.
-    //
-    // Scenario: a member is in the middle of playing a card while a sibling
-    // (concurrent /leave) departs the room. Handler reads room, applies
-    // move, re-reads room — but if the concurrent leave's PUT lands AFTER
-    // this re-read but BEFORE our PUT, our PUT overwrites the leave's
-    // mutation, resurrecting the departed member.
-    //
-    // To unskip: implement the side-key fix; this test should then
-    // demonstrate that lastActiveAt updates without resurrecting members.
+  it('R-I1 fix: activity bump on a side key does not resurrect a concurrently-departed member', async () => {
+    // Regression guard for Round 2 audit IMPORTANT-1. The move handler used
+    // to read-modify-write the room hash to bump lastActiveAt, which could
+    // clobber a concurrent /leave that landed in the same window. The fix
+    // writes activity to a SEPARATE key via touchActivity, so a leave's
+    // mutation to the room hash can never be overwritten by an activity bump.
     const fx = await fixture();
     const round = buildInitialRound();
     await fx.deps.roundStore.put(
@@ -1362,33 +1351,36 @@ describe('handleMove — Round 2 critical: idempotency commits on downstream thr
       86_400
     );
 
-    // Wrap roomStore.put so that the concurrent leave's mutation has
-    // already landed before our re-read AND between re-read and put.
+    // Wrap touchActivity so that — at the exact moment the handler bumps
+    // activity — a concurrent /leave has already dropped the room from 4
+    // members to 3. If the bump touched the room hash, member 4 would
+    // resurrect. With the side-key fix it must not.
     const realRoom = fx.deps.roomStore;
-    let interceptedPut = false;
+    let injected = false;
     const racingRoomStore = {
       get: realRoom.get.bind(realRoom),
-      put: async (state: import('@lib/room/lifecycle').RoomState, ttl: number) => {
-        if (!interceptedPut) {
-          interceptedPut = true;
-          // Simulate: a concurrent /leave landed AFTER the move handler's
-          // re-read (which saw the original 4-member room) but BEFORE our
-          // put() lands. We mutate the underlying store directly to
-          // simulate the leave's lost write.
+      put: realRoom.put.bind(realRoom),
+      create: realRoom.create.bind(realRoom),
+      delete: realRoom.delete.bind(realRoom),
+      listCodes: realRoom.listCodes.bind(realRoom),
+      getActivity: realRoom.getActivity.bind(realRoom),
+      touchActivity: async (code: string, ts: number, ttl: number) => {
+        if (!injected) {
+          injected = true;
           const current = await realRoom.get(CODE);
           if (current && current.members.length === 4) {
-            const newMembers = current.members.slice(0, 3);
             await realRoom.put(
-              { ...current, members: newMembers, eventVersion: current.eventVersion + 1 },
+              {
+                ...current,
+                members: current.members.slice(0, 3),
+                eventVersion: current.eventVersion + 1,
+              },
               ttl
             );
           }
         }
-        return realRoom.put(state, ttl);
+        return realRoom.touchActivity(code, ts, ttl);
       },
-      create: realRoom.create.bind(realRoom),
-      delete: realRoom.delete.bind(realRoom),
-      listCodes: realRoom.listCodes.bind(realRoom),
     };
 
     const p0Hand = round.hands['p0']!;
@@ -1405,10 +1397,13 @@ describe('handleMove — Round 2 critical: idempotency commits on downstream thr
       { ...fx.deps, roomStore: racingRoomStore }
     );
 
-    // POST-FIX expectation (currently fails — that's why it's skipped):
-    // The departed member should NOT be resurrected.
+    // The departed member stays gone — the activity bump did not rewrite
+    // the room hash.
     const finalRoom = await realRoom.get(CODE);
-    expect(finalRoom?.members.length).toBe(3); // Currently 4 (race wins).
+    expect(finalRoom?.members.length).toBe(3);
+    // And the activity side-key carries the fresh timestamp.
+    expect(await realRoom.getActivity(CODE)).toBe(1_700_000_000_000);
+    expect(injected).toBe(true);
   });
 
   it('subsequent call with same moveId gets cached error, NOT pending/409', async () => {

@@ -579,6 +579,8 @@ describe('handleCreateRoom — Round 2 critical: idempotency commits on downstre
       },
       delete: realRoom.delete.bind(realRoom),
       listCodes: realRoom.listCodes.bind(realRoom),
+      touchActivity: realRoom.touchActivity.bind(realRoom),
+      getActivity: realRoom.getActivity.bind(realRoom),
     };
 
     const commits: Array<{ key: string; result: MoveResponse }> = [];
@@ -628,6 +630,8 @@ describe('handleCreateRoom — Round 2 critical: idempotency commits on downstre
       },
       delete: realRoom.delete.bind(realRoom),
       listCodes: realRoom.listCodes.bind(realRoom),
+      touchActivity: realRoom.touchActivity.bind(realRoom),
+      getActivity: realRoom.getActivity.bind(realRoom),
     };
 
     const first = await handleCreateRoom(buildReqWithKey('shared-key'), {

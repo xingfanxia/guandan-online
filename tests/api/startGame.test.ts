@@ -660,6 +660,8 @@ describe('handleStartGame — Round 2 critical: idempotency commits on downstrea
       create: realRoom.create.bind(realRoom),
       delete: realRoom.delete.bind(realRoom),
       listCodes: realRoom.listCodes.bind(realRoom),
+      touchActivity: realRoom.touchActivity.bind(realRoom),
+      getActivity: realRoom.getActivity.bind(realRoom),
     };
 
     const first = await handleStartGame(

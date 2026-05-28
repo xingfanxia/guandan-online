@@ -86,7 +86,16 @@ export async function handleCleanupRooms(
         deleted += 1;
         continue;
       }
-      if (isStale(room, now, stalenessMs)) {
+      // Effective activity is the more recent of the room hash's
+      // lastActiveAt and the side-key bump written by the move handler
+      // (R-I1). The side key carries mid-game move activity that never
+      // rewrites the room hash, so a long quiet round stays alive.
+      const sideActivity = await deps.roomStore.getActivity(code);
+      const effectiveLastActive = Math.max(
+        room.lastActiveAt,
+        sideActivity ?? 0
+      );
+      if (isStale({ ...room, lastActiveAt: effectiveLastActive }, now, stalenessMs)) {
         stale += 1;
         await deps.roomStore.delete(code);
         deleted += 1;

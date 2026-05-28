@@ -416,44 +416,25 @@ export async function handleMove(
       ROUND_TTL_SECONDS
     );
 
-    // R-I1: refresh room.lastActiveAt so the cron cleanup sweep doesn't
-    // garbage-collect a long but quiet mid-game round. Without this, a
-    // multi-hour round (manual play, deliberate slow-thinking, paused tabs)
-    // appears "idle" to the stale-room sweeper since join/leave/start are
-    // the only paths that bump lastActiveAt today.
+    // R-I1: refresh the room's last-active timestamp so the cron cleanup
+    // sweep doesn't garbage-collect a long but quiet mid-game round. Without
+    // this, a multi-hour round (manual play, deliberate slow-thinking, paused
+    // tabs) appears "idle" to the stale-room sweeper since join/leave/start
+    // are the only paths that bump lastActiveAt on the room hash.
     //
-    // Read-modify-write through roomStore.put — we re-read first so we don't
-    // clobber concurrent lifecycle mutations (e.g., a leave that landed
-    // between this handler's initial room read and now).
-    //
-    // KNOWN ISSUE — Round 2 audit IMPORTANT-1 (documented, not yet fixed):
-    // The re-read narrows but does NOT eliminate the race. A concurrent
-    // /leave that lands AFTER this re-read but BEFORE the put() will be
-    // overwritten — the leaving member resurrects with the bumped
-    // lastActiveAt. Production exposure is low (concurrent move+leave from
-    // the same room is rare in practice; the move would also fail authz
-    // against the just-departed member's token), but the failure mode is
-    // real.
-    //
-    // Correct fix (deferred): store lastActiveAt in a separate string key
-    // with TTL (`lastActiveAt:<code>`), updated independently of the room
-    // hash; the cron cleanup reads both `room.lastActiveAt` AND the side
-    // key and takes the more recent. This is a meaningful architecture
-    // change to roomStore + cleanup, so it's tracked as a follow-up.
-    // See tests/api/move.test.ts for the race-reproducing test.
-    const latestRoom = await deps.roomStore.get(code);
-    if (latestRoom !== null) {
-      try {
-        await deps.roomStore.put(
-          { ...latestRoom, lastActiveAt: now() },
-          ROOM_TTL_SECONDS
-        );
-      } catch (err) {
-        // Best-effort bump. Failures here are non-fatal — round state is
-        // already durable. Worst case: the room hits the stale-cleanup
-        // threshold a few hours earlier than necessary.
-        console.error('[move] lastActiveAt refresh failed:', err);
-      }
+    // The bump writes a SEPARATE activity key (touchActivity) rather than
+    // read-modify-writing the room hash. This eliminates the prior race
+    // (Round 2 audit IMPORTANT-1): a concurrent /leave that mutates the room
+    // hash can no longer be clobbered by an activity bump, because the bump
+    // never rewrites the room hash. The cron staleness check reads
+    // max(room.lastActiveAt, getActivity(code)) — see lib/api/cleanupRooms.ts.
+    try {
+      await deps.roomStore.touchActivity(code, now(), ROOM_TTL_SECONDS);
+    } catch (err) {
+      // Best-effort bump. Failures here are non-fatal — round state is
+      // already durable. Worst case: the room hits the stale-cleanup
+      // threshold a few hours earlier than necessary.
+      console.error('[move] activity refresh failed:', err);
     }
 
     // Event fanout. Failures here are logged but never propagated — the

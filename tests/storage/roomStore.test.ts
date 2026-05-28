@@ -142,3 +142,46 @@ describe('createRoomStore — active-codes index (CRON-1)', () => {
     expect(await store.listCodes()).toEqual(['D5E6F7']);
   });
 });
+
+describe('createRoomStore — activity side key (R-I1)', () => {
+  it('getActivity returns null before any touch', async () => {
+    const store = createRoomStore(createFakeRedis());
+    expect(await store.getActivity('A2B3C4')).toBeNull();
+  });
+
+  it('touchActivity then getActivity roundtrips the timestamp', async () => {
+    const store = createRoomStore(createFakeRedis());
+    await store.touchActivity('A2B3C4', 1_700_000_000_000, 3600);
+    expect(await store.getActivity('A2B3C4')).toBe(1_700_000_000_000);
+  });
+
+  it('activity expires with its TTL', async () => {
+    const redis = createFakeRedis();
+    const store = createRoomStore(redis);
+    await store.touchActivity('A2B3C4', 1_700_000_000_000, 60);
+    redis.advanceTime(61_000);
+    expect(await store.getActivity('A2B3C4')).toBeNull();
+  });
+
+  it('delete clears the activity key', async () => {
+    const store = createRoomStore(createFakeRedis());
+    await store.create(sampleRoom('A2B3C4'), 3600);
+    await store.touchActivity('A2B3C4', 1_700_000_000_000, 3600);
+    await store.delete('A2B3C4');
+    expect(await store.getActivity('A2B3C4')).toBeNull();
+  });
+
+  it('memory impl: touch / get / expire / delete', async () => {
+    let clock = 1_700_000_000_000;
+    const store = createMemoryRoomStore(() => clock);
+    expect(await store.getActivity('A2B3C4')).toBeNull();
+    await store.touchActivity('A2B3C4', clock, 60);
+    expect(await store.getActivity('A2B3C4')).toBe(1_700_000_000_000);
+    clock += 61_000;
+    expect(await store.getActivity('A2B3C4')).toBeNull();
+    // re-touch then delete clears it
+    await store.touchActivity('A2B3C4', clock, 60);
+    await store.delete('A2B3C4');
+    expect(await store.getActivity('A2B3C4')).toBeNull();
+  });
+});

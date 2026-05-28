@@ -226,6 +226,95 @@ describe('GameTableMP reducer', () => {
   });
 });
 
+// ─── EXCHANGE-1 reducer (mirrors GameTable4P) ────────────────────────────────
+
+describe('GameTableMP reducer — EXCHANGE-1', () => {
+  it('exchange_vote_required sets vote phase with losers + cardCount', () => {
+    const evt: ServerEvent = {
+      type: 'exchange_vote_required',
+      version: 20,
+      losers: ['p1', 'p3', 'p5'],
+      voteThreshold: 0.5,
+      cardCount: 2,
+    } as unknown as ServerEvent;
+    const result = reduceEvent(EMPTY as Parameters<typeof reduceEvent>[0], evt, '@阿祥');
+    expect(result.exchange).toEqual({ phase: 'vote', losers: ['p1', 'p3', 'p5'], cardCount: 2 });
+  });
+
+  it('exchange_vote_resolved(passed=false) clears the exchange UI', () => {
+    const seeded = {
+      ...EMPTY,
+      exchange: { phase: 'vote' as const, losers: ['p1'], cardCount: 2 },
+    };
+    const evt: ServerEvent = {
+      type: 'exchange_vote_resolved',
+      version: 21,
+      passed: false,
+    } as unknown as ServerEvent;
+    const result = reduceEvent(seeded as Parameters<typeof reduceEvent>[0], evt, '@阿祥');
+    expect(result.exchange).toBeNull();
+  });
+
+  it('exchange_vote_resolved(passed=true) leaves the exchange UI intact (select_required follows)', () => {
+    const seeded = {
+      ...EMPTY,
+      exchange: { phase: 'vote' as const, losers: ['p1'], cardCount: 2 },
+    };
+    const evt: ServerEvent = {
+      type: 'exchange_vote_resolved',
+      version: 22,
+      passed: true,
+      direction: 'cw',
+    } as unknown as ServerEvent;
+    const result = reduceEvent(seeded as Parameters<typeof reduceEvent>[0], evt, '@阿祥');
+    expect(result.exchange).toEqual({ phase: 'vote', losers: ['p1'], cardCount: 2 });
+  });
+
+  it('exchange_select_required sets select phase with cardCount + direction', () => {
+    const evt: ServerEvent = {
+      type: 'exchange_select_required',
+      version: 23,
+      cardCount: 2,
+      direction: 'ccw',
+    } as unknown as ServerEvent;
+    const result = reduceEvent(EMPTY as Parameters<typeof reduceEvent>[0], evt, '@阿祥');
+    expect(result.exchange).toEqual({ phase: 'select', cardCount: 2, direction: 'ccw' });
+  });
+
+  it('exchange_completed replaces my hand, refreshes public counts, clears exchange', () => {
+    const seeded = {
+      ...EMPTY,
+      players: new Map(PLAYERS_6P.map((p) => [p.id, p])),
+      seatOrder: PLAYERS_6P.map((p) => p.id),
+      myHand: [{ suit: 'spades', rank: '3', deck: 1 }] as GameCard[],
+      exchange: { phase: 'select' as const, cardCount: 2, direction: 'cw' as const },
+    };
+    const evt: ServerEvent = {
+      type: 'exchange_completed',
+      version: 24,
+      direction: 'cw',
+      yourHand: ['A-S-1', 'K-H-1'],
+      publicHandCounts: { p0: 27, p1: 28 },
+    } as unknown as ServerEvent;
+    const result = reduceEvent(seeded as Parameters<typeof reduceEvent>[0], evt, '@阿祥');
+    expect(result.exchange).toBeNull();
+    expect(result.myHand).toHaveLength(2);
+    expect(result.players.get('p1')?.handCount).toBe(28);
+    // Untouched players keep their original count.
+    expect(result.players.get('p2')?.handCount).toBe(27);
+  });
+
+  it('unknown event leaves an in-flight exchange untouched', () => {
+    const seeded = {
+      ...EMPTY,
+      exchange: { phase: 'select' as const, cardCount: 2, direction: 'cw' as const },
+    };
+    const evt = { type: 'state_resync', version: 99 } as unknown as ServerEvent;
+    const result = reduceEvent(seeded as Parameters<typeof reduceEvent>[0], evt, '@阿祥');
+    expect(result.exchange).toEqual({ phase: 'select', cardCount: 2, direction: 'cw' });
+  });
+});
+
 // ─── buildTributeModalState — sweep-aware modal routing ──────────────────────
 
 describe('buildTributeModalState — 8P sweep', () => {

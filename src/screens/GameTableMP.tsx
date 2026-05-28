@@ -6,16 +6,35 @@
 // / 9-max conventions) per demos S05 / S06 with the local player at 6 o'clock.
 //
 // Team coloring uses 4-team rings (A/B/C/D) via .oval-seat__ring--<key> classes.
-// Bot players are detected via PlayerSummary.kind === 'bot' and surfaced with
-// a small "BOT 难度" chip on their seat.
+// Bot players are detected via PlayerSummary.status === 'bot' and surfaced with
+// a small "BOT" chip on their seat.
+//
+// Player-assist + EXCHANGE-1 integrations mirror GameTable4P verbatim (理牌 /
+// 提示 / 收官 / wildcard confirm / report / status badges / latency beacon /
+// card-exchange modals); only the seat geometry differs (oval clock positions
+// instead of left/right rivals).
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Hand } from '@/components/Hand';
+import { SortButton } from '@/components/SortButton';
+import { SuggestionHint } from '@/components/SuggestionHint';
+import { WildcardSubDialog, type WildcardCandidate } from '@/components/WildcardSubDialog';
+import { EndgameAssist } from '@/components/EndgameAssist';
+import { ReportButton } from '@/components/ReportButton';
+import { PlayerStatusBadge } from '@/components/PlayerStatusBadge';
 import { openSseClient, type SseClient } from '@/lib/sseClient';
-import { decodeCardId } from '@lib/realtime/cardCodec';
+import { decodeCardId, encodeCards } from '@lib/realtime/cardCodec';
+import { isWildcard } from '@lib/game/cards';
+import { analyzeHand, type Pattern } from '@lib/game/patterns';
+import { measureAndBeacon } from '@/lib/telemetry/beacon';
+import { RoomApiError } from '@/lib/api/rooms';
 import type {
   CardId,
   DealEvent,
+  ExchangeCompletedEvent,
+  ExchangeSelectRequiredEvent,
+  ExchangeVoteRequiredEvent,
+  ExchangeVoteResolvedEvent,
   MovePassedEvent,
   MovePlayedEvent,
   PlayerHandle,
@@ -33,13 +52,27 @@ import type { Card as GameCard } from '@lib/game/cards';
 import type { LevelRank } from '@lib/game/levels';
 import type { TeamKey } from '@lib/game/mode';
 import type {
+  MoveCommand,
   PlayCommand,
   PassCommand,
   TributeSelectCommand,
   AntiTributeCommand,
+  ExchangeVoteCommand,
+  ExchangeSelectCommand,
 } from '@lib/realtime/commands';
 import { assignClockPositions, type TableMode } from '@/lib/seating';
 import { TributeModal, type TributeState } from '@/screens/TributeModal';
+import { ExchangeVoteModal } from '@/screens/ExchangeVoteModal';
+import { ExchangeSelectModal } from '@/screens/ExchangeSelectModal';
+
+/**
+ * EXCHANGE-1 client UI state. Set by the exchange_* events, cleared once the
+ * exchange resolves. `vote` is shown only to losing-team voters; `select` is
+ * shown to all players once the vote passes. Mirrors GameTable4P.
+ */
+export type ExchangeUiState =
+  | { phase: 'vote'; losers: string[]; cardCount: number }
+  | { phase: 'select'; cardCount: number; direction: 'cw' | 'ccw' };
 
 export interface GameTableMPProps {
   mode: '6' | '8';
@@ -74,6 +107,14 @@ interface TableState {
    * membership, not red-joker ownership.
    */
   lastRoundWinnerTeam: TeamKey | null;
+  /**
+   * EXCHANGE-1 card-exchange UI state. Set by exchange_vote_required /
+   * exchange_select_required, cleared on exchange_vote_resolved(passed=false)
+   * or exchange_completed. Null/undefined when no exchange is in flight.
+   * Optional so older state literals (and tests predating EXCHANGE-1) remain
+   * valid — the reducer + render treat undefined identically to null.
+   */
+  exchange?: ExchangeUiState | null;
 }
 
 export interface TributePendingSnapshot {
@@ -94,6 +135,7 @@ const EMPTY_STATE: TableState = {
   tribute: null,
   roundNumber: 1,
   lastRoundWinnerTeam: null,
+  exchange: null,
 };
 
 function decodeHand(ids: readonly CardId[]): GameCard[] {
@@ -113,6 +155,23 @@ export function GameTableMP({
   const [connectionState, setConnectionState] = useState<
     'connecting' | 'live' | 'closed'
   >('connecting');
+  // Local display-order overlay for 理牌. Null = render state.myHand verbatim;
+  // non-null = render this reordered copy. Reset to null on any hand-replacing
+  // event (shouldClearSelectedOnEvent) so it never points at stale cards.
+  const [sortedHand, setSortedHand] = useState<GameCard[] | null>(null);
+  // 提示 toggle — when on, renders SuggestionHint (which lifts the suggested
+  // cards via onSuggest).
+  const [hintOn, setHintOn] = useState(false);
+  // 收官 (endgame assist) toggle — default OFF; only meaningful for short hands.
+  const [endgameOn, setEndgameOn] = useState(false);
+  // Wildcard-substitution confirm dialog. Holds the staged play (cards + the
+  // plausible default interpretation) until the user confirms; null = no prompt.
+  const [wildcardPrompt, setWildcardPrompt] = useState<{
+    cards: GameCard[];
+    candidate: WildcardCandidate;
+  } | null>(null);
+  // Busy flag for the exchange modals' in-flight POST.
+  const [exchangeBusy, setExchangeBusy] = useState(false);
   // Mirror of state.myPlayerId for the SSE callback — see GameTable4P for the
   // detailed rationale. Without this, my own move_played event leaves stale
   // indices in `selected` (the survivors now point to different cards).
@@ -134,6 +193,10 @@ export function GameTableMP({
         setState((prev) => reduceEvent(prev, evt, myHandle));
         if (shouldClearSelectedOnEvent(evt, myPlayerIdRef.current)) {
           setSelected(new Set());
+          // The 理牌 overlay is keyed by index into the OLD hand; once the hand
+          // is replaced/shrunk those indices are stale, so drop the overlay and
+          // fall back to rendering state.myHand verbatim.
+          setSortedHand(null);
         }
       },
       onError: () => setConnectionState('closed'),
@@ -147,6 +210,22 @@ export function GameTableMP({
   const myLevel: LevelRank = state.myTeam ? state.teamLevels[state.myTeam] : '2';
   const oppTeam: TeamKey = state.myTeam === 't1' ? 't2' : 't1';
   const oppLevel: LevelRank = state.teamLevels[oppTeam];
+
+  // The hand actually rendered + indexed by `selected`. When 理牌 has run we
+  // render the reordered copy; otherwise the reducer's myHand verbatim. ALL
+  // index-based logic (toggleCard, submitPlay, SuggestionHint onSuggest) keys
+  // off this same array so selection never desyncs.
+  const displayHand: GameCard[] = sortedHand ?? state.myHand;
+
+  // The pattern the local player must beat when following. Reconstructed from
+  // the last played combination; null when leading (no current trick).
+  const trickTarget: Pattern | null = useMemo(
+    () =>
+      state.lastPlayed && state.lastPlayed.cards.length > 0
+        ? analyzeHand(state.lastPlayed.cards, myLevel)
+        : null,
+    [state.lastPlayed, myLevel],
+  );
 
   const seats = useMemo(() => {
     if (!state.myPlayerId || state.seatOrder.length === 0) return [];
@@ -165,20 +244,89 @@ export function GameTableMP({
     });
   };
 
+  /**
+   * Apply 理牌: reorder the displayed hand into combo clusters. Selection is
+   * cleared because the index → card mapping changes under the reorder.
+   */
+  const onSort = (sorted: readonly GameCard[]): void => {
+    setSortedHand([...sorted]);
+    setSelected(new Set());
+  };
+
+  /** Lift the suggested cards (indices into displayHand) when 提示 fires. */
+  const onSuggest = (indices: number[]): void => {
+    setSelected(new Set(indices));
+  };
+
+  /**
+   * POST the play. Wrapped in measureAndBeacon so each move round-trip emits a
+   * latency sample (DEPLOY-2). Beacon failure never disturbs the play.
+   */
+  const dispatchPlay = async (ids: CardId[]): Promise<void> => {
+    const cmd: PlayCommand = { kind: 'play', cards: ids, fromVersion: version };
+    await measureAndBeacon(() => postCommand(roomId, joinToken, cmd));
+  };
+
   const submitPlay = async (): Promise<void> => {
     if (selected.size === 0) return;
     const indices = [...selected].sort((a, b) => a - b);
-    const ids = indices
-      .map((i) => encodeCard(state.myHand[i]))
-      .filter((s): s is string => s != null);
-    const cmd: PlayCommand = { kind: 'play', cards: ids, fromVersion: version };
-    await postCommand(roomId, joinToken, cmd);
+    const cards = indices
+      .map((i) => displayHand[i])
+      .filter((c): c is GameCard => c != null);
+    const ids = encodeCards(cards);
+
+    // If the selection contains a wildcard (红心级牌) AND it forms a valid
+    // pattern, surface the substitution confirm dialog defaulting to the
+    // plausible interpretation (analyzeHand's reading). A single-card or
+    // no-wildcard selection plays straight through — never block a legal play.
+    const hasWildcard = cards.some((c) => isWildcard(c, myLevel));
+    if (hasWildcard && cards.length > 1) {
+      const reading = analyzeHand(cards, myLevel);
+      if (reading) {
+        setWildcardPrompt({
+          cards,
+          candidate: { id: `${reading.kind}-${reading.rank ?? 'x'}`, pattern: reading },
+        });
+        return;
+      }
+    }
+    await dispatchPlay(ids);
   };
 
   const submitPass = async (): Promise<void> => {
     const cmd: PassCommand = { kind: 'pass', fromVersion: version };
-    await postCommand(roomId, joinToken, cmd);
+    await measureAndBeacon(() => postCommand(roomId, joinToken, cmd));
   };
+
+  /** Exchange vote (losing-team voter). */
+  const submitExchangeVote = async (vote: boolean): Promise<void> => {
+    setExchangeBusy(true);
+    try {
+      const cmd: ExchangeVoteCommand = { kind: 'exchange_vote', vote, fromVersion: version };
+      await postCommand(roomId, joinToken, cmd);
+    } finally {
+      setExchangeBusy(false);
+    }
+  };
+
+  /** Exchange select (every player picks cardCount cards to give away). */
+  const submitExchangeSelect = async (cards: GameCard[]): Promise<void> => {
+    setExchangeBusy(true);
+    try {
+      const cmd: ExchangeSelectCommand = {
+        kind: 'exchange_select',
+        cards: encodeCards(cards),
+        fromVersion: version,
+      };
+      await postCommand(roomId, joinToken, cmd);
+    } finally {
+      setExchangeBusy(false);
+    }
+  };
+
+  /** Report an opponent — binds the reporter's own handle to postReport. */
+  const submitReport = (targetHandle: string, reason: string): Promise<void> =>
+    postReport(roomId, myHandle, targetHandle, reason);
 
   const submitTributeSelect = async (card: GameCard): Promise<void> => {
     const id = encodeCard(card);
@@ -273,14 +421,17 @@ export function GameTableMP({
               </div>
               <span className="oval-seat__name">
                 {player.handle}
-                {player.status === 'bot' ? (
-                  <span className="oval-seat__bot-chip">BOT</span>
-                ) : null}
+                <PlayerStatusBadge status={player.status} />
               </span>
               <span className="oval-seat__meta">
                 {teamKey} · {player.handCount} 张
                 {isActive ? <em> · 行动中</em> : null}
               </span>
+              <ReportButton
+                targetHandle={player.handle}
+                gameId={roomId}
+                onSubmit={(s) => submitReport(s.targetHandle, s.reason)}
+              />
             </div>
           );
         })}
@@ -289,13 +440,22 @@ export function GameTableMP({
       <div className="mtable-bot">
         <div className="mtable-bot__meta">
           <span>
-            我 · <em>{myHandle}</em> · {state.myHand.length} 张
+            我 · <em>{myHandle}</em> · {displayHand.length} 张
             {state.myTeam ? ` · 队 ${teamRing(state.myTeam)}` : ''}
           </span>
           <span>红心通配 ★</span>
         </div>
+        {hintOn ? (
+          <SuggestionHint
+            cards={displayHand}
+            target={trickTarget}
+            levelRank={myLevel}
+            onSuggest={onSuggest}
+          />
+        ) : null}
+        <EndgameAssist cards={displayHand} levelRank={myLevel} enabled={endgameOn} />
         <Hand
-          cards={state.myHand}
+          cards={displayHand}
           levelRank={myLevel}
           liftedIndices={selected}
           onCardClick={toggleCard}
@@ -318,16 +478,25 @@ export function GameTableMP({
           >
             不出
           </button>
+          <SortButton cards={displayHand} levelRank={myLevel} onSort={onSort} />
           <button
             type="button"
-            className="btn btn--ghost"
-            onClick={() => setSelected(new Set())}
+            className={hintOn ? 'btn btn--accent-soft btn--on' : 'btn btn--accent-soft'}
+            onClick={() => setHintOn((v) => !v)}
+            aria-pressed={hintOn}
           >
-            理牌
-          </button>
-          <button type="button" className="btn btn--accent-soft">
             提示
           </button>
+          {displayHand.length <= 6 ? (
+            <button
+              type="button"
+              className={endgameOn ? 'btn btn--ghost btn--on' : 'btn btn--ghost'}
+              onClick={() => setEndgameOn((v) => !v)}
+              aria-pressed={endgameOn}
+            >
+              收官
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -338,8 +507,63 @@ export function GameTableMP({
           onDismiss={() => void submitAntiTribute()}
         />
       ) : null}
+
+      {wildcardPrompt ? (
+        <WildcardSubDialog
+          cards={wildcardPrompt.cards}
+          candidates={[wildcardPrompt.candidate]}
+          defaultIndex={0}
+          onConfirm={() => {
+            const ids = encodeCards(wildcardPrompt.cards);
+            setWildcardPrompt(null);
+            void dispatchPlay(ids);
+          }}
+          onCancel={() => setWildcardPrompt(null)}
+        />
+      ) : null}
+
+      {state.exchange?.phase === 'vote' &&
+      state.myPlayerId !== null &&
+      state.exchange.losers.includes(state.myPlayerId) ? (
+        <ExchangeVoteModal
+          cardCount={state.exchange.cardCount}
+          onVote={(vote) => void submitExchangeVote(vote)}
+          busy={exchangeBusy}
+        />
+      ) : null}
+
+      {state.exchange?.phase === 'select' ? (
+        <ExchangeSelectModal
+          hand={state.myHand}
+          cardCount={state.exchange.cardCount}
+          direction={state.exchange.direction}
+          onSelect={(cards) => void submitExchangeSelect(cards)}
+          busy={exchangeBusy}
+        />
+      ) : null}
     </div>
   );
+}
+
+/**
+ * POST a player report to /api/report. Thin fetch — throws RoomApiError on a
+ * non-ok response so the ReportButton surfaces the failure. The reporter's own
+ * handle is attached here (the component only knows the target).
+ */
+async function postReport(
+  roomId: string,
+  reporterHandle: string,
+  targetHandle: string,
+  reason: string,
+): Promise<void> {
+  const res = await fetch('/api/report', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reporterHandle, targetHandle, gameId: roomId, reason }),
+  });
+  if (!res.ok) {
+    throw new RoomApiError(res.status, 'report_failed', '举报提交失败');
+  }
 }
 
 // ─── Reducer (exported for tests) ──────────────────────────────────────────────
@@ -370,9 +594,69 @@ export function reduceEvent(
       return reduceTributeResolved(prev, evt);
     case 'round_end':
       return reduceRoundEnd(prev, evt);
+    case 'exchange_vote_required':
+      return reduceExchangeVoteRequired(prev, evt);
+    case 'exchange_vote_resolved':
+      return reduceExchangeVoteResolved(prev, evt);
+    case 'exchange_select_required':
+      return reduceExchangeSelectRequired(prev, evt);
+    case 'exchange_completed':
+      return reduceExchangeCompleted(prev, evt);
     default:
       return prev;
   }
+}
+
+function reduceExchangeVoteRequired(
+  prev: TableState,
+  evt: ExchangeVoteRequiredEvent,
+): TableState {
+  return {
+    ...prev,
+    exchange: { phase: 'vote', losers: [...evt.losers], cardCount: evt.cardCount },
+  };
+}
+
+function reduceExchangeVoteResolved(
+  prev: TableState,
+  evt: ExchangeVoteResolvedEvent,
+): TableState {
+  // Failed vote → no exchange, clear the UI so the trick resumes. Passed vote
+  // → keep the phase alive; the follow-up exchange_select_required sets the
+  // select phase. (We don't store direction here — select_required carries it.)
+  if (!evt.passed) {
+    return { ...prev, exchange: null };
+  }
+  return prev;
+}
+
+function reduceExchangeSelectRequired(
+  prev: TableState,
+  evt: ExchangeSelectRequiredEvent,
+): TableState {
+  return {
+    ...prev,
+    exchange: { phase: 'select', cardCount: evt.cardCount, direction: evt.direction },
+  };
+}
+
+function reduceExchangeCompleted(
+  prev: TableState,
+  evt: ExchangeCompletedEvent,
+): TableState {
+  // Replace my hand with the post-swap hand and refresh public counts. Clear
+  // the exchange UI — the swap is done and the trick can proceed.
+  const players = new Map(prev.players);
+  for (const [id, count] of Object.entries(evt.publicHandCounts)) {
+    const p = players.get(id);
+    if (p) players.set(id, { ...p, handCount: count });
+  }
+  return {
+    ...prev,
+    myHand: decodeHand(evt.yourHand),
+    players,
+    exchange: null,
+  };
 }
 
 function reduceRoundEnd(prev: TableState, evt: RoundEndEvent): TableState {
@@ -629,7 +913,7 @@ function removeCards(hand: readonly GameCard[], played: readonly CardId[]): Game
 async function postCommand(
   roomId: string,
   joinToken: string,
-  cmd: PlayCommand | PassCommand | TributeSelectCommand | AntiTributeCommand,
+  cmd: MoveCommand,
 ): Promise<void> {
   const url = `/api/room/${encodeURIComponent(roomId)}/move`;
   await fetch(url, {

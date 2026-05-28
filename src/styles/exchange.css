@@ -1,0 +1,35 @@
+/* EXCHANGE-1 card-exchange modals (ExchangeVoteModal / ExchangeSelectModal).
+ *
+ * Both modals render inside the shared `.tribute-veil` backdrop and reuse the
+ * tribute typography primitives (.tribute-eyebrow / .tribute-title /
+ * .tribute-lede / .tribute-head / .tribute-pick-shelf / .tribute-pick-card /
+ * .tribute-actions). Only the panel container + the vote-button row are
+ * exchange-specific. */
+
+.exchange-modal {
+  width: min(520px, 92vw);
+  padding: 24px 28px;
+  background: var(--surface-1);
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r-3);
+  box-shadow: 0 30px 80px oklch(0% 0 0 / 0.7);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* The select variant holds the pick-shelf, so it wants a touch more width. */
+.exchange-modal--select {
+  width: min(580px, 92vw);
+}
+
+/* Two large, equal-weight ballot buttons stacked on a row. */
+.exchange-modal__vote {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.exchange-modal__vote .btn {
+  flex: 1;
+}

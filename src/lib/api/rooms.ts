@@ -270,12 +270,17 @@ export async function startGame(
 
 export async function getRoom(
   code: string,
-  opts: RoomApiOptions = {}
+  opts: RoomApiOptions & { hostToken?: string } = {}
 ): Promise<PublicRoomState> {
   const fetcher = opts.fetcher ?? defaultFetcher;
   const base = opts.baseUrl ?? '';
+  // SEC-2: a host passes its hostToken so the server includes sharedIpGroups
+  // (the same-room IP-collision warning). Non-host polls omit it.
+  const query = opts.hostToken
+    ? `?hostToken=${encodeURIComponent(opts.hostToken)}`
+    : '';
   return call<PublicRoomState>(
-    `${base}/api/room/${encodeURIComponent(code)}`,
+    `${base}/api/room/${encodeURIComponent(code)}${query}`,
     { method: 'GET' },
     fetcher
   );

@@ -31,6 +31,7 @@ import {
   type RoomCredentials,
 } from '@/lib/identity';
 import { navigate } from '@/lib/router';
+import { HostIPWarning } from '@/components/HostIPWarning';
 
 export interface WaitingProps {
   code: string;
@@ -73,7 +74,11 @@ export function Waiting({
 
   const refresh = useCallback(async () => {
     try {
-      const next = await getRoomFn(code);
+      // SEC-2: host passes its token so the server returns sharedIpGroups
+      // (the same-room IP-collision warning). Non-hosts omit it.
+      const next = credentials?.hostToken
+        ? await getRoomFn(code, { hostToken: credentials.hostToken })
+        : await getRoomFn(code);
       setRoom(next);
       setError(null);
       if (next.phase === 'in_game') {
@@ -89,7 +94,7 @@ export function Waiting({
         setError('刷新失败 — 检查网络');
       }
     }
-  }, [code, getRoomFn, navigateFn]);
+  }, [code, getRoomFn, navigateFn, credentials?.hostToken]);
 
   useEffect(() => {
     if (!initialRoom) {
@@ -199,6 +204,9 @@ export function Waiting({
 
       <div className="waiting__body">
         <section className="waiting__left">
+          {isHost && room.sharedIpGroups && room.sharedIpGroups.length > 0 ? (
+            <HostIPWarning groups={room.sharedIpGroups} />
+          ) : null}
           <span className="waiting__eyebrow">
             {isHost ? '房主配置中' : '等待房主开局'}
           </span>

@@ -5,6 +5,7 @@ import './styles/tokens.css';
 import './styles/components.css';
 import './styles/screens.css';
 import './styles/tribute.css';
+import './styles/exchange.css';
 import './styles/round-end.css';
 import './styles/game-table.css';
 import './styles/multi-table.css';

@@ -43,6 +43,13 @@ export interface SseDeps {
   /** Stream rotation. Default 270s (under Vercel's 300s function cap). */
   rotationMs?: number;
   now?: () => number;
+  /**
+   * AI-4 liveness hook. Called on connect and on every heartbeat tick with the
+   * connected member's id — a server-confirmed "still alive" signal the
+   * dc-check cron reads to detect disconnects. Optional; omitted in tests that
+   * don't exercise DC takeover. Fire-and-forget — failures are swallowed.
+   */
+  markSeen?: (playerId: string) => void | Promise<void>;
 }
 
 const DEFAULT_HEARTBEAT_MS = 20_000;
@@ -111,8 +118,21 @@ export async function handleSse(
   const liveBuffer: ServerEvent[] = [];
   const replayedVersions = new Set<number>();
 
+  // AI-4: fire-and-forget liveness bump. Wraps deps.markSeen so a throw or
+  // rejection never disturbs the stream.
+  const bumpSeen = (): void => {
+    if (!deps.markSeen) return;
+    try {
+      void Promise.resolve(deps.markSeen(member.id)).catch(() => undefined);
+    } catch {
+      /* never let a liveness bump break the stream */
+    }
+  };
+
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
+      // AI-4: mark alive on connect.
+      bumpSeen();
       // Subscribe FIRST. Buffer live events until the drain completes; once
       // it does, flush the buffer and continue forwarding directly.
       unsubscribe = await deps.bus.subscribe(channel, (event) => {
@@ -164,13 +184,16 @@ export async function handleSse(
       liveBuffer.length = 0;
       drainComplete = true;
 
-      // Heartbeats.
+      // Heartbeats. Each successful tick also bumps the player's liveness
+      // timestamp (AI-4) — proof the connection is still open, since the
+      // enqueue below would throw if the client had gone.
       heartbeatTimer = setInterval(() => {
         if (closed) return;
         try {
           controller.enqueue(
             encoder.encode(formatComment(`ping ${now()}`))
           );
+          bumpSeen();
         } catch {
           /* see above */
         }

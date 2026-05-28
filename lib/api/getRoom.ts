@@ -8,6 +8,8 @@
 import { isValidRoomCode } from '../room/code.js';
 import type { RoomState } from '../room/lifecycle.js';
 import type { RoomStore } from '../storage/roomStore.js';
+import { findSharedIpGroups, type SharedIpGroup } from '../room/ipWarning.js';
+import { extractBearerToken } from '../auth/ownershipToken.js';
 
 export interface GetRoomDeps {
   roomStore: RoomStore;
@@ -29,6 +31,13 @@ export interface PublicRoomState {
   members: PublicMember[];
   createdAt: number;
   lastActiveAt: number;
+  /**
+   * SEC-2: groups of members that appear to share an IP. Present ONLY when the
+   * requester proves host identity (hostToken via `?hostToken=` or Bearer).
+   * Never sent to non-hosts — it is a moderation signal. The per-member ipHash
+   * itself is never exposed.
+   */
+  sharedIpGroups?: SharedIpGroup[];
 }
 
 export async function handleGetRoom(
@@ -48,7 +57,15 @@ export async function handleGetRoom(
     return json({ error: 'room_not_found' }, 404);
   }
 
-  return json(redact(state), 200);
+  // SEC-2: surface the same-room IP warning only to the verified host.
+  const url = new URL(req.url);
+  const presentedHostToken =
+    url.searchParams.get('hostToken') ?? extractBearerToken(req);
+  const isHost =
+    presentedHostToken !== null &&
+    constantTimeEqual(presentedHostToken, state.hostToken);
+
+  return json(redact(state, isHost), 200);
 }
 
 /**
@@ -57,7 +74,7 @@ export async function handleGetRoom(
  * if exposed here. Keep the response shape narrow + explicit so we never
  * accidentally include a new sensitive field added to RoomState later.
  */
-function redact(state: RoomState): PublicRoomState {
+function redact(state: RoomState, isHost: boolean): PublicRoomState {
   const out: PublicRoomState = {
     code: state.code,
     mode: state.mode,
@@ -76,7 +93,23 @@ function redact(state: RoomState): PublicRoomState {
     createdAt: state.createdAt,
     lastActiveAt: state.lastActiveAt,
   };
+  // Host-only same-room IP warning. findSharedIpGroups returns only groups of
+  // ≥2 members sharing a hash; empty → omit the field entirely.
+  if (isHost) {
+    const groups = findSharedIpGroups(state.members);
+    if (groups.length > 0) out.sharedIpGroups = groups;
+  }
   return out;
+}
+
+/** Constant-time string comparison — avoids timing-leak of the host token. */
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
 }
 
 function json(body: unknown, status: number): Response {

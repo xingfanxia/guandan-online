@@ -102,6 +102,56 @@ describe('handleGetRoom — errors', () => {
   });
 });
 
+describe('handleGetRoom — SEC-2 host-only sharedIpGroups', () => {
+  // Build a room where two members share an ipHash.
+  async function seedSharedIp(): Promise<{
+    roomStore: ReturnType<typeof createMemoryRoomStore>;
+    hostToken: string;
+  }> {
+    const roomStore = await seed();
+    const state = (await roomStore.get(CODE))!;
+    const members = state.members.map((m) => ({ ...m, ipHash: 'SAMEHASH' }));
+    await roomStore.put({ ...state, members }, 86_400);
+    return { roomStore, hostToken: state.hostToken };
+  }
+
+  it('omits sharedIpGroups for a non-host (no token)', async () => {
+    const { roomStore } = await seedSharedIp();
+    const res = await handleGetRoom(req('GET'), CODE, { roomStore });
+    const body = (await res.json()) as PublicRoomState;
+    expect(body.sharedIpGroups).toBeUndefined();
+  });
+
+  it('omits sharedIpGroups for a wrong token', async () => {
+    const { roomStore } = await seedSharedIp();
+    const res = await handleGetRoom(
+      new Request(`http://test/?hostToken=WRONG`, { method: 'GET' }),
+      CODE,
+      { roomStore }
+    );
+    const body = (await res.json()) as PublicRoomState;
+    expect(body.sharedIpGroups).toBeUndefined();
+  });
+
+  it('includes sharedIpGroups for the verified host', async () => {
+    const { roomStore, hostToken } = await seedSharedIp();
+    const res = await handleGetRoom(
+      new Request(`http://test/?hostToken=${encodeURIComponent(hostToken)}`, {
+        method: 'GET',
+      }),
+      CODE,
+      { roomStore }
+    );
+    const body = (await res.json()) as PublicRoomState;
+    expect(body.sharedIpGroups).toHaveLength(1);
+    expect(body.sharedIpGroups![0]!.handles.length).toBe(2);
+    // The ipHash itself must NOT leak the raw value beyond the opaque hash;
+    // and per-member ipHash is never in the member projection.
+    const text = JSON.stringify(body.members);
+    expect(text).not.toContain('SAMEHASH');
+  });
+});
+
 describe('handleGetRoom — confirms response structure for clients', () => {
   it('contains createdAt + lastActiveAt timestamps as numbers', async () => {
     const roomStore = await seed();

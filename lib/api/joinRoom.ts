@@ -14,6 +14,8 @@ import { publishEvent } from '../realtime/publish.js';
 import { deriveRoomJoined } from '../realtime/deriveLifecycleEvents.js';
 import { buildLobbyGameState } from '../realtime/buildLobbyGameState.js';
 import type { RateLimiter } from '../security/rateLimit.js';
+import { reclaimSeat } from '../room/botTakeover.js';
+import { extractClientIp, hashIp } from '../security/ipHash.js';
 
 export interface JoinRoomDeps {
   roomStore: RoomStore;
@@ -34,6 +36,12 @@ export interface JoinRoomDeps {
   rateLimiter?: RateLimiter;
   /** R-I5: Identity extractor for rate-limit keying. */
   identify?: (req: Request) => string;
+  /**
+   * SEC-2: salt for hashing the joining client's IP into RoomMember.ipHash
+   * (powers the same-room IP-collision warning). Omitted in tests that don't
+   * exercise the warning; defaults to 'dev-salt'.
+   */
+  ipHashSalt?: string;
 }
 
 export interface JoinRoomResponseBody {
@@ -95,6 +103,32 @@ export async function handleJoinRoom(
     return json({ error: 'room_not_found' }, 404);
   }
 
+  // AI-4 reclaim: a returning human re-POSTs join with the original joinToken
+  // it held before a disconnect-takeover flipped its seat to a bot. If that
+  // token matches a taken-over seat, flip it back to a live human and resume —
+  // this is the ONLY way to join a room that is already in_game.
+  const reclaimTokenRaw = (body as Record<string, unknown> | null)?.['joinToken'];
+  const reclaimToken =
+    typeof reclaimTokenRaw === 'string' && reclaimTokenRaw.length > 0
+      ? reclaimTokenRaw
+      : null;
+  if (reclaimToken && state.phase === 'in_game') {
+    const seat = state.members.find(
+      (m) => m.takenOverFrom?.joinToken === reclaimToken
+    );
+    if (seat) {
+      const { state: reclaimedState, reclaimed } = reclaimSeat(
+        state,
+        seat.id,
+        reclaimToken
+      );
+      if (reclaimed) {
+        await deps.roomStore.put(reclaimedState, ROOM_TTL_SECONDS);
+        return json({ playerId: seat.id, joinToken: reclaimToken }, 200);
+      }
+    }
+  }
+
   // Next-available playerId is "p<members.length>" — dense and stable.
   const nextId = `p${state.members.length}`;
   const tokenGen = deps.tokenGen ?? defaultTokenGen;
@@ -107,6 +141,20 @@ export async function handleJoinRoom(
     // Lifecycle throws on "room full", "handle taken", "phase != lobby" —
     // all client conflicts, surfaced as 409.
     return json({ error: 'conflict', details: (err as Error).message }, 409);
+  }
+
+  // SEC-2: stamp the joining member's salted IP hash for the same-room
+  // IP-collision warning. Done post-join (the lifecycle builder doesn't take
+  // ipHash) so lifecycle stays IP-agnostic. Absent when no IP header present.
+  const rawIp = extractClientIp(req);
+  if (rawIp) {
+    const ipHash = hashIp(rawIp, deps.ipHashSalt ?? 'dev-salt');
+    updated = {
+      ...updated,
+      members: updated.members.map((m) =>
+        m.id === nextId ? { ...m, ipHash } : m
+      ),
+    };
   }
 
   await deps.roomStore.put(updated, ROOM_TTL_SECONDS);

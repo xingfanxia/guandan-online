@@ -192,3 +192,123 @@ describe('handleJoinRoom — R-I5: rate limit', () => {
     expect(calls).toEqual(['join:10.0.0.1']);
   });
 });
+
+// ─── SEC-2: ipHash stamping ──────────────────────────────────────────────────
+
+describe('handleJoinRoom — SEC-2 ipHash', () => {
+  function reqWithIp(body: unknown, ip: string): Request {
+    return new Request('http://test/', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-forwarded-for': ip },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it('stamps a salted ipHash on the joining member when an IP header is present', async () => {
+    const code = VALID_CODES[0]!;
+    const roomStore = await seedRoom(code);
+    await handleJoinRoom(reqWithIp({ handle: '@fufu' }, '203.0.113.7'), code, {
+      roomStore,
+      tokenGen: counter('joiner'),
+      now: () => 1_700_000_000_000,
+      ipHashSalt: 'test-salt',
+    });
+    const state = await roomStore.get(code);
+    const joiner = state?.members.find((m) => m.handle === 'fufu');
+    expect(joiner?.ipHash).toBeTypeOf('string');
+    expect(joiner?.ipHash).not.toContain('203.0.113.7'); // raw IP never stored
+  });
+
+  it('omits ipHash when no IP header is present', async () => {
+    const code = VALID_CODES[1]!;
+    const roomStore = await seedRoom(code);
+    await handleJoinRoom(req('POST', { handle: '@fufu' }), code, {
+      roomStore,
+      tokenGen: counter('joiner'),
+      now: () => 1_700_000_000_000,
+      ipHashSalt: 'test-salt',
+    });
+    const state = await roomStore.get(code);
+    expect(state?.members.find((m) => m.handle === 'fufu')?.ipHash).toBeUndefined();
+  });
+});
+
+// ─── AI-4: reclaim a taken-over seat ─────────────────────────────────────────
+
+describe('handleJoinRoom — AI-4 reclaim', () => {
+  it('flips a taken-over seat back to the human on reclaim with the original token', async () => {
+    const code = VALID_CODES[0]!;
+    const roomStore = await seedRoom(code);
+    const base = (await roomStore.get(code))!;
+    // Simulate an in-game room whose p1 seat was taken over by a bot.
+    await roomStore.put(
+      {
+        ...base,
+        phase: 'in_game',
+        members: [
+          base.members[0]!,
+          {
+            id: 'p1',
+            handle: '@fufu',
+            joinToken: 'bot-token',
+            joinedAt: 1_700_000_000_000,
+            status: 'bot',
+            difficulty: 'medium',
+            takenOverFrom: { handle: '@fufu', joinToken: 'original-jt' },
+          },
+        ],
+      },
+      86_400
+    );
+
+    const res = await handleJoinRoom(
+      req('POST', { handle: '@fufu', joinToken: 'original-jt' }),
+      code,
+      { roomStore, now: () => 1_700_000_000_000 }
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as JoinRoomResponseBody;
+    expect(body.playerId).toBe('p1');
+    expect(body.joinToken).toBe('original-jt');
+
+    const after = await roomStore.get(code);
+    const seat = after?.members.find((m) => m.id === 'p1');
+    expect(seat?.status).toBe('connected');
+    expect(seat?.takenOverFrom).toBeUndefined();
+    expect(seat?.difficulty).toBeUndefined();
+  });
+
+  it('rejects reclaim with a wrong token (falls through to 409 on in_game)', async () => {
+    const code = VALID_CODES[2]!;
+    const roomStore = await seedRoom(code);
+    const base = (await roomStore.get(code))!;
+    await roomStore.put(
+      {
+        ...base,
+        phase: 'in_game',
+        members: [
+          base.members[0]!,
+          {
+            id: 'p1',
+            handle: '@fufu',
+            joinToken: 'bot-token',
+            joinedAt: 1_700_000_000_000,
+            status: 'bot',
+            difficulty: 'medium',
+            takenOverFrom: { handle: '@fufu', joinToken: 'original-jt' },
+          },
+        ],
+      },
+      86_400
+    );
+    const res = await handleJoinRoom(
+      req('POST', { handle: '@fufu', joinToken: 'WRONG-token' }),
+      code,
+      { roomStore, now: () => 1_700_000_000_000 }
+    );
+    // Wrong token → no reclaim → normal join path rejects an in_game room.
+    expect(res.status).toBe(409);
+    const after = await roomStore.get(code);
+    expect(after?.members.find((m) => m.id === 'p1')?.status).toBe('bot');
+  });
+});

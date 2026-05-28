@@ -29,5 +29,6 @@ export async function POST(request: Request): Promise<Response> {
     bus: infra.bus,
     log: infra.log,
     rateLimiter,
+    ipHashSalt: process.env['IP_HASH_SALT'] ?? 'dev-salt',
   });
 }

@@ -34,10 +34,16 @@ import {
   createLatencyStore,
   type LatencyStore,
 } from '../telemetry/aggregate.js';
+import {
+  createMemorySeenStore,
+  createSeenStore,
+  type SeenStore,
+} from './seenStore.js';
 
 let profileStore: ProfileStore | null = null;
 let reportStore: ReportStore | null = null;
 let latencyStore: LatencyStore | null = null;
+let seenStore: SeenStore | null = null;
 
 /** `infra.redis` is typed as `Redis | null`; RedisLike is the narrower
  * structural contract our stores actually consume. The cast is the same one
@@ -70,6 +76,15 @@ export function getLatencyStore(): LatencyStore {
   return latencyStore;
 }
 
+/** AI-4 per-player liveness store (SSE heartbeat → dc-check cron). */
+export function getSeenStore(): SeenStore {
+  if (!seenStore) {
+    const redis = sharedRedis();
+    seenStore = redis ? createSeenStore(redis) : createMemorySeenStore();
+  }
+  return seenStore;
+}
+
 /**
  * Reset the cached singletons. Used by tests that swap envs / Redis backends
  * between cases. Production code must never call this. Note: `Redis` is
@@ -80,6 +95,7 @@ export function _resetSharedStoresForTests(): void {
   profileStore = null;
   reportStore = null;
   latencyStore = null;
+  seenStore = null;
 }
 
 // Touch the imported Redis type so the import isn't elided in isolatedModules

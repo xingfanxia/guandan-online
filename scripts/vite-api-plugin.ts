@@ -25,6 +25,8 @@ import * as adminReportsRoute from '../api/admin/reports.js';
 import * as adminBanRoute from '../api/admin/ban.js';
 import * as adminResetStatsRoute from '../api/admin/reset-stats.js';
 import * as telemetryLatencyRoute from '../api/telemetry/latency.js';
+import * as dcCheckRoute from '../api/cron/dcCheck.js';
+import * as createHandleRoute from '../api/auth/createHandle.js';
 
 type WebHandler = (request: Request) => Promise<Response> | Response;
 
@@ -51,6 +53,9 @@ const routes: ReadonlyArray<RouteEntry> = [
   { method: 'POST', pattern: /^\/api\/admin\/reset-stats\/?$/, handler: adminResetStatsRoute.POST },
   { method: 'POST', pattern: /^\/api\/telemetry\/latency\/?$/, handler: telemetryLatencyRoute.POST },
   { method: 'GET', pattern: /^\/api\/telemetry\/latency\/?$/, handler: telemetryLatencyRoute.GET },
+  // AI-4 disconnect-takeover sweep; SEC-2 IP-throttled handle creation.
+  { method: 'GET', pattern: /^\/api\/cron\/dcCheck\/?$/, handler: dcCheckRoute.GET },
+  { method: 'POST', pattern: /^\/api\/auth\/createHandle\/?$/, handler: createHandleRoute.POST },
 ];
 
 async function nodeToWebRequest(

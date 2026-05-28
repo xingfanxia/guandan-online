@@ -202,6 +202,37 @@ describe('handleSse — backlog drain on connect', () => {
   });
 });
 
+describe('handleSse — AI-4 liveness (markSeen)', () => {
+  it('calls markSeen on connect and on each heartbeat with the member id', async () => {
+    const fx = await fixture();
+    const seen: string[] = [];
+    const res = await handleSse(getReq({ token: fx.p1Token }), CODE, {
+      ...fx,
+      heartbeatMs: 15, // fire at least once before rotation
+      rotationMs: 70,
+      markSeen: (playerId) => {
+        seen.push(playerId);
+      },
+    });
+    await drain(res);
+    // connect bump + ≥1 heartbeat bump, all for the requesting player.
+    expect(seen.length).toBeGreaterThanOrEqual(2);
+    expect(seen.every((id) => id === fx.p1Id)).toBe(true);
+  });
+
+  it('works without markSeen (optional dep)', async () => {
+    const fx = await fixture();
+    const res = await handleSse(getReq({ token: fx.p1Token }), CODE, {
+      ...fx,
+      heartbeatMs: 15,
+      rotationMs: 50,
+    });
+    // Should not throw; stream drains normally.
+    const text = await drain(res);
+    expect(typeof text).toBe('string');
+  });
+});
+
 describe('handleSse — live fanout', () => {
   it('forwards bus publishes on the per-player channel', async () => {
     const fx = await fixture();

@@ -363,6 +363,7 @@ const BOOLEAN_RULE_KEYS = [
   'steelPlate',
   'triPair',
   'straightFlushAboveBomb5',
+  'cardExchange',
 ] as const;
 type BooleanRuleKey = (typeof BOOLEAN_RULE_KEYS)[number];
 

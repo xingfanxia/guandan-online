@@ -54,6 +54,12 @@ export interface PublicRoomState {
    * "严格 A" / "宽松 A" chip in the Waiting screen.
    */
   readonly rules?: PublicModeRules;
+  /**
+   * SEC-2: groups of members that appear to share an IP. Present ONLY when the
+   * room was fetched with the host token (`?hostToken=`). Drives the host's
+   * HostIPWarning chip. Absent for non-host fetches.
+   */
+  readonly sharedIpGroups?: ReadonlyArray<{ ipHash: string; handles: readonly string[] }>;
 }
 
 export interface CreateRoomResponse {
@@ -160,6 +166,8 @@ export interface RoomRuleOverrides {
   readonly triPair?: boolean;
   /** Straight-flush outranks 5-bomb. */
   readonly straightFlushAboveBomb5?: boolean;
+  /** Optional card exchange (换牌) after tribute. */
+  readonly cardExchange?: boolean;
 }
 
 export async function createRoom(
@@ -191,6 +199,7 @@ export async function createRoom(
     'steelPlate',
     'triPair',
     'straightFlushAboveBomb5',
+    'cardExchange',
   ] as const;
   for (const key of RULE_KEYS) {
     const v = input[key];

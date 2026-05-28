@@ -38,7 +38,8 @@ type RuleAxisId =
   | 'steelPlate'
   | 'triPair'
   | 'straightFlushAboveBomb5'
-  | 'manualTribute';
+  | 'manualTribute'
+  | 'cardExchange';
 
 interface RuleAxis {
   readonly id: RuleAxisId;
@@ -54,6 +55,7 @@ const RULE_AXES: readonly RuleAxis[] = [
   { id: 'triPair', label: '三连对可出', defaultOn: false },
   { id: 'straightFlushAboveBomb5', label: '同花顺 > 5 炸', defaultOn: true },
   { id: 'manualTribute', label: '手动进贡', defaultOn: false },
+  { id: 'cardExchange', label: '换牌', defaultOn: false },
 ];
 
 type AiTier = 'easy' | 'medium' | 'human';

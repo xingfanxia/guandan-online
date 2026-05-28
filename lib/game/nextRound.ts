@@ -66,6 +66,14 @@ export interface DealNextRoundResult {
    * only vs. tribute_pending + tribute_resolved + deal).
    */
   pendingManualTribute: boolean;
+  /**
+   * EXCHANGE-1: true when the room rule `cardExchange` is on, so the round was
+   * returned with `pendingExchange` (vote phase) set instead of a started
+   * trick. The caller emits `exchange_vote_required` after the deal event and
+   * waits for exchange_vote / exchange_select commands. Only set on the AUTO /
+   * no-tribute path (manual-tribute + exchange is not yet interleaved).
+   */
+  pendingCardExchange: boolean;
 }
 
 /**
@@ -181,6 +189,7 @@ export function dealNextRound(input: DealNextRoundInput): DealNextRoundResult {
       tributeMode,
       exchanges: [],
       pendingManualTribute: true,
+      pendingCardExchange: false,
     };
   }
 
@@ -199,6 +208,38 @@ export function dealNextRound(input: DealNextRoundInput): DealNextRoundResult {
     };
   }
 
+  // EXCHANGE-1: when the room rule is on, defer the trick and open the
+  // card-exchange vote instead. The losing team (everyone not on the winning
+  // team) votes; the flow helpers start the trick once the exchange resolves.
+  if (input.session.rules.cardExchange) {
+    const winningTeam = seats.find((s) => s.id === firstPlace)?.team;
+    const losers = seats
+      .filter((s) => s.team !== winningTeam)
+      .map((s) => s.id);
+    if (losers.length > 0) {
+      const pendingExchangeRound: GameRound = {
+        ...newRound,
+        pendingExchange: {
+          phase: 'vote',
+          losers,
+          votes: {},
+          voteThreshold: 0.5,
+          cardCount: 3,
+          direction: null,
+          selections: {},
+          leader: newRound.leader,
+        },
+      };
+      return {
+        round: pendingExchangeRound,
+        tributeMode,
+        exchanges,
+        pendingManualTribute: false,
+        pendingCardExchange: true,
+      };
+    }
+  }
+
   // Start the first trick of the new round so currentTrick is non-null. The
   // move handler / runBots both rely on this invariant.
   const started = startTrick(newRound);
@@ -207,5 +248,6 @@ export function dealNextRound(input: DealNextRoundInput): DealNextRoundResult {
     tributeMode,
     exchanges,
     pendingManualTribute: false,
+    pendingCardExchange: false,
   };
 }

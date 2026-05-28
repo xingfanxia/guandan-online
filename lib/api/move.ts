@@ -164,7 +164,8 @@ export async function handleMove(
     envelope.round,
     member.id,
     parsed.value.command,
-    envelope.version
+    envelope.version,
+    deps.rng ?? Math.random
   );
   const newRound = dispatch.newRound;
   let response: MoveResponse = dispatch.response;
@@ -218,6 +219,40 @@ export async function handleMove(
         version: response.appliedVersion,
         exchanged: resolvedExchanged,
       });
+    }
+
+    // ── Card-exchange flow events (EXCHANGE-1) ────────────────────────────
+    // exchange_vote / exchange_select commands emit no move_played event
+    // (deriveMoveEvent returned []), so response.appliedVersion is the first
+    // free slot. Emit the flow-outcome event(s) here, sequentially.
+    if (dispatch.exchange) {
+      const ex = dispatch.exchange;
+      let v = response.appliedVersion;
+      if (ex.outcome === 'voting-passed' && ex.direction) {
+        events.push({ type: 'exchange_vote_resolved', version: v, passed: true, direction: ex.direction });
+        events.push({
+          type: 'exchange_select_required',
+          version: v + 1,
+          cardCount: newRound.pendingExchange?.cardCount ?? 3,
+          direction: ex.direction,
+        });
+      } else if (ex.outcome === 'skipped') {
+        events.push({ type: 'exchange_vote_resolved', version: v, passed: false });
+      } else if (ex.outcome === 'applied' && ex.direction) {
+        // deal-like hidden-state event: each recipient gets only their own
+        // post-swap hand (filtered by buildClientPayload).
+        const encodedHands: Record<string, string[]> = {};
+        for (const seat of newRound.seats) {
+          encodedHands[seat.id] = encodeCards(newRound.hands[seat.id] ?? []);
+        }
+        events.push({
+          type: 'exchange_completed',
+          version: v,
+          direction: ex.direction,
+          hands: encodedHands,
+        });
+      }
+      void v;
     }
 
     // ── Bot run-loop ──────────────────────────────────────────────────────
@@ -349,6 +384,21 @@ export async function handleMove(
                 roundOwner: newSession.roundOwner!,
               };
               events.push(dealEvent);
+
+              // EXCHANGE-1: when the new round opened a card-exchange vote
+              // (rule on, AUTO/no-tribute path), prompt the losing team right
+              // after the deal. The vote/select commands drive the rest of the
+              // flow; the trick only starts once the exchange resolves.
+              if (next.pendingCardExchange && next.round.pendingExchange) {
+                const pe = next.round.pendingExchange;
+                events.push({
+                  type: 'exchange_vote_required',
+                  version: dealVersion + 1,
+                  losers: pe.losers,
+                  voteThreshold: pe.voteThreshold,
+                  cardCount: pe.cardCount,
+                });
+              }
 
               // Snapshot the OLD round before we swap so the publish loop can
               // still build the correct gameState for pre-next-round events.

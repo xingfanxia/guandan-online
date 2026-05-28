@@ -73,6 +73,10 @@ const SERVER_EVENT_TYPES = [
   'turn_advanced',
   'heartbeat',
   'stream_closing',
+  'exchange_vote_required',
+  'exchange_vote_resolved',
+  'exchange_select_required',
+  'exchange_completed',
 ] as const;
 
 /**

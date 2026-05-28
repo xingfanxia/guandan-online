@@ -14,6 +14,7 @@ import { pass, playCards } from '../game/round.js';
 import type { GameRound, PlayerId } from '../game/round.js';
 import { declareAntiTribute, selectTributeCard } from '../game/tributeFlow.js';
 import type { TributeExchange, TributeMode } from '../game/tribute.js';
+import { castExchangeVote, selectExchangeCards, type ExchangeFlowResult } from '../game/exchangeFlow.js';
 import { decodeCardIds } from './cardCodec.js';
 import type { MoveCommand, MoveResponse } from './commands.js';
 
@@ -40,13 +41,21 @@ export interface HandleMoveResult {
    * single vs double) so it can emit the correct `tribute_resolved` payload.
    */
   tributeMode?: Extract<TributeMode, { kind: 'single' | 'double' | 'sweep' | 'resist' }>;
+  /**
+   * Populated when an exchange_vote / exchange_select command advanced the
+   * card-exchange flow. The move handler reads `outcome` to decide which
+   * exchange event(s) to emit (vote_resolved / select_required / completed).
+   * `undefined` for non-exchange commands.
+   */
+  exchange?: { outcome: ExchangeFlowResult['outcome']; direction?: 'cw' | 'ccw' };
 }
 
 export function handleMoveCommand(
   round: GameRound,
   playerId: PlayerId,
   command: MoveCommand,
-  currentVersion: number
+  currentVersion: number,
+  rng: () => number = Math.random
 ): HandleMoveResult {
   // 1. Version check (optimistic concurrency).
   if (command.fromVersion !== currentVersion) {
@@ -62,6 +71,12 @@ export function handleMoveCommand(
 
     case 'anti_tribute':
       return handleAntiTribute(round, playerId, currentVersion);
+
+    case 'exchange_vote':
+      return handleExchangeVote(round, playerId, command.vote, currentVersion, rng);
+
+    case 'exchange_select':
+      return handleExchangeSelect(round, playerId, command.cards, currentVersion);
 
     case 'play':
     case 'pass': {
@@ -151,6 +166,53 @@ function handleAntiTribute(
   try {
     const result = declareAntiTribute(round, playerId);
     return success(result.round, currentVersion, result.exchanges, pendingModeBefore);
+  } catch (err) {
+    return failure(round, 'invalid_move', (err as Error).message);
+  }
+}
+
+function handleExchangeVote(
+  round: GameRound,
+  playerId: PlayerId,
+  vote: boolean,
+  currentVersion: number,
+  rng: () => number,
+): HandleMoveResult {
+  try {
+    const result = castExchangeVote(round, playerId, vote, rng);
+    return {
+      newRound: result.round,
+      response: { ok: true, appliedVersion: currentVersion + 1, result: 'applied' },
+      exchange: result.direction
+        ? { outcome: result.outcome, direction: result.direction }
+        : { outcome: result.outcome },
+    };
+  } catch (err) {
+    return failure(round, 'invalid_move', (err as Error).message);
+  }
+}
+
+function handleExchangeSelect(
+  round: GameRound,
+  playerId: PlayerId,
+  cardIds: readonly string[],
+  currentVersion: number,
+): HandleMoveResult {
+  let cards;
+  try {
+    cards = decodeCardIds(cardIds);
+  } catch (err) {
+    return failure(round, 'invalid_move', `card decode failed: ${(err as Error).message}`);
+  }
+  try {
+    const result = selectExchangeCards(round, playerId, cards);
+    return {
+      newRound: result.round,
+      response: { ok: true, appliedVersion: currentVersion + 1, result: 'applied' },
+      exchange: result.direction
+        ? { outcome: result.outcome, direction: result.direction }
+        : { outcome: result.outcome },
+    };
   } catch (err) {
     return failure(round, 'invalid_move', (err as Error).message);
   }

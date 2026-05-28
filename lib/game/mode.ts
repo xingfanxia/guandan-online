@@ -73,6 +73,15 @@ export interface ModeRules {
    * Display-only at v1 — `bomb.ts` already implements this ordering.
    */
   straightFlushAboveBomb5: boolean;
+
+  /**
+   * EXCHANGE-1: optional card-exchange (换牌). Default false. When true, after
+   * tribute resolves the losing team votes; if > 50% vote yes, every player
+   * exchanges 3 cards with a neighbor in a server-randomized direction before
+   * the next round's first trick. No effect when off — the trick starts
+   * immediately as before.
+   */
+  cardExchange: boolean;
 }
 
 /** Canonical defaults — mirror sibling scorer's live config (config.js:22-54). */
@@ -93,6 +102,7 @@ export const DEFAULT_MODE_RULES: ModeRules = {
   steelPlate: true,
   triPair: false,
   straightFlushAboveBomb5: true,
+  cardExchange: false,
 };
 
 /** Number of finishing positions for a given mode. */

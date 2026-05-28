@@ -54,6 +54,54 @@ describe('buildClientPayload — deal event', () => {
   });
 });
 
+// ─── EXCHANGE-1: exchange_completed is deal-like (filtered to yourHand) ───────
+
+describe('buildClientPayload — exchange_completed event', () => {
+  const author: AuthorEvent = {
+    type: 'exchange_completed',
+    version: 9,
+    direction: 'cw',
+    hands: STATE_4P.hands,
+  };
+
+  it('each recipient gets ONLY their own post-swap hand + public counts', () => {
+    const out = buildClientPayload('alice', author, STATE_4P) as Extract<
+      ServerEvent,
+      { type: 'exchange_completed' }
+    >;
+    expect(out.type).toBe('exchange_completed');
+    expect(out.yourHand).toEqual(['5-S-1', '6-S-1', '7-S-1']);
+    expect(out.direction).toBe('cw');
+    expect(out.publicHandCounts).toEqual({ alice: 3, bob: 2, carol: 3, dave: 2 });
+  });
+
+  it('leak gate: no opponent cards in a recipient payload', () => {
+    const payload = buildClientPayload('alice', author, STATE_4P)!;
+    expect(() => assertNoOpponentHandLeak(payload, 'alice', STATE_4P)).not.toThrow();
+    const serialized = JSON.stringify(payload);
+    for (const card of ['K-H-1', 'A-H-1', '10-C-1', 'BJ-J-1']) {
+      expect(serialized).not.toContain(`"${card}"`);
+    }
+  });
+});
+
+describe('buildClientPayload — exchange vote/select pass-through', () => {
+  it('exchange_vote_required / vote_resolved / select_required are identical per recipient + carry no cards', () => {
+    const events: AuthorEvent[] = [
+      { type: 'exchange_vote_required', version: 5, losers: ['bob', 'dave'], voteThreshold: 0.5, cardCount: 3 },
+      { type: 'exchange_vote_resolved', version: 6, passed: true, direction: 'cw' },
+      { type: 'exchange_select_required', version: 7, cardCount: 3, direction: 'cw' },
+    ];
+    for (const ev of events) {
+      const a = buildClientPayload('alice', ev, STATE_4P)!;
+      const b = buildClientPayload('bob', ev, STATE_4P)!;
+      expect(a).toEqual(ev);
+      expect(a).toEqual(b);
+      expect(() => assertNoOpponentHandLeak(a, 'alice', STATE_4P)).not.toThrow();
+    }
+  });
+});
+
 // ─── Pass-through events: no hidden state, payload unchanged per recipient ────
 
 describe('buildClientPayload — pass-through events', () => {

@@ -425,3 +425,87 @@ describe('handleMoveCommand — anti_tribute dispatch', () => {
     }
   });
 });
+
+// ─── EXCHANGE-1: exchange_vote / exchange_select dispatch ─────────────────────
+
+describe('handleMoveCommand — exchange_vote / exchange_select', () => {
+  function roundInVote(): GameRound {
+    return {
+      ...buildRound([
+        [c('spades', '3'), c('spades', '4'), c('spades', '5')],
+        [c('hearts', '3'), c('hearts', '4'), c('hearts', '5')],
+        [c('clubs', '3'), c('clubs', '4'), c('clubs', '5')],
+        [c('diamonds', '3'), c('diamonds', '4'), c('diamonds', '5')],
+      ]),
+      finishOrder: ['a', 'c', 'b', 'd'],
+      pendingExchange: {
+        phase: 'vote',
+        losers: ['b', 'd'],
+        votes: {},
+        voteThreshold: 0.5,
+        cardCount: 1,
+        direction: null,
+        selections: {},
+        leader: 'a',
+      },
+    };
+  }
+
+  it('routes a vote and reports the in-progress outcome', () => {
+    const cmd: MoveCommand = { kind: 'exchange_vote', vote: true, fromVersion: 10 };
+    const res = handleMoveCommand(roundInVote(), 'b', cmd, 10, () => 0.1);
+    expect(res.response.ok).toBe(true);
+    expect(res.exchange?.outcome).toBe('in-progress');
+    expect(res.newRound.pendingExchange?.votes).toEqual({ b: true });
+  });
+
+  it('reports voting-passed with a direction when the vote passes', () => {
+    let r = roundInVote();
+    r = handleMoveCommand(r, 'b', { kind: 'exchange_vote', vote: true, fromVersion: 10 }, 10, () => 0.1).newRound;
+    const res = handleMoveCommand(r, 'd', { kind: 'exchange_vote', vote: true, fromVersion: 11 }, 11, () => 0.1);
+    expect(res.exchange?.outcome).toBe('voting-passed');
+    expect(res.exchange?.direction).toBe('cw');
+    expect(res.newRound.pendingExchange?.phase).toBe('select');
+  });
+
+  it('rejects a non-loser vote as invalid_move', () => {
+    const res = handleMoveCommand(roundInVote(), 'a', { kind: 'exchange_vote', vote: true, fromVersion: 10 }, 10, () => 0.1);
+    expect(res.response.ok).toBe(false);
+    if (!res.response.ok) expect(res.response.error).toBe('invalid_move');
+  });
+
+  it('applies the swap when all players select', () => {
+    let r: GameRound = {
+      ...roundInVote(),
+      pendingExchange: {
+        phase: 'select',
+        losers: ['b', 'd'],
+        votes: { b: true, d: true },
+        voteThreshold: 0.5,
+        cardCount: 1,
+        direction: 'cw',
+        selections: {},
+        leader: 'a',
+      },
+    };
+    const sel = (id: string, card: Card, v: number): GameRound =>
+      handleMoveCommand(r, id, { kind: 'exchange_select', cards: [`${card.rank}-${cardSuit(card.suit)}-${card.deck}`], fromVersion: v }, v).newRound;
+    r = sel('a', c('spades', '3'), 10);
+    r = sel('b', c('hearts', '3'), 11);
+    r = sel('c', c('clubs', '3'), 12);
+    const res = handleMoveCommand(
+      r,
+      'd',
+      { kind: 'exchange_select', cards: [`3-D-1`], fromVersion: 13 },
+      13
+    );
+    expect(res.exchange?.outcome).toBe('applied');
+    expect(res.exchange?.direction).toBe('cw');
+    expect(res.newRound.pendingExchange).toBeUndefined();
+    expect(res.newRound.currentTrick).not.toBeNull();
+  });
+});
+
+function cardSuit(suit: Card['suit']): string {
+  return { spades: 'S', hearts: 'H', clubs: 'C', diamonds: 'D', joker: 'J' }[suit];
+}

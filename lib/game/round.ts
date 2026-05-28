@@ -61,6 +61,34 @@ export interface PendingTributeState {
   finishOrder: PlayerId[];
 }
 
+/**
+ * Optional card-exchange (换牌) state — set on the new-round shell after
+ * tribute resolves when the room rule `cardExchange` is on. Two phases:
+ *   - 'vote': losers cast yes/no; when all have voted the tally resolves. If
+ *     it fails (≤ threshold yes), the exchange is skipped and the trick starts.
+ *   - 'select': every player picks `cardCount` cards; when all have selected
+ *     the swap applies in `direction` and the trick starts.
+ * Cleared by the exchange-flow helpers (lib/game/exchangeFlow.ts) on
+ * finalization. EXCHANGE-1.
+ */
+export interface PendingExchangeState {
+  phase: 'vote' | 'select';
+  /** Losing-team players eligible to vote. */
+  losers: PlayerId[];
+  /** Loser id → yes/no. Populated during the vote phase. */
+  votes: Record<PlayerId, boolean>;
+  /** Fraction of losers that must vote yes to trigger the exchange (e.g. 0.5). */
+  voteThreshold: number;
+  /** How many cards each player exchanges (default 3). */
+  cardCount: number;
+  /** Swap direction, set when the vote passes. Null during the vote phase. */
+  direction: 'cw' | 'ccw' | null;
+  /** Player id → chosen cards. Populated during the select phase. */
+  selections: Record<PlayerId, Card[]>;
+  /** Leader once the exchange completes (1st place of the finished round). */
+  leader: PlayerId;
+}
+
 export interface GameRound {
   mode: GameMode;
   level: LevelRank;
@@ -82,6 +110,12 @@ export interface GameRound {
    * the manual-flow helpers once all selections finalize.
    */
   pendingTribute?: PendingTributeState;
+  /**
+   * Card-exchange pending state (EXCHANGE-1). Optional — set after tribute
+   * when `cardExchange` is on; cleared by the exchange-flow helpers once the
+   * vote fails or the swap applies. While set, the trick has not started.
+   */
+  pendingExchange?: PendingExchangeState;
 }
 
 // ─── Trick state ──────────────────────────────────────────────────────────────

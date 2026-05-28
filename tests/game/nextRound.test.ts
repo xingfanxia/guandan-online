@@ -493,3 +493,55 @@ describe('dealNextRound — 8P', () => {
     }
   });
 });
+
+describe('dealNextRound — EXCHANGE-1 card-exchange rule', () => {
+  it('opens a card-exchange vote (no trick started) when cardExchange is on', () => {
+    const rng = seedrandom('exch-1');
+    const deck = shuffleDeck(buildDeck(), rng);
+    const round0 = dealRound({
+      mode: '4',
+      level: '2',
+      owner: null,
+      seats: SEATS_4P,
+      leader: 'alice',
+      shuffledDeck: deck,
+    });
+    const finished = runRoundToFinish(round0, rng);
+    const session0 = createSession({
+      mode: '4',
+      rules: { ...DEFAULT_MODE_RULES, cardExchange: true },
+    });
+    const session1 = applyRoundResult(session0, finished);
+
+    const result = dealNextRound({ prevRound: finished, session: session1, rng });
+
+    expect(result.pendingCardExchange).toBe(true);
+    expect(result.round.pendingExchange).toBeDefined();
+    expect(result.round.pendingExchange!.phase).toBe('vote');
+    expect(result.round.pendingExchange!.losers.length).toBeGreaterThan(0);
+    expect(result.round.pendingExchange!.cardCount).toBe(3);
+    // Trick NOT started — waits for the exchange vote/select commands.
+    expect(result.round.currentTrick).toBeNull();
+  });
+
+  it('starts the trick normally when cardExchange is off (default)', () => {
+    const rng = seedrandom('exch-2');
+    const deck = shuffleDeck(buildDeck(), rng);
+    const round0 = dealRound({
+      mode: '4',
+      level: '2',
+      owner: null,
+      seats: SEATS_4P,
+      leader: 'alice',
+      shuffledDeck: deck,
+    });
+    const finished = runRoundToFinish(round0, rng);
+    const session0 = createSession({ mode: '4', rules: DEFAULT_MODE_RULES });
+    const session1 = applyRoundResult(session0, finished);
+
+    const result = dealNextRound({ prevRound: finished, session: session1, rng });
+    expect(result.pendingCardExchange).toBe(false);
+    expect(result.round.pendingExchange).toBeUndefined();
+    expect(result.round.currentTrick).not.toBeNull();
+  });
+});

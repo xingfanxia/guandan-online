@@ -77,6 +77,12 @@ export function runBots(input: RunBotsInput): RunBotsResult {
     // re-enter this loop and pick up at the trick-based dispatch.
     if (round.pendingTribute !== undefined) return { round, version, events };
 
+    // EXCHANGE-1: the round is dealt but the card-exchange vote/select hasn't
+    // finished (pendingExchange set, currentTrick null). Do NOT auto-start a
+    // trick — players must dispatch exchange_vote / exchange_select first; the
+    // exchange-flow helpers run startTrick once the exchange finalizes.
+    if (round.pendingExchange !== undefined) return { round, version, events };
+
     // Between-trick boundary: previous trick ended, no new trick started yet.
     // startTrick is bookkeeping only (no event). Both human + bot turns need
     // currentTrick to be non-null before they can act.

@@ -100,6 +100,11 @@ function deriveMoveOnlyEvent(
     case 'anti_tribute':
     case 'report_card':
     case 'ready':
+    case 'exchange_vote':
+    case 'exchange_select':
+      // These don't produce a move_played/passed event — exchange events are
+      // derived separately by the move handler from the HandleMoveResult.exchange
+      // outcome (mirrors how tribute_resolved is emitted).
       return null;
     default: {
       const _exhaustive: never = command;

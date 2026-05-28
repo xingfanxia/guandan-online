@@ -14,6 +14,7 @@ import type { PlayerId } from '../game/round.js';
 import type {
   CardId,
   DealEvent,
+  ExchangeCompletedEvent,
   HeartbeatEvent,
   PlayerHandle,
   PlayerStatus,
@@ -69,6 +70,14 @@ export interface AuthorSnapshotEvent {
   table: PublicTableState;
 }
 
+export interface AuthorExchangeCompletedEvent {
+  type: 'exchange_completed';
+  version: number;
+  direction: 'cw' | 'ccw';
+  /** Full post-swap hands. Filtered to only the recipient's own. */
+  hands: Record<PlayerId, CardId[]>;
+}
+
 export interface AuthorStateResyncEvent {
   type: 'state_resync';
   version: number;
@@ -83,7 +92,11 @@ export interface AuthorStateResyncEvent {
  */
 export type PassThroughServerEvent = Exclude<
   ServerEvent,
-  DealEvent | TributePendingEvent | SnapshotEvent | StateResyncEvent
+  | DealEvent
+  | TributePendingEvent
+  | SnapshotEvent
+  | StateResyncEvent
+  | ExchangeCompletedEvent
 >;
 
 export type AuthorEvent =
@@ -91,6 +104,7 @@ export type AuthorEvent =
   | AuthorTributePendingEvent
   | AuthorSnapshotEvent
   | AuthorStateResyncEvent
+  | AuthorExchangeCompletedEvent
   | PassThroughServerEvent;
 
 // ─── Filter ───────────────────────────────────────────────────────────────────
@@ -137,6 +151,24 @@ export function buildClientPayload(
       return out;
     }
 
+    case 'exchange_completed': {
+      // deal-like: each recipient learns ONLY their own post-swap hand. The
+      // public hand counts are unchanged by a count-preserving swap.
+      const yourHand = event.hands[recipient] ?? [];
+      const publicHandCounts: Record<PlayerId, number> = {};
+      for (const [id, hand] of Object.entries(event.hands)) {
+        publicHandCounts[id] = hand.length;
+      }
+      const out: ExchangeCompletedEvent = {
+        type: 'exchange_completed',
+        version: event.version,
+        direction: event.direction,
+        yourHand,
+        publicHandCounts,
+      };
+      return out;
+    }
+
     case 'snapshot':
       return buildSnapshot(recipient, event, state);
 
@@ -167,6 +199,9 @@ export function buildClientPayload(
     case 'game_end':
     case 'turn_advanced':
     case 'stream_closing':
+    case 'exchange_vote_required':
+    case 'exchange_vote_resolved':
+    case 'exchange_select_required':
       return event;
 
     default: {

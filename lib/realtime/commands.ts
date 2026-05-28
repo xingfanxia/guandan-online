@@ -42,13 +42,29 @@ export interface ReadyCommand {
   fromVersion: number;
 }
 
+/** EXCHANGE-1: a losing-team player's yes/no card-exchange vote. */
+export interface ExchangeVoteCommand {
+  kind: 'exchange_vote';
+  vote: boolean;
+  fromVersion: number;
+}
+
+/** EXCHANGE-1: a player's chosen cards to give away during the select phase. */
+export interface ExchangeSelectCommand {
+  kind: 'exchange_select';
+  cards: CardId[];
+  fromVersion: number;
+}
+
 export type MoveCommand =
   | PlayCommand
   | PassCommand
   | TributeSelectCommand
   | AntiTributeCommand
   | ReportCardCommand
-  | ReadyCommand;
+  | ReadyCommand
+  | ExchangeVoteCommand
+  | ExchangeSelectCommand;
 
 export interface MoveRequest {
   /** Client-generated UUIDv4. Same moveId → same response (NET-2 idempotency). */
@@ -85,6 +101,8 @@ export function moveCommandKind(cmd: MoveCommand): MoveCommand['kind'] {
     case 'anti_tribute':
     case 'report_card':
     case 'ready':
+    case 'exchange_vote':
+    case 'exchange_select':
       return cmd.kind;
     default: {
       const _exhaustive: never = cmd;

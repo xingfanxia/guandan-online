@@ -178,6 +178,50 @@ export interface StreamClosingEvent {
   reason: 'rotation' | 'maintenance' | 'error';
 }
 
+// ─── EXCHANGE-1 card-exchange events ──────────────────────────────────────────
+
+/** Opens the losing-team vote on whether to run a card exchange this round. */
+export interface ExchangeVoteRequiredEvent {
+  type: 'exchange_vote_required';
+  version: number;
+  /** Losing-team players eligible to vote. */
+  losers: PlayerId[];
+  /** Fraction of yes votes required to pass (e.g. 0.5). */
+  voteThreshold: number;
+  /** Cards each player will exchange if the vote passes. */
+  cardCount: number;
+}
+
+/** Announces the vote outcome. On pass, `direction` is set for the swap. */
+export interface ExchangeVoteResolvedEvent {
+  type: 'exchange_vote_resolved';
+  version: number;
+  passed: boolean;
+  direction?: 'cw' | 'ccw';
+}
+
+/** Prompts every player to choose `cardCount` cards to give away. */
+export interface ExchangeSelectRequiredEvent {
+  type: 'exchange_select_required';
+  version: number;
+  cardCount: number;
+  direction: 'cw' | 'ccw';
+}
+
+/**
+ * The exchange completed. Carries hidden state — each recipient gets only
+ * their own post-swap hand (filtered by buildClientPayload, like `deal`).
+ */
+export interface ExchangeCompletedEvent {
+  type: 'exchange_completed';
+  version: number;
+  direction: 'cw' | 'ccw';
+  /** Recipient's full post-swap hand. */
+  yourHand: CardId[];
+  /** Public per-player hand counts (unchanged by a count-preserving swap). */
+  publicHandCounts: Record<PlayerId, number>;
+}
+
 export type ServerEvent =
   | SnapshotEvent
   | RoomJoinedEvent
@@ -193,7 +237,11 @@ export type ServerEvent =
   | StateResyncEvent
   | TurnAdvancedEvent
   | HeartbeatEvent
-  | StreamClosingEvent;
+  | StreamClosingEvent
+  | ExchangeVoteRequiredEvent
+  | ExchangeVoteResolvedEvent
+  | ExchangeSelectRequiredEvent
+  | ExchangeCompletedEvent;
 
 // ─── Discriminator helpers ────────────────────────────────────────────────────
 //
@@ -219,6 +267,10 @@ export function serverEventType(event: ServerEvent): ServerEvent['type'] {
     case 'turn_advanced':
     case 'heartbeat':
     case 'stream_closing':
+    case 'exchange_vote_required':
+    case 'exchange_vote_resolved':
+    case 'exchange_select_required':
+    case 'exchange_completed':
       return event.type;
     default: {
       const _exhaustive: never = event;

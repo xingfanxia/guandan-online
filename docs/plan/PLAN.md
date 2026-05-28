@@ -563,7 +563,7 @@ Goal: implement tribute (进贡 / 还贡 / 抗贡) + A-level state machine + gam
 - 6/8 mode direction variants are room-configurable (per ROOM-2's `tributeDirection6p` / `tributeDirection8p`)
 - Sweep tribute only triggers in 2-teams-of-N modes (not 4-teams-of-2)
 
-### EXCHANGE-1 · Card exchange optional rule
+### EXCHANGE-1 · Card exchange optional rule — **SHIPPED 2026-05-28** (backend + UI; manual-tribute interleave deferred)
 
 **Goal**: Implement the optional 换牌 (card-exchange) mechanic — losing team votes after round-end; if >50% pass, all players exchange 3 cards in random direction after tribute.
 
@@ -721,7 +721,7 @@ Goal: 6P and 8P fully working. Hard tier LLM bot. Player assistance features.
 - Hard tier 4P only at v1 launch — 6/8 partnership is too complex for current LLM
 - Feature-flag via `FEATURE_AI_HARD=true` env var; default OFF in dev
 
-### AI-3 · Player assistance — auto-sort + suggest + wildcard UI
+### AI-3 · Player assistance — auto-sort + suggest + wildcard UI — **SHIPPED 2026-05-28**
 
 **Goal**: Surface AI engine to human players via auto-sort, suggested move, and wildcard substitution dialog.
 
@@ -748,7 +748,7 @@ Goal: 6P and 8P fully working. Hard tier LLM bot. Player assistance features.
 - Assistance uses client-side WASM (per ai-implementation-plan.md §11) for instant feedback
 - Ranked mode (v2) disables assistance entirely
 
-### AI-4 · Mid-game DC takeover
+### AI-4 · Mid-game DC takeover — **SHIPPED 2026-05-28**
 
 **Goal**: When a human DCs > 60s, server promotes the slot to Medium bot, game continues seamlessly.
 
@@ -800,7 +800,7 @@ Goal: anti-cheat baseline + custom domain + observability. Production-ready.
 **Files to touch**: new — `lib/security/rateLimit.ts`, `tests/security/*`; enhance all `api/*` routes
 **Effort**: 1 day
 
-### SEC-2 · IP throttle + same-room IP warning
+### SEC-2 · IP throttle + same-room IP warning — **SHIPPED 2026-05-28**
 
 **Goal**: Limit new account creation per IP + warn hosts when 2 players in same room share IP.
 
@@ -819,7 +819,7 @@ Goal: anti-cheat baseline + custom domain + observability. Production-ready.
 **Files to touch**: new — `api/auth/createHandle.ts`, `lib/security/ipThrottle.ts`, `lib/room/ipWarning.ts`, `src/components/HostIPWarning.tsx`
 **Effort**: 1 day
 
-### SEC-3 · Report button + admin dashboard
+### SEC-3 · Report button + admin dashboard — **SHIPPED 2026-05-28**
 
 **Goal**: In-game report button. Admin dashboard for reviewing reports + bans + stat reset.
 
@@ -844,7 +844,7 @@ Goal: anti-cheat baseline + custom domain + observability. Production-ready.
 **Files to touch**: new — `api/report.ts`, `lib/security/reports.ts`, `src/components/ReportButton.tsx`, `src/screens/AdminDashboard.tsx`, `api/admin/*`
 **Effort**: 2-3 days
 
-### SEC-4 · Vercel BotID integration
+### SEC-4 · Vercel BotID integration — **SHIPPED 2026-05-28** (verdict gate; edge SDK activation deploy-gated)
 
 **Goal**: Enable Vercel BotID on `/api/*` routes for automated bot detection at edge.
 
@@ -888,7 +888,7 @@ Goal: anti-cheat baseline + custom domain + observability. Production-ready.
 - All relative TS imports MUST end in `.js` (e.g. `from './foo.js'` for `foo.ts`) — required for Vercel cloud builds; @vercel/node's per-function tsc check runs under `nodenext` moduleResolution. Migration applied 2026-05-21 via `scripts/migrations/add-js-extensions.py` (idempotent). Root `tsconfig.json` mirrors `tsconfig.app.json` compilerOptions so the per-function check sees `strict: true` + `types: ["node"]`. If you add new code with extensionless imports, re-run the migration script.
 - GitHub auto-deploy is the canonical path (since 2026-05-21); `vercel deploy --prebuilt --prod` from local is the fallback if cloud builds break.
 
-### DEPLOY-2 · Client-side latency beacons + p50/p95 monitoring
+### DEPLOY-2 · Client-side latency beacons + p50/p95 monitoring — **SHIPPED 2026-05-28** (logic; real-traffic acceptance deploy-gated)
 
 **Goal**: Collect real-user latency data. Display in admin dashboard. Trigger DEPLOY-3 if PRC p95 > 350ms.
 

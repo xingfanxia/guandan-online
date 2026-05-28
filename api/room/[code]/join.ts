@@ -9,8 +9,11 @@ import {
   getSharedRateLimiter,
 } from '../../../lib/realtime/sharedInfra.js';
 import { handleJoinRoom } from '../../../lib/api/joinRoom.js';
+import { botGateResponse } from '../../../lib/api/botGate.js';
 
 export async function POST(request: Request): Promise<Response> {
+  const denied = botGateResponse(request);
+  if (denied) return denied;
   const url = new URL(request.url);
   // Path: /api/room/<code>/join — pull <code> from index 3 of the segments.
   const segments = url.pathname.split('/').filter(Boolean);

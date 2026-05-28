@@ -2,6 +2,7 @@
 
 import { getSharedInfra, getSharedRateLimiter } from '../../../lib/realtime/sharedInfra.js';
 import { handleMove } from '../../../lib/api/move.js';
+import { botGateResponse } from '../../../lib/api/botGate.js';
 
 // Cap per (room, player) at 30 moves per 10 seconds — enough headroom for
 // fast-twitch play, low enough to throttle scripted clients.
@@ -11,6 +12,8 @@ import { handleMove } from '../../../lib/api/move.js';
 // local dev. The previous module-level createSlidingWindowLimiter was
 // per-container only — useless under Vercel autoscaling.
 export async function POST(request: Request): Promise<Response> {
+  const denied = botGateResponse(request);
+  if (denied) return denied;
   const url = new URL(request.url);
   const segments = url.pathname.split('/').filter(Boolean);
   const code = segments[2] ?? '';

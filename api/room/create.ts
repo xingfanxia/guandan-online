@@ -11,8 +11,15 @@ import {
   getSharedRateLimiter,
 } from '../../lib/realtime/sharedInfra.js';
 import { handleCreateRoom } from '../../lib/api/createRoom.js';
+import { botGateResponse } from '../../lib/api/botGate.js';
 
 export async function POST(request: Request): Promise<Response> {
+  // SEC-4: block disallowed bots before doing any work. Fail-open on the
+  // 'unknown' verdict (no platform header) so dev / e2e / pre-challenge
+  // clients are unaffected.
+  const denied = botGateResponse(request);
+  if (denied) return denied;
+
   const infra = getSharedInfra();
   const rateLimiter = getSharedRateLimiter({
     prefix: 'rl:create',

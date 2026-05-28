@@ -16,7 +16,8 @@ export type Route =
   | { kind: 'create' }
   | { kind: 'wait'; code: string }
   | { kind: 'table'; code: string }
-  | { kind: 'table-legacy'; roomId: string; joinToken: string; myHandle: string };
+  | { kind: 'table-legacy'; roomId: string; joinToken: string; myHandle: string }
+  | { kind: 'admin'; token: string };
 
 export function parseHash(hash: string): Route {
   if (!hash.startsWith('#')) return { kind: 'landing' };
@@ -52,6 +53,9 @@ export function parseHash(hash: string): Route {
     if (!code) return { kind: 'landing' };
     return { kind: 'table', code };
   }
+  if (path === 'admin') {
+    return { kind: 'admin', token: params.get('token') ?? '' };
+  }
   return { kind: 'landing' };
 }
 
@@ -67,6 +71,8 @@ export function buildHash(route: Route): string {
       return `#/table?code=${encodeURIComponent(route.code)}`;
     case 'table-legacy':
       return `#table=${route.roomId}&token=${route.joinToken}&me=${encodeURIComponent(route.myHandle)}`;
+    case 'admin':
+      return `#/admin?token=${encodeURIComponent(route.token)}`;
   }
 }
 

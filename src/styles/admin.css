@@ -1,0 +1,163 @@
+/* Admin moderation console (SEC-3) + latency telemetry panel (DEPLOY-2)
+   + in-game report button (SEC-3). Tokens from tokens.css; mirrors the
+   panel/modal conventions in components.css + screens.css. */
+
+/* ─── shared helpers ─────────────────────────────────────────────────── */
+
+.btn--danger {
+  background: var(--danger);
+  color: var(--ink-1);
+  border-color: transparent;
+}
+.btn--danger:hover {
+  background: oklch(70% 0.22 25);
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── AdminDashboard ──────────────────────────────────────────────────── */
+
+.admin-dashboard {
+  min-height: var(--vp-h, 100dvh);
+  background: var(--surface-0);
+  color: var(--ink-1);
+  padding: 24px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.admin-dashboard__top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.admin-dashboard__title {
+  font-size: var(--t-xl);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+}
+
+.admin-dashboard__error {
+  font-family: var(--font-mono);
+  font-size: var(--t-sm);
+  color: var(--danger);
+}
+
+.admin-dashboard__panel {
+  background: var(--surface-1);
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r-3);
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.admin-dashboard__panel-title {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.admin-dashboard__empty {
+  font-size: var(--t-sm);
+  color: var(--ink-3);
+}
+
+.admin-dashboard__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--t-sm);
+}
+.admin-dashboard__table th,
+.admin-dashboard__table td {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--rule-1);
+}
+.admin-dashboard__table th {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+}
+.admin-dashboard__latency td:not(:first-child),
+.admin-dashboard__latency th:not(:first-child) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-dashboard__controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.admin-dashboard__input {
+  padding: 8px 10px;
+  font-family: var(--font-mono);
+  font-size: var(--t-sm);
+  background: var(--surface-0);
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r-2);
+  color: var(--ink-1);
+}
+.admin-dashboard__input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-tint);
+}
+
+.admin-dashboard__action-error {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--danger);
+}
+
+/* ─── ReportButton ────────────────────────────────────────────────────── */
+
+.report-button {
+  /* defaults to .btn .btn--ghost .btn--sm in markup; this is a hook for
+     positioning within an opponent seat cluster */
+  opacity: 0.85;
+}
+.report-button:hover {
+  opacity: 1;
+}
+
+.report-modal__reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.report-modal__reason {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r-2);
+  background: var(--surface-0);
+  cursor: pointer;
+  font-size: var(--t-sm);
+  text-align: left;
+}
+.report-modal__reason:hover {
+  border-color: var(--rule-3);
+  background: var(--surface-2);
+}
+.report-modal__reason--active {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+  color: var(--accent);
+}

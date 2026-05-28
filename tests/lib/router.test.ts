@@ -24,6 +24,14 @@ describe('parseHash', () => {
     expect(parseHash('#/table?code=ABC123')).toEqual({ kind: 'table', code: 'ABC123' });
   });
 
+  it('parses admin route with token', () => {
+    expect(parseHash('#/admin?token=secret123')).toEqual({ kind: 'admin', token: 'secret123' });
+  });
+
+  it('parses admin route with empty token when omitted', () => {
+    expect(parseHash('#/admin')).toEqual({ kind: 'admin', token: '' });
+  });
+
   it('parses legacy table launch link', () => {
     const result = parseHash('#table=K7M2P9&token=abc&me=@alice');
     expect(result).toEqual({
@@ -50,6 +58,7 @@ describe('buildHash', () => {
       { kind: 'create' as const },
       { kind: 'wait' as const, code: 'K7M2P9' },
       { kind: 'table' as const, code: 'B3F8N1' },
+      { kind: 'admin' as const, token: 'secret123' },
     ];
     for (const route of routes) {
       expect(parseHash(buildHash(route))).toEqual(route);

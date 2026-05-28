@@ -20,6 +20,11 @@ import * as startRoute from '../api/room/[code]/start.js';
 import * as moveRoute from '../api/room/[code]/move.js';
 import * as sseRoute from '../api/sse/[roomId].js';
 import * as cronRoute from '../api/cron/cleanup-rooms.js';
+import * as reportRoute from '../api/report.js';
+import * as adminReportsRoute from '../api/admin/reports.js';
+import * as adminBanRoute from '../api/admin/ban.js';
+import * as adminResetStatsRoute from '../api/admin/reset-stats.js';
+import * as telemetryLatencyRoute from '../api/telemetry/latency.js';
 
 type WebHandler = (request: Request) => Promise<Response> | Response;
 
@@ -39,6 +44,13 @@ const routes: ReadonlyArray<RouteEntry> = [
   { method: 'GET', pattern: /^\/api\/room\/[^/]+\/?$/, handler: roomCodeRoute.GET },
   { method: 'GET', pattern: /^\/api\/sse\/[^/]+\/?(\?.*)?$/, handler: sseRoute.GET },
   { method: 'GET', pattern: /^\/api\/cron\/cleanup-rooms\/?$/, handler: cronRoute.GET },
+  // SEC-3 report + admin moderation; DEPLOY-2 latency telemetry.
+  { method: 'POST', pattern: /^\/api\/report\/?$/, handler: reportRoute.POST },
+  { method: 'GET', pattern: /^\/api\/admin\/reports\/?$/, handler: adminReportsRoute.GET },
+  { method: 'POST', pattern: /^\/api\/admin\/ban\/?$/, handler: adminBanRoute.POST },
+  { method: 'POST', pattern: /^\/api\/admin\/reset-stats\/?$/, handler: adminResetStatsRoute.POST },
+  { method: 'POST', pattern: /^\/api\/telemetry\/latency\/?$/, handler: telemetryLatencyRoute.POST },
+  { method: 'GET', pattern: /^\/api\/telemetry\/latency\/?$/, handler: telemetryLatencyRoute.GET },
 ];
 
 async function nodeToWebRequest(

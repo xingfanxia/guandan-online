@@ -17,6 +17,7 @@ import { GameTableMP } from '@/screens/GameTableMP';
 import { Landing } from '@/screens/Landing';
 import { CreateRoom } from '@/screens/CreateRoom';
 import { Waiting } from '@/screens/Waiting';
+import { AdminDashboard } from '@/screens/AdminDashboard';
 import { parseHash, type Route } from '@/lib/router';
 import { getCredentialsForRoom, getHandle } from '@/lib/identity';
 import { getRoom, type GameMode } from '@/lib/api/rooms';
@@ -76,6 +77,8 @@ function RouteSwitch({ route }: { route: Route }): React.JSX.Element {
           myHandle={route.myHandle}
         />
       );
+    case 'admin':
+      return <AdminDashboard token={route.token} />;
   }
 }
 

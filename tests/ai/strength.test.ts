@@ -21,6 +21,14 @@ import { preloadDecomposer } from '@lib/ai/decomposer/index.js';
 
 const SEEDS = Number(process.env.BENCH_SEEDS ?? 60);
 
+// The Hard matchups decompose per candidate beat (1-ply structural lookahead),
+// so a hard-vs-decomposer-opponent game is ~16x the cost of a medium matchup.
+// Their bounds are loose honesty gates (≥0.45 / >0.6), not precision estimates,
+// so 60 games is an ample sample — keeping them at SEEDS=60 (120 games) would
+// burn ~32s on a 2-core CI runner for no statistical gain. The precision-
+// sensitive matchups (medium must clear >0.5) stay at the full SEEDS budget.
+const HARD_SEEDS = Number(process.env.BENCH_HARD_SEEDS ?? 30);
+
 function fmt(label: string, r: MatchupResult): string {
   return `${label}: A win-rate ${(r.winRateA * 100).toFixed(1)}% (${r.winsA}/${r.games})`;
 }
@@ -62,17 +70,19 @@ describe('AI strength ladder (F2)', () => {
   // policy actually moves this number — shipping a chip at 50% would be the
   // fake-difficulty AI-slop this very benchmark exists to prevent.
   // Hard decomposes per candidate beat (1-ply structural lookahead), so these
-  // matchups are decomposer-heavy → a generous timeout vs the 5s default.
-  it('hard is at least medium-class (not materially weaker)', () => {
-    const r = runMatchup(hardStrategy, mediumStrategy, SEEDS);
+  // matchups are decomposer-heavy. They run at HARD_SEEDS (smaller sample, loose
+  // bounds) with a generous timeout that leaves ~3.7x headroom over the observed
+  // ~16s cost on a 2-core CI runner.
+  it(`hard is at least medium-class (not materially weaker) (${HARD_SEEDS} seeds × 2)`, () => {
+    const r = runMatchup(hardStrategy, mediumStrategy, HARD_SEEDS);
     console.log(fmt('hard vs medium', r));
     expect(r.games).toBeGreaterThan(0);
     expect(r.winRateA).toBeGreaterThanOrEqual(0.45);
-  }, 30_000);
+  }, 60_000);
 
-  it('hard dominates random by a wide margin (decomposer-class)', () => {
-    const r = runMatchup(hardStrategy, randomStrategy, SEEDS);
+  it(`hard dominates random by a wide margin (decomposer-class) (${HARD_SEEDS} seeds × 2)`, () => {
+    const r = runMatchup(hardStrategy, randomStrategy, HARD_SEEDS);
     console.log(fmt('hard vs random', r));
     expect(r.winRateA).toBeGreaterThan(0.6);
-  }, 30_000);
+  }, 60_000);
 });

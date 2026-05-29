@@ -5,6 +5,8 @@ Typed gap inventory for predicate **"fully close all gaps"**. Status values:
 
 Baseline (2026-05-28): `npm test` 1138 passed | 1 skipped · typecheck clean · build 248kB JS.
 
+**Update (2026-05-28 — v1 shipped + CI confirmed)**: the loop's 18 commits were local-only until this session; pushed `a96ebd8..b214942` to origin/main, so the test-level confirmation for F1–F13 is now real (CI run `26617951286` green: Typecheck+Unit+Security + Playwright). Production deploy `hr5i5vmuw` ● Ready, `/api/health` 401-SSO in 0.37s (function invokes; not the old timeout). **One CI-only failure surfaced + fixed**: F2's `hard vs medium` benchmark hit the 30s per-test timeout on the 2-core GitHub runner (first time strength.test.ts ran on CI — both players are decomposer-heavy, ~16x a Medium matchup). Fixed in commit `11f740c` by splitting the seed budget — Hard matchups run at `BENCH_HARD_SEEDS` (default 30 = 60 games; loose ≥0.45/>0.6 gates) with a 60s timeout; precision matchups keep `SEEDS=60`. Suite now `npm test` 1512/1512. **Still genuinely gated, NOT closed by this push**: F8 (SEC-4 BotID edge activation needs the BotID SDK + deploy), F11 (DEPLOY-2 latency acceptance needs real traffic) — both remain `FIXED_PENDING_CONFIRMATION` until public access (DNS) lands.
+
 ## Reconciliation: PLAN.md milestone status vs code (anchor A)
 
 | Milestone | PLAN status | Code evidence | Verdict |

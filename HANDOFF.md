@@ -1,9 +1,11 @@
-# Handoff — guandan-online v1.0 (backend + all UI + Easy/Medium AI + ROOM-2 rule axes + production deploy + GitHub auto-deploy unblocked + TRIBUTE-2 sweep + Bobgy WASM Phase A + UI-7 CSS rotate + Vercel route signature fix)
+# Handoff — guandan-online v1 (feature-complete · shipped to origin/main · CI green)
 
-**Date**: 2026-05-21 (Vercel route signature fix unblocking all 9 API routes from 504 timeout; UI-7 CSS rotate replacing the rotate-prompt as primary mobile UX; Landing autofocus polish so rotate is visible on first paint. Bobgy WASM Phase A + TRIBUTE-2 6P/8P sweep + GitHub auto-deploy unblock all shipped earlier same day.)
-**Status**: backend feature-complete + **all UI tracks shipped (UI-1/2/3/4/5/6)** + bot dispatch wired in the move handler + **Easy + Medium AI tiers (LLM Hard tier deleted 2026-05-19)** + host-controlled bot fill at game-start + TRIBUTE-1 part D auto-tribute realtime wiring + TRIBUTE-1 part E manual tribute commands + **ROOM-2 all 7 boolean rule axes plumbed through** (`strictA` / `must1` / `manualTribute` / `wildcardHeart` / `lastCallDeclare` / `steelPlate` / `triPair` / `straightFlushAboveBomb5`) + **production deploy live via BOTH prebuilt (`vercel deploy --prebuilt --prod`) AND GitHub auto-deploy** (commit `edeb6c7` migrated 275 relative TS imports to `.js` suffixes + added root tsconfig compilerOptions so Vercel's per-function tsc check accepts the codebase under `nodenext` moduleResolution); SSO-gated until `gdo.ax0x.ai` DNS resolves. 9 HTTP/SSE routes plus the complete React 19 game surface — lobby flow (Landing / CreateRoom / Waiting), GameTable4P + shared GameTableMP for 6P/8P, TributeModal (4 substates), RoundEnd / ALevelFinal / Victory, and two AI tiers (Easy rule-based + 30% noise, Medium rule-based + partner cooperation). All 7 boolean rule axes plumbed through `POST /api/room/create` → `ModeRules` (ROOM-2, 2026-05-19); v1 engine branches on `strictA` + `manualTribute`, the other 5 are persisted display-only for future engine consumption. The session lifecycle is fully event-driven end-to-end: `room_joined` / `room_left` from lobby, `deal` from game-start, `move_played` / `move_passed` / `trick_won` / `round_end` / `game_end` / `tribute_pending` / `tribute_resolved` / next-round `deal` from gameplay — all flowing through the single publishEvent gateway with per-recipient log keys and a contiguous version namespace across the lobby → game boundary so a single SSE `Last-Event-ID` resumes cleanly across phase transitions. After a human's move applies, an in-handler synchronous bot run-loop (`lib/ai/runBots.ts`) computes + publishes bot turns until landing on a human or round-end. `lib/realtime/handleMove.ts` dispatches `tribute_select` + `anti_tribute` commands through `lib/game/tributeFlow.ts` pure transitions; auto-mode at round-start is unchanged (`pendingTribute` setting is a future phase). Tests **956/956** · TS strict clean · `npm run build` green (42 modules → 242kB JS / 42kB CSS gzip 74kB + 8.5kB) · grep-no-leak gate green. Vercel project `panpanmao/guandan-online` linked (separate from sibling scorer `guandan-calc`); Upstash Redis provisioned via Marketplace integration as an **independent instance** (no shared key space with sibling). `ADMIN_TOKEN` env var set on Production. First production deploy live (`dpl_Fjt8FhpeNrQ4cppPZdwZRneH3AZq`, aliases routed: `guandan-online-panpanmao.vercel.app` + `guandan-online-henna.vercel.app` + `guandan-online-xingfanxia-panpanmao.vercel.app`) — accessible behind team SSO (`ssoProtection.deploymentType: "all_except_custom_domains"`). The end-to-end integration test (`tests/integration/full-game-flow.test.ts`) walks create → join × 3 → start → SSE → play → pass. Remaining substantive work: **`gdo.ax0x.ai` DNS records (TXT + CNAME — see below)** to expose the deploy publicly, manual-tribute round-start wiring polish (dispatcher accepts commands; `dealNextRound` honors the rule but UI smoke not yet captured on hardware), Bobgy WASM port to bring Hard tier back via deeper search depth (separate 7-10 day ticket). AUTH-2 sibling KV migration is **cancelled** (per-app independent Upstash; no shared key space).
+> **Authoritative per-session log lives in [`CLAUDE.md` § Last updated](CLAUDE.md).** The dated `## Progress` sections in *this* file stop at 2026-05-21; the v1-completion loop (audit-fix + SEC-2/3/4 + AI-3/4 + EXCHANGE-1 + DEPLOY-2 + F12 Bobgy Phase B scaffolding) and the 2026-05-28 v1 ship are documented there, not below. Treat the body of this file as historical narrative through P0→UI→deploy.
+
+**Date**: 2026-05-28 (v1 pushed to origin/main + production deploy verified + CI benchmark seed fix). Earlier same-milestone work: v1-completion loop 2026-05-28; audit-fix loop 2026-05-22; route-signature fix + UI-7 rotate 2026-05-21.
+**Status**: **v1 feature-complete and on `origin/main`** (`b214942` + CI fix `11f740c`), GitHub Actions CI green (typecheck + unit + Playwright). Backend + all UI tracks (UI-1..7) + Easy/Medium AI + Bobgy decomposer Phase A + tribute (auto/manual + 6P/8P sweep) + the 7 v1-completion milestones (SEC-2 IP throttle + same-room warning, SEC-3 report+admin, SEC-4 BotID gate, AI-3 in-game assist, AI-4 DC→bot takeover, EXCHANGE-1 optional 换牌, DEPLOY-2 latency telemetry). F12 Bobgy Phase B Hard tier is scaffolded + dispatch-routed but its UI chip is **deliberately withheld** (benchmarks ≈ Medium; decisive Hard>Medium lookahead is research-grade, deferred). **1512 unit tests + 41 e2e** · per-path coverage gate green (lib/** 80% / src/** ratchet · ~87% overall) · TS strict clean · `npm run build` clean · grep-no-leak green · `scripts/ops/verify-all.sh` ✔. **14 HTTP/SSE routes**. Production deploy `hr5i5vmuw` ● Ready; `/api/health` 401-SSO in 0.37s (function invokes — named-export route signatures confirmed; not the old timeout). SSO-gated behind `*.vercel.app`; public `gdo.ax0x.ai` pending DNS. Vercel project `panpanmao/guandan-online` (independent Upstash instance — no shared key space with sibling scorer; AUTH-2 sibling KV migration **cancelled** 2026-05-19). **Remaining (non-code / deferred)**: `gdo.ax0x.ai` DNS records (TXT + CNAME — see below); set `IP_HASH_SALT` on Vercel Production (SEC-2 — else ipHash correlates across rooms); decisive Hard>Medium lookahead + UI chip (research-grade, see `docs/plan/bobgy/PHASE-A.md` §10); manual-tribute + card-exchange interleave (documented edge — EXCHANGE-1 triggers on the auto/no-tribute path).
 **Repo**: https://github.com/xingfanxia/guandan-online
-**Vercel project**: `panpanmao/guandan-online` (linked 2026-05-18; deploy pending)
+**Vercel project**: `panpanmao/guandan-online` (linked 2026-05-18; production deploy live behind team SSO, GitHub auto-deploy active)
 **Domain (locked)**: `gdo.ax0x.ai` (sibling subdomain to scorer at `gd.ax0x.ai`)
 
 ---
@@ -667,16 +669,18 @@ When you (or future Claude session) starts coding:
 
 This project is the **online multiplayer game**. Its sibling [`guandan-scorer`](../guandan-scorer) is the **in-person scoring app**.
 
-Integration boundary:
-- Shared `@handle` namespace (Upstash KV prefix `gs:player:*` for scorer + `go:*` for online)
-- Same Upstash instance (shared profile read; per-app game state writes)
-- Online copies `validateOwnershipToken` (10 lines) from `scorer/api/players/_utils.js`
-- Cross-app stat sync deferred to v1.2
+> **SUPERSEDED 2026-05-19** — the cross-project integration plan below (shared `@handle` namespace, shared Upstash instance, AUTH-2 key-migration pre-step) was **cancelled**. guandan-online runs on its **own independent Upstash instance** with no shared key space; AUTH-1 shipped without any sibling-repo migration. Kept for historical context only. See `docs/research/cross-project-integration.md` (SUPERSEDED block) + `CLAUDE.md` § Last updated (2026-05-19).
 
-Pre-implementation step (must happen before any AUTH-1 work in this repo):
-- Migrate scorer's `player:*` keys → `gs:player:*` prefix (AUTH-2 milestone)
-- ~15 file edits in sibling repo + one-time migration script
-- Fallback-read pattern during rollout
+~~Integration boundary:~~
+- ~~Shared `@handle` namespace (Upstash KV prefix `gs:player:*` for scorer + `go:*` for online)~~
+- ~~Same Upstash instance (shared profile read; per-app game state writes)~~
+- ~~Online copies `validateOwnershipToken` (10 lines) from `scorer/api/players/_utils.js`~~
+- ~~Cross-app stat sync deferred to v1.2~~
+
+~~Pre-implementation step (must happen before any AUTH-1 work in this repo):~~
+- ~~Migrate scorer's `player:*` keys → `gs:player:*` prefix (AUTH-2 milestone)~~
+- ~~~15 file edits in sibling repo + one-time migration script~~
+- ~~Fallback-read pattern during rollout~~
 
 ---
 

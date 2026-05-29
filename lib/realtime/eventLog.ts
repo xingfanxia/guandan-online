@@ -21,7 +21,7 @@
 // selected on reconnect.
 
 import type { ServerEvent } from './messages.js';
-import type { RedisLike } from './redisClient.js';
+import { decodeStreamValue, type RedisLike } from './redisClient.js';
 
 export interface LoggedEvent {
   /** Equal to event.version. Kept as a separate field for legacy callers
@@ -144,9 +144,18 @@ export function createUpstashEventLog(
           10
         );
         if (!Number.isFinite(numeric)) continue;
-        const payload = fields['data'];
-        if (!payload) continue;
-        const event = JSON.parse(payload) as ServerEvent;
+        // Upstash auto-deserializes field values on read, so `fields['data']`
+        // is the parsed event object (NOT a JSON string) in production — see
+        // decodeStreamValue. Per-entry catch so a single corrupt record can't
+        // throw out of the SSE `start` callback and brick the whole stream.
+        let event: ServerEvent | null;
+        try {
+          event = decodeStreamValue<ServerEvent>(fields['data']);
+        } catch (err) {
+          console.error('[upstashEventLog] skipping undecodable entry', streamId, err);
+          continue;
+        }
+        if (!event) continue;
         result.push({ id: numeric, event });
       }
       return result;

@@ -71,13 +71,22 @@ export interface RedisLike {
    *
    * Returns an object keyed by stream id, with the field-value map as the
    * value. Insertion-order preserved in the JS object.
+   *
+   * Field values come back as `unknown`, NOT `string`: @upstash/redis has
+   * `automaticDeserialization: true` by default and JSON-parses field values
+   * on read (the same behavior `get` documents above). A value written as
+   * `JSON.stringify(obj)` therefore comes back already parsed as an object —
+   * callers MUST run it through `decodeStreamValue` rather than `JSON.parse`,
+   * which would throw `"[object Object]" is not valid JSON` on the parsed
+   * object. (This mismatch shipped the production SSE black-screen: the test
+   * fake returned raw strings while real Upstash returned objects.)
    */
   xrange(
     key: string,
     start: string,
     end: string,
     count?: number
-  ): Promise<Record<string, Record<string, string>>>;
+  ): Promise<Record<string, Record<string, unknown>>>;
 
   /** SADD key member [member ...]. Returns count of newly-added members. */
   sadd(key: string, ...members: string[]): Promise<number>;
@@ -87,4 +96,24 @@ export interface RedisLike {
 
   /** SMEMBERS key. Returns all members of the set (empty array if missing). */
   smembers(key: string): Promise<string[]>;
+}
+
+/**
+ * Decode a stream field value read back from XRANGE.
+ *
+ * @upstash/redis (with its default `automaticDeserialization: true`)
+ * JSON-parses field values on read, so a value written as
+ * `JSON.stringify(event)` comes back ALREADY parsed as an object. A
+ * non-deserializing client (or the test fake before it modeled this) returns
+ * the raw JSON string. Handle both: parse strings, pass objects through.
+ *
+ * Returns null for missing values so callers can skip the entry. Throws only
+ * if a raw string is not valid JSON — a genuinely corrupt entry, which
+ * callers should catch per-entry so one bad record never kills a whole replay
+ * (and thus the SSE stream / the game).
+ */
+export function decodeStreamValue<T>(value: unknown): T | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string') return JSON.parse(value) as T;
+  return value as T;
 }

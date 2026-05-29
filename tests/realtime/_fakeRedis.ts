@@ -2,7 +2,17 @@
 //
 // Goals:
 //   - Mirror the parts of @upstash/redis semantics we depend on (NX, EX,
-//     auto-JSON-parsing GET, stream XADD/XRANGE with exclusive '(<id>' bound).
+//     auto-JSON-parsing GET *and XRANGE field values*, stream XADD/XRANGE with
+//     exclusive '(<id>' bound).
+//
+// CRITICAL fidelity note: the real @upstash/redis client has
+// `automaticDeserialization: true` by default, so it JSON-parses BOTH `get`
+// values AND stream field values on read. An earlier version of this fake
+// auto-parsed `get` but returned XRANGE field values as raw strings — that
+// single infidelity let the SSE black-screen bug ship green: the eventLog /
+// eventBus impls called `JSON.parse` on a value real Upstash had already
+// parsed, throwing `"[object Object]" is not valid JSON` only in production.
+// xrange below now parses field values to match prod; keep it that way.
 //   - Be tiny — we only need it for unit tests; a real Upstash instance
 //     covers integration.
 //   - Make time controllable so TTL expiry tests don't need real wall-clock
@@ -186,7 +196,7 @@ export function createFakeRedis(): FakeRedis {
       start: string,
       end: string,
       count?: number
-    ): Promise<Record<string, Record<string, string>>> {
+    ): Promise<Record<string, Record<string, unknown>>> {
       const stream = streams.get(key) ?? [];
       const startExclusive = start.startsWith('(');
       const startId = startExclusive ? start.slice(1) : start;
@@ -208,8 +218,22 @@ export function createFakeRedis(): FakeRedis {
         if (okStart && okEnd) matches.push([id, { ...fields }]);
       }
       const sliced = count !== undefined ? matches.slice(0, count) : matches;
-      const result: Record<string, Record<string, string>> = {};
-      for (const [id, fields] of sliced) result[id] = fields;
+      // Mirror @upstash/redis automaticDeserialization: JSON-parse each field
+      // value on read (fall back to the raw string when it isn't JSON), exactly
+      // like the fake's `get` above. This is what makes the eventLog / eventBus
+      // suites a real regression guard for the production read path.
+      const result: Record<string, Record<string, unknown>> = {};
+      for (const [id, fields] of sliced) {
+        const decoded: Record<string, unknown> = {};
+        for (const [fk, fv] of Object.entries(fields)) {
+          try {
+            decoded[fk] = JSON.parse(fv);
+          } catch {
+            decoded[fk] = fv;
+          }
+        }
+        result[id] = decoded;
+      }
       return result;
     },
   };

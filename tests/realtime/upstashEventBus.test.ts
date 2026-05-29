@@ -177,3 +177,26 @@ describe('createUpstashEventBus — error containment', () => {
     expect(good).toHaveBeenCalledWith(sampleEvent);
   });
 });
+
+describe('createUpstashEventBus — auto-deserialization (prod SSE black-screen regression)', () => {
+  // Real @upstash/redis JSON-parses stream field values on read, so tick()
+  // receives `fields['data']` as an already-parsed object. Pre-fix tick()
+  // called JSON.parse on that object, threw "[object Object]" is not valid
+  // JSON, and the catch swallowed it — every LIVE event silently dropped, the
+  // game table rendered empty. This pins the parsed-object delivery contract.
+  it('delivers the parsed event object, not a JSON string', async () => {
+    const redis = createFakeRedis();
+    const bus = createUpstashEventBus(redis, { pollIntervalMs: POLL });
+    const handler = vi.fn();
+    await bus.subscribe('chan', handler);
+
+    await bus.publish('chan', sampleEvent);
+    redis.advanceTime(1);
+    await vi.advanceTimersByTimeAsync(POLL);
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    const delivered = handler.mock.calls[0]?.[0];
+    expect(typeof delivered).toBe('object');
+    expect(delivered).toEqual(sampleEvent);
+  });
+});

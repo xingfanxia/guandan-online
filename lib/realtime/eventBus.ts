@@ -16,7 +16,7 @@
 // crashed subscriber must not block delivery to others.
 
 import type { ServerEvent } from './messages.js';
-import type { RedisLike } from './redisClient.js';
+import { decodeStreamValue, type RedisLike } from './redisClient.js';
 
 export type Unsubscribe = () => Promise<void>;
 
@@ -128,11 +128,15 @@ export function createUpstashEventBus(
           const entries = await redis.xrange(key(channel), `(${cursor}`, '+');
           for (const [streamId, fields] of Object.entries(entries)) {
             if (cancelled) return;
-            const payload = fields['data'];
-            if (payload === undefined) continue;
+            // Upstash auto-deserializes field values on read, so `fields['data']`
+            // is the parsed event object (NOT a JSON string) in production. Use
+            // decodeStreamValue, not JSON.parse, which would throw
+            // `"[object Object]" is not valid JSON` and silently drop every live
+            // event (the SSE black-screen on the live path). The try/catch keeps
+            // a single bad entry from halting the poll loop.
             try {
-              const parsed = JSON.parse(payload) as ServerEvent;
-              handler(parsed);
+              const parsed = decodeStreamValue<ServerEvent>(fields['data']);
+              if (parsed !== null) handler(parsed);
             } catch (err) {
               console.error('[upstashEventBus] handler threw:', err);
             }

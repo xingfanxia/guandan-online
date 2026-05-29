@@ -98,6 +98,31 @@ describe('createUpstashEventLog — per-room isolation', () => {
   });
 });
 
+describe('createUpstashEventLog — auto-deserialization (prod SSE black-screen regression)', () => {
+  // Real @upstash/redis JSON-parses stream field values on read. append()
+  // writes JSON.stringify(event) into `data`, so on read `data` is an OBJECT,
+  // not a string. Pre-fix range() called JSON.parse on that object, threw
+  // "[object Object]" is not valid JSON OUT of the SSE start callback → the
+  // stream returned 200 then closed with zero bytes → the table rendered black.
+  it('fake xrange returns field values already parsed (matches real Upstash)', async () => {
+    const redis = createFakeRedis();
+    await createUpstashEventLog(redis).append('room1', heartbeat(7));
+    const entries = await redis.xrange('events:room1', '-', '+');
+    const [fields] = Object.values(entries);
+    // If this ever reverts to a string, the fake has diverged from prod and
+    // would mask the double-parse bug again.
+    expect(typeof fields?.['data']).toBe('object');
+  });
+
+  it('range() returns the event when xrange yields a parsed object (no double-parse throw)', async () => {
+    const log = createUpstashEventLog(createFakeRedis());
+    await log.append('room1', heartbeat(7));
+    const events = await log.range('room1', null);
+    expect(events).toHaveLength(1);
+    expect(events[0]?.event.version).toBe(7);
+  });
+});
+
 describe('createUpstashEventLog — TTL refresh', () => {
   it('refreshes TTL on the stream + seq keys on each append', async () => {
     const redis = createFakeRedis();

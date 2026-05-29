@@ -431,3 +431,13 @@ After Phase A lands, Phase B brings back Hard tier:
 Phase B is materially harder than Phase A — lookahead policies for Guandan
 are research-grade work (the original AI tier plan deferred this to DanLM).
 Plan to scope Phase B separately with its own design phase before execution.
+
+**2026-05-28 — bounded attempt + empirical result**: the *heuristic* slice of
+Phase B (a strategically-ordered decomposition lead, the cheap part of the
+above) was attempted and **empirically rejected** — three opposite-direction
+lead orderings all benchmarked 50.8% vs Medium (statistically identical). The
+decomposer's filtered decomposition presents one dominant lead Medium already
+plays, so reordering is a no-op. The Hard UI chip stays **withheld** per the
+anti-slop gate. The decisive path (determinization + multi-trick search) remains
+research-grade and unstarted. Full write-up + forward guidance:
+[`PHASE-B-FINDINGS.md`](PHASE-B-FINDINGS.md).

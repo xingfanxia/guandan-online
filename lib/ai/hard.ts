@@ -35,6 +35,17 @@ export function chooseHardMove(hand: readonly Card[], ctx: HardContext): HardMov
   const plays = enumerateLegalPlays(hand, ctx.target, ctx.levelRank);
 
   // Leader: Hard inherits Medium's lead logic (finisher → decomposer → coop).
+  //
+  // Phase B note (2026-05-28): a strategically-ordered decomposition lead was
+  // tried here and empirically REJECTED — three principled orderings of the
+  // decomposer's groups (longest/highest-first, shed-low, opponent-aware) each
+  // benchmarked 50.8% (61/120) vs Medium, statistically identical to leaving the
+  // lead = Medium's. The decomposer's optimal decomposition, filtered to
+  // enumerable legal leads, almost always presents ONE dominant lead that Medium
+  // already plays, so heuristic reordering can't differentiate the tiers. A
+  // decisive Hard>Medium needs genuine determinization lookahead (sample
+  // opponent hands, search multiple tricks) — research-grade work deferred per
+  // docs/plan/bobgy/PHASE-A.md §10. See docs/plan/bobgy/PHASE-B-FINDINGS.md.
   if (ctx.target === null) {
     return chooseMediumMove(hand, ctx);
   }

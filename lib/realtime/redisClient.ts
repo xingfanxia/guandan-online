@@ -107,10 +107,10 @@ export interface RedisLike {
  * non-deserializing client (or the test fake before it modeled this) returns
  * the raw JSON string. Handle both: parse strings, pass objects through.
  *
- * Returns null for missing values so callers can skip the entry. Throws only
- * if a raw string is not valid JSON — a genuinely corrupt entry, which
- * callers should catch per-entry so one bad record never kills a whole replay
- * (and thus the SSE stream / the game).
+ * Returns null for a missing OR literal-null value so callers can skip the
+ * entry. Throws only if a raw string is not valid JSON — a genuinely corrupt
+ * entry, which callers should catch per-entry so one bad record never kills a
+ * whole replay (and thus the SSE stream / the game).
  */
 export function decodeStreamValue<T>(value: unknown): T | null {
   if (value === null || value === undefined) return null;

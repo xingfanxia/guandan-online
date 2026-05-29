@@ -148,6 +148,9 @@ export function createUpstashEventLog(
         // is the parsed event object (NOT a JSON string) in production — see
         // decodeStreamValue. Per-entry catch so a single corrupt record can't
         // throw out of the SSE `start` callback and brick the whole stream.
+        // (range DROPS a bad entry via `continue`; eventBus.tick logs-and-
+        // continues — both contain the throw per-entry, differing only because
+        // range builds an array while tick fires side-effects.)
         let event: ServerEvent | null;
         try {
           event = decodeStreamValue<ServerEvent>(fields['data']);

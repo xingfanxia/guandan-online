@@ -26,6 +26,7 @@ import {
   type TributeExchange,
   type TributeMode,
 } from './tribute.js';
+import { openExchangeVote } from './exchange.js';
 
 export interface DealNextRoundInput {
   prevRound: GameRound;
@@ -182,6 +183,11 @@ export function dealNextRound(input: DealNextRoundInput): DealNextRoundResult {
       mode: tributeMode.kind,
       obligations,
       finishOrder: [...input.prevRound.finishOrder],
+      // EXCHANGE-1 interleave: carry the cardExchange intent into the pending
+      // state so tributeFlow's finalize opens the vote (instead of starting the
+      // trick) once the manual swap completes. dealNextRound owns the rules; the
+      // pure flow helpers downstream don't see the session.
+      cardExchangeAfter: input.session.rules.cardExchange,
     };
     const pendingRound: GameRound = { ...newRound, pendingTribute: pending };
     return {
@@ -212,24 +218,8 @@ export function dealNextRound(input: DealNextRoundInput): DealNextRoundResult {
   // card-exchange vote instead. The losing team (everyone not on the winning
   // team) votes; the flow helpers start the trick once the exchange resolves.
   if (input.session.rules.cardExchange) {
-    const winningTeam = seats.find((s) => s.id === firstPlace)?.team;
-    const losers = seats
-      .filter((s) => s.team !== winningTeam)
-      .map((s) => s.id);
-    if (losers.length > 0) {
-      const pendingExchangeRound: GameRound = {
-        ...newRound,
-        pendingExchange: {
-          phase: 'vote',
-          losers,
-          votes: {},
-          voteThreshold: 0.5,
-          cardCount: 3,
-          direction: null,
-          selections: {},
-          leader: newRound.leader,
-        },
-      };
+    const pendingExchangeRound = openExchangeVote(newRound, firstPlace);
+    if (pendingExchangeRound !== null) {
       return {
         round: pendingExchangeRound,
         tributeMode,

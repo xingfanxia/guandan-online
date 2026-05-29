@@ -22,6 +22,7 @@ import { startTrick } from './round.js';
 import type { GameRound, PlayerId, PendingTributeObligation } from './round.js';
 import { applyTribute } from './tribute.js';
 import type { TributeExchange, TributeMode } from './tribute.js';
+import { openExchangeVote } from './exchange.js';
 
 /**
  * Result of a manual-tribute command. `exchanges` is non-null only on the
@@ -117,6 +118,7 @@ export function selectTributeCard(
     pending.mode,
     updatedObligations,
     pending.finishOrder,
+    pending.cardExchangeAfter ?? false,
   );
 }
 
@@ -165,19 +167,28 @@ export function declareAntiTribute(
     );
   }
 
-  return finalizeManualTribute(round, 'resist', [], pending.finishOrder);
+  return finalizeManualTribute(
+    round,
+    'resist',
+    [],
+    pending.finishOrder,
+    pending.cardExchangeAfter ?? false,
+  );
 }
 
 /**
- * Internal: apply the swap (or no-op for resist), start the first trick of
- * the new round, clear pendingTribute. Mirrors the AUTO-path tail of
- * `dealNextRound` so behavior is identical once tribute completes.
+ * Internal: apply the swap (or no-op for resist), clear pendingTribute, then
+ * either open the card-exchange vote (when the room rule is on — EXCHANGE-1
+ * interleave) or start the first trick. Mirrors the AUTO-path tail of
+ * `dealNextRound` (tribute → exchange? → trick) so behavior is identical once
+ * tribute completes.
  */
 function finalizeManualTribute(
   round: GameRound,
   mode: 'single' | 'double' | 'sweep' | 'resist',
   obligations: readonly PendingTributeObligation[],
   finishOrder: readonly PlayerId[],
+  cardExchangeAfter: boolean,
 ): TributeFlowResult {
   let tributeMode: TributeMode;
   if (mode === 'resist') {
@@ -213,8 +224,24 @@ function finalizeManualTribute(
   // Strip the pendingTribute field — it's served its purpose.
   const { pendingTribute: _stripped, ...withoutPending } = next;
   void _stripped;
+  const base = withoutPending as GameRound;
+
+  // EXCHANGE-1 interleave: with both rules on, the canonical order is
+  // tribute → card exchange → trick. Open the vote instead of starting the
+  // trick; the exchange-flow helpers start the trick once it resolves (same
+  // convergence as the auto path). winner = finishOrder[0]; if there are no
+  // losers (no opposing team), openExchangeVote returns null and we fall
+  // through to start the trick.
+  const winnerId = finishOrder[0];
+  if (cardExchangeAfter && winnerId !== undefined) {
+    const opened = openExchangeVote(base, winnerId);
+    if (opened !== null) {
+      return { round: opened, exchanges: applied.exchanges };
+    }
+  }
+
   return {
-    round: startTrick(withoutPending as GameRound),
+    round: startTrick(base),
     exchanges: applied.exchanges,
   };
 }

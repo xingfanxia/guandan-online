@@ -1202,6 +1202,127 @@ describe('handleMove — round_end + game_end events on finished round', () => {
     }
   });
 
+  it('manual-tribute + cardExchange: tribute finalize opens the exchange vote, then the vote resolves into the trick', async () => {
+    const fx = await fixture();
+    const round = buildNearFinishedRound();
+    await fx.deps.roundStore.put(
+      CODE,
+      { round, version: 0, updatedAt: 1_700_000_000_000 },
+      86_400
+    );
+    // BOTH rules on — the interleave under test.
+    await fx.deps.sessionStore.put(
+      CODE,
+      {
+        mode: '4',
+        rules: { ...DEFAULT_MODE_RULES, manualTribute: true, cardExchange: true },
+        teamLevels: { t1: '2', t2: '2' },
+        teamAFails: { t1: 0, t2: 0 },
+        roundOwner: null,
+        finishedRounds: 0,
+        phase: 'in_progress',
+        winnerTeam: null,
+      },
+      86_400
+    );
+
+    const tokenFor = (id: string): string =>
+      id === 'p1' ? fx.p1Token :
+      id === 'p2' ? fx.p2Token :
+      id === 'p3' ? fx.p3Token :
+      fx.hostJoinToken;
+
+    // Close the round → manual tribute deferred, cardExchange intent carried.
+    const cardId = encodeCards([round.hands['p0']![0]!])[0]!;
+    const r1 = await handleMove(
+      req({
+        body: { moveId: 'mx-close', command: { kind: 'play', cards: [cardId], fromVersion: 0 } },
+        bearer: fx.hostJoinToken,
+      }),
+      CODE,
+      fx.deps
+    );
+    expect(r1.status).toBe(200);
+
+    let env = await fx.deps.roundStore.get(CODE);
+    expect(env!.round.pendingTribute).toBeDefined();
+    expect(env!.round.pendingTribute!.cardExchangeAfter).toBe(true);
+    expect(env!.round.currentTrick).toBeNull();
+    expect(env!.round.pendingExchange).toBeUndefined(); // not yet — opens on finalize
+
+    // Finalize the tribute (drive per detected mode).
+    const pending = env!.round.pendingTribute!;
+    if (pending.mode === 'resist') {
+      const winnerTeam = env!.round.seats.find((s) => s.id === pending.finishOrder[0])!.team;
+      const declarer = env!.round.seats.find((s) => s.team !== winnerTeam)!.id;
+      const rr = await handleMove(
+        req({
+          body: { moveId: 'mx-resist', command: { kind: 'anti_tribute', fromVersion: env!.version } },
+          bearer: tokenFor(declarer),
+        }),
+        CODE,
+        fx.deps
+      );
+      expect(rr.status).toBe(200);
+    } else {
+      let cursor = env;
+      let n = 0;
+      for (const o of pending.obligations) {
+        n += 1;
+        const loserHand = cursor!.round.hands[o.from]!;
+        const candidate = loserHand.find(
+          (card) => !(card.suit === 'hearts' && card.rank === cursor!.round.level)
+        )!;
+        const rsel = await handleMove(
+          req({
+            body: {
+              moveId: `mx-sel-${n}`,
+              command: { kind: 'tribute_select', targetCard: encodeCards([candidate])[0]!, fromVersion: cursor!.version },
+            },
+            bearer: tokenFor(o.from),
+          }),
+          CODE,
+          fx.deps
+        );
+        expect(rsel.status).toBe(200);
+        cursor = await fx.deps.roundStore.get(CODE);
+      }
+    }
+
+    // After finalize: the exchange vote is OPEN — trick has NOT started.
+    env = await fx.deps.roundStore.get(CODE);
+    expect(env!.round.pendingTribute).toBeUndefined();
+    expect(env!.round.currentTrick).toBeNull();
+    expect(env!.round.pendingExchange).toBeDefined();
+    expect(env!.round.pendingExchange!.phase).toBe('vote');
+
+    // The events log carries tribute_resolved THEN exchange_vote_required.
+    const log = await fx.deps.log.range(eventLogKey(CODE, 'p0'), null);
+    const types = log.map((e) => e.event.type);
+    expect(types).toContain('tribute_resolved');
+    expect(types).toContain('exchange_vote_required');
+
+    // Drive the losing team to vote NO → exchange skipped → trick starts. This
+    // proves the interleave converges to a playable round.
+    const losers = [...env!.round.pendingExchange!.losers];
+    for (const loser of losers) {
+      const cur = await fx.deps.roundStore.get(CODE);
+      const rv = await handleMove(
+        req({
+          body: { moveId: `mx-vote-${loser}`, command: { kind: 'exchange_vote', vote: false, fromVersion: cur!.version } },
+          bearer: tokenFor(loser),
+        }),
+        CODE,
+        fx.deps
+      );
+      expect(rv.status).toBe(200);
+    }
+
+    const final = await fx.deps.roundStore.get(CODE);
+    expect(final!.round.pendingExchange).toBeUndefined();
+    expect(final!.round.currentTrick).not.toBeNull();
+  });
+
   it('emits game_end when applyRoundResult closes the session (winning at A)', async () => {
     const fx = await fixture();
     const round = buildCleanWinNearFinishedRound();

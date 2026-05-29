@@ -239,3 +239,68 @@ describe('declareAntiTribute — resist mode', () => {
     expect(() => declareAntiTribute(stripped, 'd')).toThrow(/no pending tribute/);
   });
 });
+
+describe('manual tribute → card-exchange interleave (EXCHANGE-1)', () => {
+  // finishOrder [a, b, c, d]: a wins (t1). Losers (t2) are b + d.
+  const exchHands = {
+    a: [c('clubs', '5'), c('clubs', '6')],
+    b: [c('hearts', '5')],
+    c: [c('clubs', '7')],
+    d: [c('spades', 'A'), c('clubs', '3')],
+  };
+
+  it('single tribute opens the exchange vote (no trick) when cardExchangeAfter is set', () => {
+    const pending: PendingTributeState = {
+      mode: 'single',
+      obligations: [{ from: 'd', to: 'a', selectedCard: null }],
+      finishOrder: ['a', 'b', 'c', 'd'],
+      cardExchangeAfter: true,
+    };
+    const round = makeRound(exchHands, pending);
+    const result = selectTributeCard(round, 'd', c('spades', 'A'));
+    const next = result.round;
+
+    // Tribute finalized — pending cleared, swap recorded.
+    expect(next.pendingTribute).toBeUndefined();
+    expect(result.exchanges).not.toBeNull();
+    expect(result.exchanges!.length).toBe(1);
+    // ...but the trick has NOT started — the exchange vote is now open instead.
+    expect(next.currentTrick).toBeNull();
+    expect(next.pendingExchange).toBeDefined();
+    expect(next.pendingExchange!.phase).toBe('vote');
+    // Losing team (t2: b, d) are the voters; post-tribute leader (末游 d) carries.
+    expect(next.pendingExchange!.losers.sort()).toEqual(['b', 'd']);
+    expect(next.pendingExchange!.leader).toBe('d');
+  });
+
+  it('resist (anti_tribute) opens the exchange vote when cardExchangeAfter is set', () => {
+    const pending: PendingTributeState = {
+      mode: 'resist',
+      obligations: [],
+      finishOrder: ['a', 'b', 'c', 'd'],
+      cardExchangeAfter: true,
+    };
+    const round = makeRound(exchHands, pending);
+    const result = declareAntiTribute(round, 'd');
+    const next = result.round;
+
+    expect(next.pendingTribute).toBeUndefined();
+    expect(result.exchanges).toEqual([]); // resist — no swap
+    expect(next.currentTrick).toBeNull();
+    expect(next.pendingExchange).toBeDefined();
+    expect(next.pendingExchange!.phase).toBe('vote');
+  });
+
+  it('starts the trick directly when cardExchangeAfter is absent (regression)', () => {
+    const pending: PendingTributeState = {
+      mode: 'single',
+      obligations: [{ from: 'd', to: 'a', selectedCard: null }],
+      finishOrder: ['a', 'b', 'c', 'd'],
+      // cardExchangeAfter omitted → falsy → trick starts as before.
+    };
+    const round = makeRound(exchHands, pending);
+    const result = selectTributeCard(round, 'd', c('spades', 'A'));
+    expect(result.round.pendingExchange).toBeUndefined();
+    expect(result.round.currentTrick).not.toBeNull();
+  });
+});

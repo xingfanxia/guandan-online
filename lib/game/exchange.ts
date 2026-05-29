@@ -11,9 +11,56 @@
 import type { Card } from './cards.js';
 import { powerRank } from './patterns.js';
 import type { LevelRank } from './levels.js';
-import type { PlayerId, PlayerSeat } from './round.js';
+import type { GameRound, PlayerId, PlayerSeat } from './round.js';
 
 export type ExchangeDirection = 'cw' | 'ccw';
+
+/** Fraction of losers that must vote YES (strictly) to trigger the exchange. */
+export const DEFAULT_EXCHANGE_VOTE_THRESHOLD = 0.5;
+/** Cards each player swaps with a neighbor when the exchange fires. */
+export const DEFAULT_EXCHANGE_CARD_COUNT = 3;
+
+/**
+ * Open the card-exchange vote on a freshly-prepared round (post-tribute, leader
+ * already set). The losing team — everyone NOT on the round winner's team — are
+ * the eligible voters. Returns the round with `pendingExchange` set in the
+ * 'vote' phase, or `null` when there are no losers (nothing to exchange — caller
+ * should start the trick instead).
+ *
+ * Shared by `dealNextRound` (auto/no-tribute path) and `tributeFlow.ts`
+ * (manual-tribute finalize) so both open the vote identically — same threshold,
+ * card count, and leader handoff. Pure; the round's existing `leader` carries
+ * through to the trick once the exchange resolves.
+ */
+export function openExchangeVote(
+  round: GameRound,
+  winnerId: PlayerId
+): GameRound | null {
+  const winningTeam = round.seats.find((s) => s.id === winnerId)?.team;
+  // Guard a degenerate input: if the winner isn't seated, `winningTeam` is
+  // undefined and EVERY seat would (wrongly) count as a loser. Return null so
+  // the caller falls through to starting the trick rather than opening an
+  // exchange against a bogus loser set. Unreachable in practice (finishOrder[0]
+  // is always seated) — this is a hard floor, not a known path.
+  if (winningTeam === undefined) return null;
+  const losers = round.seats
+    .filter((s) => s.team !== winningTeam)
+    .map((s) => s.id);
+  if (losers.length === 0) return null;
+  return {
+    ...round,
+    pendingExchange: {
+      phase: 'vote',
+      losers,
+      votes: {},
+      voteThreshold: DEFAULT_EXCHANGE_VOTE_THRESHOLD,
+      cardCount: DEFAULT_EXCHANGE_CARD_COUNT,
+      direction: null,
+      selections: {},
+      leader: round.leader,
+    },
+  };
+}
 
 export interface VoteTally {
   /** True once every loser has cast a vote. */

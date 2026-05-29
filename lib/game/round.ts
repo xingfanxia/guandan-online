@@ -59,6 +59,15 @@ export interface PendingTributeState {
   obligations: PendingTributeObligation[];
   /** Snapshot finish order; needed for `applyTribute` first-leader selection. */
   finishOrder: PlayerId[];
+  /**
+   * EXCHANGE-1 interleave: true when the room rule `cardExchange` is also on, so
+   * the manual-tribute finalize must open a card-exchange vote (instead of
+   * starting the trick) once the swap completes — mirroring the auto path's
+   * tribute → exchange → trick ordering. Set by `dealNextRound` (which has the
+   * session rules); read by `tributeFlow.ts` on finalization. Absent/false ⇒
+   * finalize starts the trick directly.
+   */
+  cardExchangeAfter?: boolean;
 }
 
 /**

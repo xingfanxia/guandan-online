@@ -736,11 +736,13 @@ function reduceTributePending(prev: TableState, evt: TributePendingEvent): Table
 }
 
 function reduceTributeResolved(prev: TableState, _evt: TributeResolvedEvent): TableState {
-  // The server has applied the swap and started the trick. Clear the modal
-  // so the table is interactive again. Subsequent `move_played` will refresh
+  // The server has applied the swap. It then either started the trick OR — when
+  // the room also has cardExchange on — opened the exchange vote (a following
+  // `exchange_vote_required` event drives that). Either way, clear the tribute
+  // modal so the table is interactive again. Subsequent `move_played` refreshes
   // the player's hand counts; their own `deal` already gave them the hand
-  // pre-swap, so we don't try to splice the received card in here — the
-  // next play / pass round-trip will re-sync via the normal move events.
+  // pre-swap, so we don't splice the received card in here — the next play /
+  // pass round-trip re-syncs via the normal move events.
   return { ...prev, tribute: null };
 }
 

@@ -4,9 +4,12 @@ import {
   pickExchangeDirection,
   applyExchangeSwap,
   autoSelectLowest,
+  openExchangeVote,
+  DEFAULT_EXCHANGE_VOTE_THRESHOLD,
+  DEFAULT_EXCHANGE_CARD_COUNT,
 } from '@lib/game/exchange';
 import type { Card } from '@lib/game/cards';
-import type { PlayerSeat } from '@lib/game/round';
+import type { GameRound, PlayerSeat } from '@lib/game/round';
 
 const c = (suit: Card['suit'], rank: Card['rank'], deck: Card['deck'] = 1): Card => ({
   suit,
@@ -20,6 +23,22 @@ const SEATS: PlayerSeat[] = [
   { id: 'p2', team: 't1', position: 2 },
   { id: 'p3', team: 't2', position: 3 },
 ];
+
+function makeRound(seats: PlayerSeat[], leader: string): GameRound {
+  const hands: Record<string, Card[]> = {};
+  for (const s of seats) hands[s.id] = [];
+  return {
+    mode: seats.length === 4 ? '4' : seats.length === 6 ? '6' : '8',
+    level: '2',
+    owner: 't1',
+    seats,
+    hands,
+    leader,
+    phase: 'playing',
+    finishOrder: [],
+    currentTrick: null,
+  };
+}
 
 describe('tallyExchangeVote', () => {
   it('is incomplete until all losers vote', () => {
@@ -135,5 +154,35 @@ describe('applyExchangeSwap', () => {
     const out = applyExchangeSwap(hands, selections, 'cw', SEATS);
     const total = Object.values(out).reduce((n, h) => n + h.length, 0);
     expect(total).toBe(12); // 4 players × 3 cards, conserved
+  });
+});
+
+describe('openExchangeVote', () => {
+  it('opens the vote with the losing team as voters and the round leader preserved', () => {
+    // p0 (t1) won → losers are the t2 seats p1, p3.
+    const round = makeRound(SEATS, 'p3');
+    const opened = openExchangeVote(round, 'p0');
+    expect(opened).not.toBeNull();
+    const pe = opened!.pendingExchange!;
+    expect(pe.phase).toBe('vote');
+    expect(pe.losers.sort()).toEqual(['p1', 'p3']);
+    expect(pe.voteThreshold).toBe(DEFAULT_EXCHANGE_VOTE_THRESHOLD);
+    expect(pe.cardCount).toBe(DEFAULT_EXCHANGE_CARD_COUNT);
+    expect(pe.direction).toBeNull();
+    expect(pe.votes).toEqual({});
+    expect(pe.selections).toEqual({});
+    // Leader carries through so the trick starts on the right seat post-exchange.
+    expect(pe.leader).toBe('p3');
+    // currentTrick untouched — the vote/select flow starts it later.
+    expect(opened!.currentTrick).toBeNull();
+  });
+
+  it('returns null when there are no losers (single-team table)', () => {
+    const oneTeam: PlayerSeat[] = [
+      { id: 'p0', team: 't1', position: 0 },
+      { id: 'p1', team: 't1', position: 1 },
+    ];
+    const round = makeRound(oneTeam, 'p0');
+    expect(openExchangeVote(round, 'p0')).toBeNull();
   });
 });

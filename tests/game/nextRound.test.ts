@@ -544,4 +544,59 @@ describe('dealNextRound — EXCHANGE-1 card-exchange rule', () => {
     expect(result.round.pendingExchange).toBeUndefined();
     expect(result.round.currentTrick).not.toBeNull();
   });
+
+  it('manualTribute + cardExchange: defers BOTH — pending tribute carries cardExchangeAfter, exchange opens after finalize', () => {
+    const rng = seedrandom('exch-manual-1');
+    const deck = shuffleDeck(buildDeck(), rng);
+    const round0 = dealRound({
+      mode: '4',
+      level: '2',
+      owner: null,
+      seats: SEATS_4P,
+      leader: 'alice',
+      shuffledDeck: deck,
+    });
+    const finished = runRoundToFinish(round0, rng);
+    const session0 = createSession({
+      mode: '4',
+      rules: { ...DEFAULT_MODE_RULES, manualTribute: true, cardExchange: true },
+    });
+    const session1 = applyRoundResult(session0, finished);
+
+    const result = dealNextRound({ prevRound: finished, session: session1, rng });
+
+    // Manual tribute takes precedence — exchange is NOT opened yet (it opens
+    // when tributeFlow finalizes the swap).
+    expect(result.pendingManualTribute).toBe(true);
+    expect(result.pendingCardExchange).toBe(false);
+    expect(result.round.pendingExchange).toBeUndefined();
+    expect(result.round.currentTrick).toBeNull();
+    // The cardExchange intent rides on the pending tribute state so the flow
+    // helper can open the vote once tribute completes.
+    expect(result.round.pendingTribute).toBeDefined();
+    expect(result.round.pendingTribute!.cardExchangeAfter).toBe(true);
+  });
+
+  it('manualTribute alone: pending tribute carries cardExchangeAfter=false', () => {
+    const rng = seedrandom('exch-manual-2');
+    const deck = shuffleDeck(buildDeck(), rng);
+    const round0 = dealRound({
+      mode: '4',
+      level: '2',
+      owner: null,
+      seats: SEATS_4P,
+      leader: 'alice',
+      shuffledDeck: deck,
+    });
+    const finished = runRoundToFinish(round0, rng);
+    const session0 = createSession({
+      mode: '4',
+      rules: { ...DEFAULT_MODE_RULES, manualTribute: true },
+    });
+    const session1 = applyRoundResult(session0, finished);
+
+    const result = dealNextRound({ prevRound: finished, session: session1, rng });
+    expect(result.pendingManualTribute).toBe(true);
+    expect(result.round.pendingTribute!.cardExchangeAfter).toBe(false);
+  });
 });

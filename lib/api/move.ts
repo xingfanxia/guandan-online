@@ -219,6 +219,24 @@ export async function handleMove(
         version: response.appliedVersion,
         exchanged: resolvedExchanged,
       });
+
+      // EXCHANGE-1 interleave: a manual-tribute finalize can open a card-exchange
+      // vote when the room has BOTH rules on (tributeFlow defers the trick and
+      // sets pendingExchange instead). Prompt the losing team right after
+      // tribute_resolved — same event the auto/no-tribute path emits after the
+      // deal. The vote/select commands drive the rest; the trick starts when the
+      // exchange resolves. appliedVersion is taken by tribute_resolved, so this
+      // lands at the next free slot.
+      if (newRound.pendingExchange) {
+        const pe = newRound.pendingExchange;
+        events.push({
+          type: 'exchange_vote_required',
+          version: response.appliedVersion + 1,
+          losers: pe.losers,
+          voteThreshold: pe.voteThreshold,
+          cardCount: pe.cardCount,
+        });
+      }
     }
 
     // ── Card-exchange flow events (EXCHANGE-1) ────────────────────────────

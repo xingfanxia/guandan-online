@@ -179,6 +179,19 @@
   padding: 2px 0;
 }
 
+/* Turn countdown chip — sits next to the turn flag. */
+.turn-countdown {
+  margin-left: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--ink-3);
+}
+.turn-countdown--low { color: var(--bad, oklch(62% 0.19 25)); }
+.turn-countdown--expired {
+  color: var(--bad, oklch(62% 0.19 25));
+  animation: turn-flag-pulse 1.2s ease-in-out infinite;
+}
+
 /* ============ Per-seat status badge (AI-4) ============ */
 .player-status-badge {
   display: inline-block;

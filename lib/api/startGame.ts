@@ -67,7 +67,9 @@ const ROOM_TTL_SECONDS = 86_400;
 const ROUND_TTL_SECONDS = 86_400;
 const SESSION_TTL_SECONDS = 86_400;
 const STARTING_LEVEL: LevelRank = '2';
-const DEFAULT_TURN_TIMEOUT_SECONDS = 30;
+// 60s — matches the turn-timeout sweep threshold (lib/api/turnTimeout.ts)
+// so the client countdown reflects real enforcement.
+const DEFAULT_TURN_TIMEOUT_SECONDS = 60;
 /** Idempotency TTL for the start operation. 1h covers any plausible duplicate
  * POST window — the operation is one-shot per room lifecycle, not per game. */
 const START_IDEMPOTENCY_TTL_SECONDS = 3_600;

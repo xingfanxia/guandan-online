@@ -188,8 +188,11 @@ export function runBots(input: RunBotsInput): RunBotsResult {
  * Assemble the BotContext for the current acting bot. Looks up the partner
  * (same team) + opponents from `room.members` so the cooperation strategy
  * can read partner-hand-count.
+ *
+ * Exported for the turn-timeout sweep (lib/api/turnTimeout.ts), which uses
+ * the same context to pick a forced move for a stalled HUMAN seat.
  */
-function buildBotContext(
+export function buildBotContext(
   round: GameRound,
   me: PlayerId,
   tier: BotTier,

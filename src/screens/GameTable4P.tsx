@@ -20,6 +20,7 @@ import { WildcardSubDialog, type WildcardCandidate } from '@/components/Wildcard
 import { EndgameAssist } from '@/components/EndgameAssist';
 import { ReportButton } from '@/components/ReportButton';
 import { PlayerStatusBadge } from '@/components/PlayerStatusBadge';
+import { TurnCountdown } from '@/components/TurnCountdown';
 import { openSseClient, type SseClient } from '@/lib/sseClient';
 import { handlesEqual } from '@/lib/identity';
 import { postCommand } from '@/lib/api/moveClient';
@@ -162,6 +163,9 @@ interface TableState {
     key: number;
     exchanged: { fromHandle: string; toHandle: string; card: GameCard }[];
   } | null;
+  /** ISO deadline for the current turn (move events / snapshot). Drives the
+   *  TurnCountdown; the server's turn-timeout sweep enforces it. */
+  turnDeadline?: string | null;
 }
 
 export interface RoundEndView {
@@ -595,6 +599,7 @@ export function GameTable4P({
             <span>
               我 · <em>{myHandle}</em> · {displayHand.length} 张
               {myTurn ? <span className="turn-flag">▶ 轮到你出牌</span> : null}
+              <TurnCountdown deadline={state.turnDeadline ?? null} active={myTurn} />
             </span>
             <span>红心通配 ★ · 钢板可</span>
           </div>
@@ -968,6 +973,7 @@ function reduceSnapshot(prev: TableState, evt: SnapshotEvent, myHandle: PlayerHa
     lastPlayed,
     snapshotVersion: evt.version,
     roundOwner: evt.table.roundOwner,
+    turnDeadline: evt.table.turnDeadline ?? prev.turnDeadline ?? null,
     roundNumber: evt.roundNumber ?? prev.roundNumber,
     teamAFails: evt.teamAFails ?? prev.teamAFails ?? null,
   };
@@ -1072,6 +1078,7 @@ function reduceMovePlayed(prev: TableState, evt: MovePlayedEvent): TableState {
     players,
     finishOrder,
     currentTurn: evt.nextTurn,
+    turnDeadline: evt.turnDeadline ?? prev.turnDeadline ?? null,
     lastPlayed: {
       player: handle,
       cards: decodeHand(evt.cards),
@@ -1081,7 +1088,11 @@ function reduceMovePlayed(prev: TableState, evt: MovePlayedEvent): TableState {
 }
 
 function reduceMovePassed(prev: TableState, evt: MovePassedEvent): TableState {
-  return { ...prev, currentTurn: evt.nextTurn };
+  return {
+    ...prev,
+    currentTurn: evt.nextTurn,
+    turnDeadline: evt.turnDeadline ?? prev.turnDeadline ?? null,
+  };
 }
 
 function reduceTrickWon(prev: TableState, evt: TrickWonEvent): TableState {

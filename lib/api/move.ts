@@ -62,7 +62,9 @@ export const ROUND_TTL_SECONDS = 86_400;
 export const SESSION_TTL_SECONDS = 86_400;
 /** Room TTL refresh constant used by the lastActiveAt bump (R-I1). */
 export const ROOM_TTL_SECONDS = 86_400;
-const DEFAULT_TURN_TIMEOUT_SECONDS = 30;
+// 60s — matches the turn-timeout sweep threshold (lib/api/turnTimeout.ts)
+// so the client countdown reflects real enforcement.
+const DEFAULT_TURN_TIMEOUT_SECONDS = 60;
 
 export async function handleMove(
   req: Request,

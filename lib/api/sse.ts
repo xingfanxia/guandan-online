@@ -343,6 +343,10 @@ async function buildConnectSnapshot(
     type: 'snapshot',
     version: envelope.version,
     table,
+    // Session context for resume: round counter + A-fail counters. Clients
+    // otherwise reconstruct roundNumber by counting deal events, which the
+    // snapshot skip-guard suppresses on reload.
+    ...(session ? { roundNumber: session.finishedRounds + 1, teamAFails: session.teamAFails } : {}),
   };
   const payload = buildClientPayload(recipientId, author, state);
   if (payload) {

@@ -47,6 +47,7 @@ export function deriveRoundEndEvents(
     winnerRanks: [...result.winnerRanks],
     upgrade: result.upgrade,
     newLevels: { ...postSession.teamLevels },
+    teamAFails: { ...postSession.teamAFails },
   };
 
   if (postSession.phase !== 'finished') {

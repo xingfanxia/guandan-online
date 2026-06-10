@@ -104,9 +104,10 @@ async function fixture() {
   const session: GameSession = {
     mode: '4',
     teamLevels: { t1: '5', t2: '3' },
-    aFailCounts: { t1: 0, t2: 0 },
+    teamAFails: { t1: 1, t2: 0 },
     roundOwner: 't1',
-    roundsFinished: 1,
+    finishedRounds: 2,
+    phase: 'playing',
     winnerTeam: null,
     rules: { strictA: true },
   } as unknown as GameSession;
@@ -163,6 +164,9 @@ describe('handleSse — connect snapshot', () => {
     expect(data.players).toHaveLength(4);
     expect(data.table.currentTurn).toBe(ids[0]);
     expect(data.table.teamLevels).toEqual({ t1: '5', t2: '3' });
+    // Session context for resume: 1-based round counter + A-fail counters.
+    expect(data.roundNumber).toBe(3);
+    expect(data.teamAFails).toEqual({ t1: 1, t2: 0 });
     // Roster carries bot status so the client can render AI seats.
     expect(data.players.filter((p) => p.status === 'bot')).toHaveLength(3);
     // Mid-trick play is included so a reloading client can rebuild the trick.

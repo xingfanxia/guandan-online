@@ -63,6 +63,12 @@ export interface SnapshotEvent {
   you: PrivatePlayerState;
   table: PublicTableState;
   players: PlayerSummary[];
+  /** 1-based round counter (session.finishedRounds + 1). Optional —
+   *  pre-existing emitters may omit it; clients keep their local counter. */
+  roundNumber?: number;
+  /** Per-team A-level fail counters — drives the ALevelFinal banner on
+   *  resume. Optional for back-compat. */
+  teamAFails?: Record<TeamKey, number>;
 }
 
 export interface RoomJoinedEvent {
@@ -145,6 +151,9 @@ export interface RoundEndEvent {
   winnerRanks: number[];
   upgrade: number;
   newLevels: Record<TeamKey, LevelRank>;
+  /** Post-round A-level fail counters — lets the ALevelFinal banner update
+   *  live without a refetch. Optional for back-compat with logged events. */
+  teamAFails?: Record<TeamKey, number>;
 }
 
 export interface GameEndEvent {

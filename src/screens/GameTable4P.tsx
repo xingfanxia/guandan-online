@@ -65,6 +65,7 @@ import { ExchangeVoteModal } from '@/screens/ExchangeVoteModal';
 import { ExchangeSelectModal } from '@/screens/ExchangeSelectModal';
 import { RoundEnd } from '@/screens/RoundEnd';
 import { Victory } from '@/screens/Victory';
+import { ALevelFinal } from '@/screens/ALevelFinal';
 
 /**
  * EXCHANGE-1 client UI state. Set by the exchange_* events, cleared once the
@@ -83,6 +84,9 @@ export interface GameTable4PProps {
   myHandle: PlayerHandle;
   /** Optional fromVersion for resume. */
   fromVersion?: number;
+  /** Strict-A rule from the room view (App.tsx TableSwitch). Drives the
+   *  ALevelFinal banner copy; defaults to true (the project default rule). */
+  strictA?: boolean;
 }
 
 interface PlayedLine {
@@ -147,6 +151,17 @@ interface TableState {
   roundEndView?: RoundEndView | null;
   /** Set by game_end; drives the Victory screen. */
   gameEndView?: { winnerTeam: TeamKey; summary: string } | null;
+  /** Whose A-test the current round is — from deal.roundOwner / snapshot. */
+  roundOwner?: TeamKey | null;
+  /** A-level fail counters — from snapshot / round_end (ALevelFinal banner). */
+  teamAFails?: Record<TeamKey, number> | null;
+  /** Transient tribute summary — set by tribute_resolved, auto-dismissed by
+   *  the component. Without it, AUTO-mode tribute is invisible (pending +
+   *  resolved arrive in the same burst). */
+  tributeNotice?: {
+    key: number;
+    exchanged: { fromHandle: string; toHandle: string; card: GameCard }[];
+  } | null;
 }
 
 export interface RoundEndView {
@@ -188,6 +203,7 @@ export function GameTable4P({
   joinToken,
   myHandle,
   fromVersion,
+  strictA,
 }: GameTable4PProps): React.JSX.Element {
   const [state, setState] = useState<TableState>(EMPTY_STATE);
   const [selected, setSelected] = useState<ReadonlySet<number>>(new Set());
@@ -217,6 +233,8 @@ export function GameTable4P({
   // round's overlay shows again. The overlay also auto-dismisses (effect
   // below) because the next round starts underneath it immediately.
   const [dismissedRoundEnd, setDismissedRoundEnd] = useState(0);
+  // Tribute-notice dismissal — keyed by the notice's event version.
+  const [dismissedTribute, setDismissedTribute] = useState(0);
   // Mirror of state.myPlayerId so the SSE callback (created once per mount)
   // can decide whether a `move_played` event was mine without closing over
   // stale state. setState's functional updater inside the callback already
@@ -419,6 +437,14 @@ export function GameTable4P({
     return () => clearTimeout(timer);
   }, [state.roundEndView, dismissedRoundEnd]);
 
+  // Auto-dismiss the tribute notice after 7s.
+  useEffect(() => {
+    const notice = state.tributeNotice;
+    if (!notice || notice.key === dismissedTribute) return undefined;
+    const timer = setTimeout(() => setDismissedTribute(notice.key), 7000);
+    return () => clearTimeout(timer);
+  }, [state.tributeNotice, dismissedTribute]);
+
   const seats = useMemo(() => splitSeats(state, myHandle), [state, myHandle]);
   const tributeModalState = useMemo(
     () =>
@@ -444,8 +470,35 @@ export function GameTable4P({
     ],
   );
 
-  return (
+  // A-level decisive-round chrome (S07). When a team reaches A, wrap the
+  // table in the warm-red ALevelFinal container; if both teams are at A,
+  // prefer the round owner (whose A-test it is), then my team.
+  const aTeam: TeamKey | null =
+    state.teamLevels.t1 === 'A' && state.teamLevels.t2 === 'A'
+      ? (state.roundOwner ?? state.myTeam ?? 't1')
+      : state.teamLevels.t1 === 'A'
+        ? 't1'
+        : state.teamLevels.t2 === 'A'
+          ? 't2'
+          : null;
+
+  const tributeNoticeVisible =
+    state.tributeNotice && state.tributeNotice.key !== dismissedTribute
+      ? state.tributeNotice
+      : null;
+
+  const table = (
     <div className="table" role="application" aria-label="4-player game table">
+      {tributeNoticeVisible ? (
+        <div className="tribute-notice mono" role="status">
+          <span className="tribute-notice__title">进贡结算</span>
+          {tributeNoticeVisible.exchanged.map((x, i) => (
+            <span key={`${x.fromHandle}-${i}`} className="tribute-notice__line">
+              {x.fromHandle} → {x.toHandle}：{cardNoticeLabel(x.card)}
+            </span>
+          ))}
+        </div>
+      ) : null}
       <div className="table-top">
         <div className="table-top-left">
           <span className="table-top-key mono">ROOM</span>
@@ -683,6 +736,30 @@ export function GameTable4P({
       ) : null}
     </div>
   );
+
+  if (aTeam !== null) {
+    return (
+      <ALevelFinal
+        aTeam={aTeam}
+        aTeamLabel={aTeam === state.myTeam ? '我方' : '对方'}
+        strictMode={strictA ?? true}
+        failCount={state.teamAFails?.[aTeam] ?? 0}
+        failCap={3}
+        isOwnRound={(state.roundOwner ?? null) === aTeam}
+      >
+        {table}
+      </ALevelFinal>
+    );
+  }
+  return table;
+}
+
+/** Compact card label for the tribute notice, e.g. "红桃A" / "大王". */
+function cardNoticeLabel(card: GameCard): string {
+  if (card.suit === 'joker') return card.rank === 'RJ' ? '大王' : '小王';
+  const suitZh =
+    card.suit === 'spades' ? '黑桃' : card.suit === 'hearts' ? '红桃' : card.suit === 'clubs' ? '梅花' : '方块';
+  return `${suitZh}${card.rank}`;
 }
 
 /** Headline label for a round result by upgrade size (双下 +3 / 单下 +2 / 平下 +1). */
@@ -841,6 +918,7 @@ function reduceRoundEnd(prev: TableState, evt: RoundEndEvent): TableState {
     ...prev,
     lastRoundWinnerTeam: evt.winnerTeam,
     teamLevels: { t1: evt.newLevels.t1, t2: evt.newLevels.t2 },
+    teamAFails: evt.teamAFails ?? prev.teamAFails ?? null,
     roundEndView: {
       roundNumber: prev.roundNumber,
       winnerTeam: evt.winnerTeam,
@@ -889,6 +967,9 @@ function reduceSnapshot(prev: TableState, evt: SnapshotEvent, myHandle: PlayerHa
     partnerId: evt.you.partnerId,
     lastPlayed,
     snapshotVersion: evt.version,
+    roundOwner: evt.table.roundOwner,
+    roundNumber: evt.roundNumber ?? prev.roundNumber,
+    teamAFails: evt.teamAFails ?? prev.teamAFails ?? null,
   };
 }
 
@@ -907,6 +988,7 @@ function reduceDeal(prev: TableState, evt: DealEvent): TableState {
     myHand: decodeHand(evt.yourHand),
     lastPlayed: null,
     finishOrder: [],
+    roundOwner: evt.roundOwner,
     // The deal names the new round's first leader — without this currentTurn
     // is stale from the previous round and the leader's buttons stay locked.
     currentTurn: evt.leader ?? prev.currentTurn,
@@ -932,7 +1014,7 @@ function reduceTributePending(prev: TableState, evt: TributePendingEvent): Table
   return { ...prev, tribute: snapshot };
 }
 
-function reduceTributeResolved(prev: TableState, _evt: TributeResolvedEvent): TableState {
+function reduceTributeResolved(prev: TableState, evt: TributeResolvedEvent): TableState {
   // The server has applied the swap. It then either started the trick OR — when
   // the room also has cardExchange on — opened the exchange vote (a following
   // `exchange_vote_required` event drives that). Either way, clear the tribute
@@ -940,7 +1022,19 @@ function reduceTributeResolved(prev: TableState, _evt: TributeResolvedEvent): Ta
   // the player's hand counts; their own `deal` already gave them the hand
   // pre-swap, so we don't splice the received card in here — the next play /
   // pass round-trip re-syncs via the normal move events.
-  return { ...prev, tribute: null };
+  //
+  // Also capture a transient notice — in AUTO mode pending+resolved arrive in
+  // the same burst, so without this the tribute is completely invisible.
+  const exchanged = (evt.exchanged ?? []).map((x) => ({
+    fromHandle: prev.players.get(x.from)?.handle ?? x.from,
+    toHandle: prev.players.get(x.to)?.handle ?? x.to,
+    card: decodeCardId(x.card),
+  }));
+  return {
+    ...prev,
+    tribute: null,
+    tributeNotice: exchanged.length > 0 ? { key: evt.version, exchanged } : (prev.tributeNotice ?? null),
+  };
 }
 
 function reduceRoomJoined(prev: TableState, evt: RoomJoinedEvent): TableState {

@@ -76,6 +76,9 @@ export interface AuthorSnapshotEvent {
   type: 'snapshot';
   version: number;
   table: PublicTableState;
+  /** See SnapshotEvent — optional session-level context for resume. */
+  roundNumber?: number;
+  teamAFails?: Record<TeamKey, number>;
 }
 
 export interface AuthorExchangeCompletedEvent {
@@ -227,7 +230,7 @@ function buildSnapshot(
   event: AuthorSnapshotEvent,
   state: GameState
 ): SnapshotEvent {
-  return {
+  const out: SnapshotEvent = {
     type: 'snapshot',
     version: event.version,
     you: {
@@ -246,6 +249,9 @@ function buildSnapshot(
       rank: state.ranks[id] ?? null,
     })),
   };
+  if (event.roundNumber !== undefined) out.roundNumber = event.roundNumber;
+  if (event.teamAFails !== undefined) out.teamAFails = { ...event.teamAFails };
+  return out;
 }
 
 // ─── Runtime leak detector (dev / CI gate) ────────────────────────────────────

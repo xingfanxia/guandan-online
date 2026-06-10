@@ -97,13 +97,17 @@ function TableSwitch({
   myHandle: string;
 }): React.JSX.Element {
   const [mode, setMode] = useState<GameMode | null>(null);
+  const [strictA, setStrictA] = useState<boolean | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     getRoom(code)
       .then((r) => {
-        if (!cancelled) setMode(r.mode);
+        if (!cancelled) {
+          setMode(r.mode);
+          setStrictA(r.rules?.strictA);
+        }
       })
       .catch((e) => {
         if (!cancelled) setError(e instanceof Error ? e.message : 'fetch failed');
@@ -133,7 +137,12 @@ function TableSwitch({
   }
   if (mode === '4') {
     return (
-      <GameTable4P roomId={code} joinToken={joinToken} myHandle={myHandle} />
+      <GameTable4P
+        roomId={code}
+        joinToken={joinToken}
+        myHandle={myHandle}
+        {...(strictA !== undefined ? { strictA } : {})}
+      />
     );
   }
   return (
@@ -142,6 +151,7 @@ function TableSwitch({
       roomId={code}
       joinToken={joinToken}
       myHandle={myHandle}
+      {...(strictA !== undefined ? { strictA } : {})}
     />
   );
 }

@@ -27,6 +27,7 @@ import { handlesEqual } from '@/lib/identity';
 import { postCommand } from '@/lib/api/moveClient';
 import { RoundEnd } from '@/screens/RoundEnd';
 import { Victory } from '@/screens/Victory';
+import { ALevelFinal } from '@/screens/ALevelFinal';
 import { decodeCardId, encodeCards } from '@lib/realtime/cardCodec';
 import { isWildcard } from '@lib/game/cards';
 import { analyzeHand, type Pattern } from '@lib/game/patterns';
@@ -84,6 +85,9 @@ export interface GameTableMPProps {
   joinToken: string;
   myHandle: PlayerHandle;
   fromVersion?: number;
+  /** Strict-A rule from the room view (App.tsx TableSwitch). Drives the
+   *  ALevelFinal banner copy; defaults to true (the project default rule). */
+  strictA?: boolean;
 }
 
 interface TableState {
@@ -131,6 +135,15 @@ interface TableState {
   roundEndView?: RoundEndView | null;
   /** Set by game_end; drives the Victory screen. */
   gameEndView?: { winnerTeam: TeamKey; summary: string } | null;
+  /** Whose A-test the current round is — from deal.roundOwner / snapshot. */
+  roundOwner?: TeamKey | null;
+  /** A-level fail counters — from snapshot / round_end (ALevelFinal banner). */
+  teamAFails?: Record<TeamKey, number> | null;
+  /** Transient tribute summary — see GameTable4P. */
+  tributeNotice?: {
+    key: number;
+    exchanged: { fromHandle: string; toHandle: string; card: GameCard }[];
+  } | null;
 }
 
 export interface RoundEndView {
@@ -173,6 +186,7 @@ export function GameTableMP({
   joinToken,
   myHandle,
   fromVersion,
+  strictA,
 }: GameTableMPProps): React.JSX.Element {
   const [state, setState] = useState<TableState>(EMPTY_STATE);
   const [selected, setSelected] = useState<ReadonlySet<number>>(new Set());
@@ -202,6 +216,8 @@ export function GameTableMP({
   const [moveError, setMoveError] = useState<string | null>(null);
   // RoundEnd overlay dismissal — keyed by the view's roundNumber. See 4P.
   const [dismissedRoundEnd, setDismissedRoundEnd] = useState(0);
+  // Tribute-notice dismissal — keyed by the notice's event version.
+  const [dismissedTribute, setDismissedTribute] = useState(0);
   // Mirror of state.myPlayerId for the SSE callback — see GameTable4P for the
   // detailed rationale. Without this, my own move_played event leaves stale
   // indices in `selected` (the survivors now point to different cards).
@@ -268,6 +284,14 @@ export function GameTableMP({
     const timer = setTimeout(() => setDismissedRoundEnd(view.roundNumber), 8000);
     return () => clearTimeout(timer);
   }, [state.roundEndView, dismissedRoundEnd]);
+
+  // Auto-dismiss the tribute notice after 7s.
+  useEffect(() => {
+    const notice = state.tributeNotice;
+    if (!notice || notice.key === dismissedTribute) return undefined;
+    const timer = setTimeout(() => setDismissedTribute(notice.key), 7000);
+    return () => clearTimeout(timer);
+  }, [state.tributeNotice, dismissedTribute]);
 
   const seats = useMemo(() => {
     if (!state.myPlayerId || state.seatOrder.length === 0) return [];
@@ -431,8 +455,34 @@ export function GameTableMP({
     ],
   );
 
-  return (
+  // A-level decisive-round chrome (S07) — see GameTable4P for the selection
+  // rationale (round owner wins ties, then my team).
+  const aTeam: TeamKey | null =
+    state.teamLevels.t1 === 'A' && state.teamLevels.t2 === 'A'
+      ? (state.roundOwner ?? state.myTeam ?? 't1')
+      : state.teamLevels.t1 === 'A'
+        ? 't1'
+        : state.teamLevels.t2 === 'A'
+          ? 't2'
+          : null;
+
+  const tributeNoticeVisible =
+    state.tributeNotice && state.tributeNotice.key !== dismissedTribute
+      ? state.tributeNotice
+      : null;
+
+  const table = (
     <div className="mtable" role="application" aria-label={`${mode}-player game table`}>
+      {tributeNoticeVisible ? (
+        <div className="tribute-notice mono" role="status">
+          <span className="tribute-notice__title">进贡结算</span>
+          {tributeNoticeVisible.exchanged.map((x, i) => (
+            <span key={`${x.fromHandle}-${i}`} className="tribute-notice__line">
+              {x.fromHandle} → {x.toHandle}：{cardNoticeLabel(x.card)}
+            </span>
+          ))}
+        </div>
+      ) : null}
       <header className="mtable-top">
         <div className="mtable-top__key">ROOM</div>
         <div className="mtable-top__val">{roomId}</div>
@@ -648,6 +698,30 @@ export function GameTableMP({
       ) : null}
     </div>
   );
+
+  if (aTeam !== null) {
+    return (
+      <ALevelFinal
+        aTeam={aTeam}
+        aTeamLabel={aTeam === state.myTeam ? '我方' : '对方'}
+        strictMode={strictA ?? true}
+        failCount={state.teamAFails?.[aTeam] ?? 0}
+        failCap={3}
+        isOwnRound={(state.roundOwner ?? null) === aTeam}
+      >
+        {table}
+      </ALevelFinal>
+    );
+  }
+  return table;
+}
+
+/** Compact card label for the tribute notice, e.g. "红桃A" / "大王". */
+function cardNoticeLabel(card: GameCard): string {
+  if (card.suit === 'joker') return card.rank === 'RJ' ? '大王' : '小王';
+  const suitZh =
+    card.suit === 'spades' ? '黑桃' : card.suit === 'hearts' ? '红桃' : card.suit === 'clubs' ? '梅花' : '方块';
+  return `${suitZh}${card.rank}`;
 }
 
 /** Headline label for a round result by upgrade size (双下 +3 / 单下 +2 / 平下 +1). */
@@ -797,6 +871,7 @@ function reduceRoundEnd(prev: TableState, evt: RoundEndEvent): TableState {
     ...prev,
     lastRoundWinnerTeam: evt.winnerTeam,
     teamLevels: { t1: evt.newLevels.t1, t2: evt.newLevels.t2 },
+    teamAFails: evt.teamAFails ?? prev.teamAFails ?? null,
     roundEndView: {
       roundNumber: prev.roundNumber,
       winnerTeam: evt.winnerTeam,
@@ -849,6 +924,9 @@ function reduceSnapshot(
     myTeam,
     lastPlayed,
     snapshotVersion: evt.version,
+    roundOwner: evt.table.roundOwner,
+    roundNumber: evt.roundNumber ?? prev.roundNumber,
+    teamAFails: evt.teamAFails ?? prev.teamAFails ?? null,
   };
 }
 
@@ -867,6 +945,7 @@ function reduceDeal(prev: TableState, evt: DealEvent): TableState {
     myHand: decodeHand(evt.yourHand),
     lastPlayed: null,
     finishOrder: [],
+    roundOwner: evt.roundOwner,
     // The deal names the new round's first leader — without this currentTurn
     // is stale from the previous round and the leader's buttons stay locked.
     currentTurn: evt.leader ?? prev.currentTurn,
@@ -886,8 +965,19 @@ function reduceTributePending(prev: TableState, evt: TributePendingEvent): Table
   return { ...prev, tribute: snapshot };
 }
 
-function reduceTributeResolved(prev: TableState, _evt: TributeResolvedEvent): TableState {
-  return { ...prev, tribute: null };
+function reduceTributeResolved(prev: TableState, evt: TributeResolvedEvent): TableState {
+  // Capture a transient notice — in AUTO mode pending+resolved arrive in the
+  // same burst, so without this the tribute is completely invisible. See 4P.
+  const exchanged = (evt.exchanged ?? []).map((x) => ({
+    fromHandle: prev.players.get(x.from)?.handle ?? x.from,
+    toHandle: prev.players.get(x.to)?.handle ?? x.to,
+    card: decodeCardId(x.card),
+  }));
+  return {
+    ...prev,
+    tribute: null,
+    tributeNotice: exchanged.length > 0 ? { key: evt.version, exchanged } : (prev.tributeNotice ?? null),
+  };
 }
 
 function reduceRoomJoined(prev: TableState, evt: RoomJoinedEvent): TableState {

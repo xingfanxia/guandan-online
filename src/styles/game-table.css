@@ -178,6 +178,58 @@
   letter-spacing: 0.02em;
   padding: 2px 0;
 }
+
+/* ============ Per-seat status badge (AI-4) ============ */
+.player-status-badge {
+  display: inline-block;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.player-status-badge--connected {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: oklch(70% 0.17 150);
+}
+.player-status-badge--disconnected,
+.player-status-badge--takeover,
+.player-status-badge--bot {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  padding: 1px 5px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--rule-1);
+  color: var(--ink-3);
+}
+.player-status-badge--disconnected { color: var(--bad, oklch(62% 0.19 25)); }
+.player-status-badge--takeover { color: var(--accent); }
+
+/* ============ Tribute settlement notice (transient) ============ */
+.tribute-notice {
+  position: absolute;
+  top: 44px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: center;
+  padding: 8px 16px;
+  background: oklch(13% 0.01 60 / 0.94);
+  border: 1px solid var(--rule-1);
+  border-radius: var(--r-md, 8px);
+  font-size: var(--t-2xs);
+  color: var(--ink-2);
+  backdrop-filter: blur(6px);
+}
+.tribute-notice__title {
+  color: var(--accent);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+.tribute-notice__line { white-space: nowrap; }
 .my-hand-row {
   display: flex;
   padding-top: 14px;

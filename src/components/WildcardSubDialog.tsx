@@ -1,11 +1,16 @@
-// WildcardSubDialog — wildcard substitution picker (红心通配).
+// WildcardSubDialog — wildcard substitution confirm (红心通配).
 //
-// Shown when the player's chosen combo includes a 红心级牌 (wildcard) and there
-// is genuine ambiguity about what it represents (e.g. ♥7 + K + K could be
-// "三张 K" but the wildcard could also extend other combos). The dialog lists
-// the candidate interpretations, defaults the selection to the most plausible
-// one (the pattern the engine declared / the first candidate), and lets the
-// player confirm or cancel.
+// Shown when the player's chosen combo includes a 红心级牌 (wildcard). The
+// dialog previews how the play WILL BE RULED and asks for confirm/cancel.
+//
+// Why there is intentionally NO multi-interpretation picker: the wire
+// (PlayCommand) carries card ids only — the SERVER derives the pattern via
+// the same analyzeHand the client runs (maximal reading per the F13 fix), so
+// the client's single candidate IS the binding ruling. Offering a choice
+// here would be fake UX: selecting a different reading could not change
+// what the table counts. If a declared-interpretation field is ever added
+// to the wire, this dialog's candidates[] prop already supports listing
+// real alternatives.
 //
 // Props are fully controlled from the parent: the chosen cards, the candidate
 // interpretations (each a Pattern over the same cards with a different wildcard
@@ -75,9 +80,9 @@ export function WildcardSubDialog({
       aria-label="红心通配 — 选择代表"
     >
       <div className="modal wildcard-sub">
-        <h2 className="modal__title">红心通配代表什么？</h2>
+        <h2 className="modal__title">红心通配确认</h2>
         <p className="modal__label">
-          你选中了红心通配牌，请确认它在本手牌里代表的组合
+          这手牌含红心通配，将按以下组合结算（与服务器判定一致）
         </p>
 
         <div className="wildcard-sub__cards" aria-hidden="true">

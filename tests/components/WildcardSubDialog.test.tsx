@@ -45,7 +45,7 @@ describe('WildcardSubDialog', () => {
       />,
     );
     expect(screen.getByRole('dialog', { name: '红心通配 — 选择代表' })).toBeInTheDocument();
-    expect(screen.getByText('红心通配代表什么？')).toBeInTheDocument();
+    expect(screen.getByText('红心通配确认')).toBeInTheDocument();
   });
 
   it('defaults the selection to the most plausible (defaultIndex) candidate', () => {

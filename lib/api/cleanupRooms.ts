@@ -33,6 +33,13 @@ export interface CleanupRoomsDeps {
    * abandoned-mid-game rooms but is well above worst-case AFK gameplay.
    */
   stalenessMs?: number;
+  /**
+   * Deletes the room's per-recipient event-log + bus streams (see
+   * lib/realtime/streamPurge.ts). Stream TTLs are refreshed best-effort, so
+   * this purge is the guaranteed reclamation path. Optional for tests / the
+   * memory backend; when omitted, streams rely on TTL alone.
+   */
+  purgeStreams?: (roomId: string, memberIds: readonly string[]) => Promise<void>;
 }
 
 export interface CleanupRoomsResponseBody {
@@ -97,6 +104,17 @@ export async function handleCleanupRooms(
       );
       if (isStale({ ...room, lastActiveAt: effectiveLastActive }, now, stalenessMs)) {
         stale += 1;
+        // Purge the room's event/bus streams while the member list is still
+        // in hand — the ghost branch above can't (room hash already gone),
+        // those streams rely on their TTL. purgeStreams is internally
+        // best-effort; a failure must not skip the room delete.
+        if (deps.purgeStreams) {
+          try {
+            await deps.purgeStreams(code, room.members.map((m) => m.id));
+          } catch (err) {
+            console.error('[cleanup-rooms] stream purge failed for', code, err);
+          }
+        }
         await deps.roomStore.delete(code);
         deleted += 1;
       }

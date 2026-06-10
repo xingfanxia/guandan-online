@@ -16,11 +16,15 @@
 
 import { getSharedInfra } from '../../lib/realtime/sharedInfra.js';
 import { handleCleanupRooms } from '../../lib/api/cleanupRooms.js';
+import { createStreamPurge } from '../../lib/realtime/streamPurge.js';
 
 export async function GET(request: Request): Promise<Response> {
   const infra = getSharedInfra();
   return handleCleanupRooms(request, {
     roomStore: infra.roomStore,
+    // Reclaims the room's event/bus streams alongside the room record —
+    // stream TTL refresh is best-effort, so the cron is the backstop.
+    purgeStreams: createStreamPurge(infra.redis),
     adminToken: process.env['ADMIN_TOKEN'] ?? process.env['CRON_SECRET'],
   });
 }

@@ -103,6 +103,10 @@ export function createMemoryEventLog(options: EventLogOptions = {}): EventLog {
 // reconnecting client that lapses beyond TTL falls back to a state_resync
 // event from the SSE handler (per realtime-sync-deep-dive §7.5).
 
+/** Default Upstash stream-key prefix. Exported for the cleanup-cron stream
+ *  purge (lib/realtime/streamPurge.ts) so key formats can't silently drift. */
+export const DEFAULT_EVENT_LOG_PREFIX = 'events:';
+
 export interface UpstashEventLogOptions {
   /** Key namespace prefix. Defaults to 'events:'. */
   keyPrefix?: string;
@@ -114,7 +118,7 @@ export function createUpstashEventLog(
   redis: RedisLike,
   options: UpstashEventLogOptions = {}
 ): EventLog {
-  const prefix = options.keyPrefix ?? 'events:';
+  const prefix = options.keyPrefix ?? DEFAULT_EVENT_LOG_PREFIX;
   const ttl = options.ttlSeconds ?? 86_400;
 
   const streamKey = (roomId: string) => `${prefix}${roomId}`;

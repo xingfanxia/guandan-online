@@ -31,6 +31,14 @@ export function eventLogKey(roomId: string, playerId: PlayerId): string {
 }
 
 /**
+ * Per-recipient live-fanout channel name. Exported so the cleanup path can
+ * derive the backing bus stream keys without duplicating the format.
+ */
+export function playerChannel(roomId: string, playerId: PlayerId): string {
+  return `game:${roomId}:player:${playerId}`;
+}
+
+/**
  * Publish an event to every recipient in the game. Each recipient gets a
  * payload filtered to remove hidden state they shouldn't see. In dev mode,
  * each payload is also scanned for accidental opponent-card leaks and
@@ -74,7 +82,7 @@ export async function publishEvent(
       // Order matters within a recipient: append-before-publish (see
       // docblock). Never reorder or parallelize these two.
       await log.append(eventLogKey(roomId, recipient), payload);
-      await bus.publish(`game:${roomId}:player:${recipient}`, payload);
+      await bus.publish(playerChannel(roomId, recipient), payload);
     })
   );
 }

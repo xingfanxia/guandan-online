@@ -86,6 +86,10 @@ export function createMemoryEventBus(): EventBus {
 // EventLog + SSE Last-Event-ID path, not here. The bus is ephemeral fanout —
 // the durability layer is the log.
 
+/** Default Upstash stream-key prefix. Exported for the cleanup-cron stream
+ *  purge (lib/realtime/streamPurge.ts) so key formats can't silently drift. */
+export const DEFAULT_EVENT_BUS_PREFIX = 'bus:';
+
 export interface UpstashEventBusOptions {
   /** Key namespace prefix. Defaults to 'bus:'. */
   keyPrefix?: string;
@@ -99,7 +103,7 @@ export function createUpstashEventBus(
   redis: RedisLike,
   options: UpstashEventBusOptions = {}
 ): EventBus {
-  const prefix = options.keyPrefix ?? 'bus:';
+  const prefix = options.keyPrefix ?? DEFAULT_EVENT_BUS_PREFIX;
   const pollMs = options.pollIntervalMs ?? 200;
   const ttl = options.ttlSeconds ?? 3600;
 

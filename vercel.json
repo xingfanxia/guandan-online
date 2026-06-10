@@ -3,6 +3,7 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
+  "regions": ["hnd1"],
   "functions": {
     "api/sse/[roomId].ts": {
       "maxDuration": 300

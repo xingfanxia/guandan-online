@@ -129,7 +129,13 @@ export function createUpstashEventLog(
       await redis.xadd(streamKey(roomId), streamId, {
         data: JSON.stringify(event),
       });
-      await redis.expire(streamKey(roomId), ttl);
+      // TTL refresh is best-effort and redundant across appends (every event
+      // in a burst re-touches the same stream) — don't spend an awaited
+      // round-trip on it in the latency-critical publish path. A dropped
+      // refresh only matters if EVERY refresh fails for the full 24h TTL.
+      void Promise.resolve(redis.expire(streamKey(roomId), ttl)).catch((err) =>
+        console.error('[upstashEventLog] expire failed (best-effort):', err)
+      );
       return id;
     },
 

@@ -108,7 +108,11 @@ export function createUpstashEventBus(
   return {
     async publish(channel, event) {
       await redis.xadd(key(channel), '*', { data: JSON.stringify(event) });
-      await redis.expire(key(channel), ttl);
+      // Best-effort TTL refresh — see eventLog.append for the rationale
+      // (latency-critical path; refresh is redundant across a burst).
+      void Promise.resolve(redis.expire(key(channel), ttl)).catch((err) =>
+        console.error('[upstashEventBus] expire failed (best-effort):', err)
+      );
     },
 
     async subscribe(channel, handler) {

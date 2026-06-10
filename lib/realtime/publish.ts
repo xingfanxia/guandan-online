@@ -55,17 +55,26 @@ export async function publishEvent(
 ): Promise<void> {
   const recipients = Object.keys(state.hands) as PlayerId[];
 
-  for (const recipient of recipients) {
-    const payload = buildClientPayload(recipient, event, state);
-    if (payload === null) continue;
+  // Fan out to recipients IN PARALLEL — each recipient owns independent
+  // stream keys, so only the per-recipient append→publish order matters.
+  // The previous sequential loop cost (recipients × events) serial Redis
+  // round-trips per move; with a remote Redis that compounded into
+  // multi-second bot-response latency (the 2026-06-09 11.5s /move POST).
+  await Promise.all(
+    recipients.map(async (recipient) => {
+      const payload = buildClientPayload(recipient, event, state);
+      if (payload === null) return;
 
-    // Dev / test runtime leak detector. Production trusts the build-time
-    // grep-no-leak gate + per-event tests and skips the runtime scan.
-    if (process.env['NODE_ENV'] !== 'production') {
-      assertNoOpponentHandLeak(payload, recipient, state);
-    }
+      // Dev / test runtime leak detector. Production trusts the build-time
+      // grep-no-leak gate + per-event tests and skips the runtime scan.
+      if (process.env['NODE_ENV'] !== 'production') {
+        assertNoOpponentHandLeak(payload, recipient, state);
+      }
 
-    await log.append(eventLogKey(roomId, recipient), payload);
-    await bus.publish(`game:${roomId}:player:${recipient}`, payload);
-  }
+      // Order matters within a recipient: append-before-publish (see
+      // docblock). Never reorder or parallelize these two.
+      await log.append(eventLogKey(roomId, recipient), payload);
+      await bus.publish(`game:${roomId}:player:${recipient}`, payload);
+    })
+  );
 }

@@ -84,6 +84,9 @@ export interface DealEvent {
   yourHand: CardId[];
   publicHandCounts: Record<PlayerId, number>;
   roundOwner: TeamKey;
+  /** Who leads the first trick of this round. Optional for back-compat with
+   *  pre-leader log entries replayed from durable storage. */
+  leader?: PlayerId;
 }
 
 export interface MovePlayedEvent {

@@ -49,6 +49,14 @@ export interface AuthorDealEvent {
   /** Full hands by player. Filtered to only the recipient's own. */
   hands: Record<PlayerId, CardId[]>;
   roundOwner: TeamKey;
+  /**
+   * Who leads the first trick of this round. Without this the client's
+   * currentTurn is stale across round transitions (the deal is the only
+   * event a new round is guaranteed to open with), soft-locking the leader's
+   * action buttons until someone else moves — which never happens when the
+   * leader is the human.
+   */
+  leader: PlayerId;
 }
 
 export interface AuthorTributePendingEvent {
@@ -127,6 +135,7 @@ export function buildClientPayload(
         yourHand,
         publicHandCounts,
         roundOwner: event.roundOwner,
+        leader: event.leader,
       };
       return out;
     }

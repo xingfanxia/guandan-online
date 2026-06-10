@@ -27,6 +27,7 @@ describe('buildClientPayload — deal event', () => {
     version: 1,
     hands: STATE_4P.hands,
     roundOwner: 't1',
+    leader: 'alice',
   };
 
   it('alice receives only alice\'s hand + public counts', () => {
@@ -186,6 +187,7 @@ describe('assertNoOpponentHandLeak', () => {
       version: 1,
       hands: STATE_4P.hands,
       roundOwner: 't1',
+      leader: 'alice',
     };
     const payload = buildClientPayload('alice', ev, STATE_4P)!;
     expect(() => assertNoOpponentHandLeak(payload, 'alice', STATE_4P)).not.toThrow();

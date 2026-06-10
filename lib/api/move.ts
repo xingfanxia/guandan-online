@@ -400,6 +400,7 @@ export async function handleMove(
                 // session.roundOwner). The new GameRound carries the same value
                 // in its `owner` field — prefer the session value to be explicit.
                 roundOwner: newSession.roundOwner!,
+                leader: next.round.leader,
               };
               events.push(dealEvent);
 
@@ -572,7 +573,9 @@ interface ParsedMoveBody {
   command: MoveCommand;
 }
 
-function parseMoveBody(
+// Exported for the client↔server wire-contract test (tests/contract/) — the
+// client's buildMoveBody must always parse here.
+export function parseMoveBody(
   body: unknown
 ): { ok: true; value: ParsedMoveBody } | { ok: false; error: string } {
   if (!body || typeof body !== 'object') {

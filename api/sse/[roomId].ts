@@ -25,6 +25,8 @@ export async function GET(request: Request): Promise<Response> {
   const seenStore = getSeenStore();
   return handleSse(request, roomId, {
     roomStore: infra.roomStore,
+    roundStore: infra.roundStore,
+    sessionStore: infra.sessionStore,
     bus: infra.bus,
     log: infra.log,
     markSeen: (playerId) =>

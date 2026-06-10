@@ -7,11 +7,15 @@
 /* ============ S03/S04/S05/S07: GAME TABLE common ============ */
 .table {
   width: 100%;
-  height: 100%;
+  /* Fill the logical viewport. height:100% collapsed to content height
+   * (no ancestor height chain from body/#root), leaving a black void under
+   * the hand on any screen taller than ~430px. var(--vp-h) honors the
+   * OrientationLock rotate-wrapper override (components.css). */
+  height: var(--vp-h, 100dvh);
   position: relative;
   background: radial-gradient(ellipse at center, var(--surface-table), oklch(8% 0.005 60) 78%);
   display: grid;
-  grid-template-rows: 34px 1fr 112px;
+  grid-template-rows: 34px 1fr auto;
 }
 
 .table-top {
@@ -152,6 +156,28 @@
   text-transform: uppercase;
 }
 .my-hand-meta em { font-style: normal; color: var(--accent); }
+
+/* Your-turn cue in the hand meta line. Pulses so it reads at a glance. */
+.turn-flag {
+  margin-left: 10px;
+  color: var(--accent);
+  animation: turn-flag-pulse 1.2s ease-in-out infinite;
+}
+@keyframes turn-flag-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .turn-flag { animation: none; }
+}
+
+/* Rejected-command line. role=alert; cleared on the next event/submit. */
+.move-error {
+  font-size: var(--t-2xs);
+  color: var(--bad, oklch(62% 0.19 25));
+  letter-spacing: 0.02em;
+  padding: 2px 0;
+}
 .my-hand-row {
   display: flex;
   padding-top: 14px;

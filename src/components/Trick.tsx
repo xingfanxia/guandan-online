@@ -20,6 +20,30 @@ export interface TrickProps {
   size?: CardSize;
 }
 
+/**
+ * Server combinationLabel carries the raw PatternKind discriminator
+ * (lib/game/patterns.ts). Localize at the render boundary; unknown values
+ * pass through verbatim so new kinds degrade readably instead of blanking.
+ */
+const PATTERN_LABEL_ZH: Record<string, string> = {
+  single: '单张',
+  pair: '对子',
+  triple: '三张',
+  fullHouse: '三带二',
+  threePairs: '三连对',
+  twoTriples: '钢板',
+  straight: '顺子',
+  flushStraight: '同花顺',
+  bomb: '炸弹',
+  jokerBomb: '王炸',
+  unknown: '—',
+};
+
+export function localizePatternLabel(label: string | undefined): string | undefined {
+  if (!label) return label;
+  return PATTERN_LABEL_ZH[label] ?? label;
+}
+
 export function Trick({
   cards,
   authorHandle,
@@ -49,7 +73,7 @@ export function Trick({
       </div>
       {(authorHandle || patternLabel) && (
         <div className="trick__meta">
-          {patternLabel && <span className="trick__kind">{patternLabel}</span>}
+          {patternLabel && <span className="trick__kind">{localizePatternLabel(patternLabel)}</span>}
           {authorHandle && <span className="trick__author">{authorHandle}</span>}
         </div>
       )}

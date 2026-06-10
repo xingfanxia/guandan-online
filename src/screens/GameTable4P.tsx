@@ -21,6 +21,8 @@ import { EndgameAssist } from '@/components/EndgameAssist';
 import { ReportButton } from '@/components/ReportButton';
 import { PlayerStatusBadge } from '@/components/PlayerStatusBadge';
 import { openSseClient, type SseClient } from '@/lib/sseClient';
+import { handlesEqual } from '@/lib/identity';
+import { postCommand } from '@/lib/api/moveClient';
 import { decodeCardId, encodeCards } from '@lib/realtime/cardCodec';
 import { isWildcard } from '@lib/game/cards';
 import { analyzeHand, type Pattern } from '@lib/game/patterns';
@@ -33,6 +35,7 @@ import type {
   ExchangeSelectRequiredEvent,
   ExchangeVoteRequiredEvent,
   ExchangeVoteResolvedEvent,
+  GameEndEvent,
   MovePassedEvent,
   MovePlayedEvent,
   PlayerHandle,
@@ -50,7 +53,6 @@ import type { Card as GameCard } from '@lib/game/cards';
 import type { LevelRank } from '@lib/game/levels';
 import type { TeamKey } from '@lib/game/mode';
 import type {
-  MoveCommand,
   PlayCommand,
   PassCommand,
   TributeSelectCommand,
@@ -61,6 +63,8 @@ import type {
 import { TributeModal, type TributeState } from '@/screens/TributeModal';
 import { ExchangeVoteModal } from '@/screens/ExchangeVoteModal';
 import { ExchangeSelectModal } from '@/screens/ExchangeSelectModal';
+import { RoundEnd } from '@/screens/RoundEnd';
+import { Victory } from '@/screens/Victory';
 
 /**
  * EXCHANGE-1 client UI state. Set by the exchange_* events, cleared once the
@@ -124,6 +128,34 @@ interface TableState {
    * valid — the reducer + render treat undefined identically to null.
    */
   exchange?: ExchangeUiState | null;
+  /**
+   * Version of the last connect snapshot. The snapshot reflects CURRENT
+   * server state, but the SSE backlog replays events from the resume cursor
+   * — events at or below this version are already baked into the snapshot
+   * and re-reducing them double-applies their deltas (hand counts drifted
+   * down by the whole backlog on every reload before this guard). Optional
+   * so older state literals/tests remain valid (treated as 0).
+   */
+  snapshotVersion?: number;
+  /**
+   * Players who emptied their hand this round, in finish order. Tracked
+   * client-side from move_played handCount hitting 0 (the round_end event
+   * only names the winning TEAM, not who finished where). Reset on deal.
+   */
+  finishOrder?: { id: string; handle: string }[];
+  /** Set by round_end; drives the RoundEnd overlay. */
+  roundEndView?: RoundEndView | null;
+  /** Set by game_end; drives the Victory screen. */
+  gameEndView?: { winnerTeam: TeamKey; summary: string } | null;
+}
+
+export interface RoundEndView {
+  roundNumber: number;
+  winnerTeam: TeamKey;
+  upgrade: number;
+  wasLevel: LevelRank;
+  nowLevel: LevelRank;
+  finishOrder: { id: string; handle: string }[];
 }
 
 export interface TributePendingSnapshot {
@@ -178,6 +210,13 @@ export function GameTable4P({
   } | null>(null);
   // Busy flag for the exchange modals' in-flight POST.
   const [exchangeBusy, setExchangeBusy] = useState(false);
+  // Last rejected command's human-readable reason. Cleared on the next
+  // submission attempt and on any incoming server event (the table moved on).
+  const [moveError, setMoveError] = useState<string | null>(null);
+  // RoundEnd overlay dismissal — keyed by the view's roundNumber so the next
+  // round's overlay shows again. The overlay also auto-dismisses (effect
+  // below) because the next round starts underneath it immediately.
+  const [dismissedRoundEnd, setDismissedRoundEnd] = useState(0);
   // Mirror of state.myPlayerId so the SSE callback (created once per mount)
   // can decide whether a `move_played` event was mine without closing over
   // stale state. setState's functional updater inside the callback already
@@ -198,7 +237,11 @@ export function GameTable4P({
       ...(fromVersion != null ? { fromVersion } : {}),
       onEvent: (evt) => {
         setConnectionState('live');
-        setVersion(evt.version);
+        // Max-guard: the connect snapshot arrives at the CURRENT version,
+        // then the backlog replays older versions — fromVersion for the next
+        // move must never regress below the snapshot.
+        setVersion((v) => Math.max(v, evt.version));
+        setMoveError(null);
         setState((prev) => reduceEvent(prev, evt, myHandle));
         if (shouldClearSelectedOnEvent(evt, myPlayerIdRef.current)) {
           setSelected(new Set());
@@ -219,6 +262,7 @@ export function GameTable4P({
   const myLevel: LevelRank = state.myTeam ? state.teamLevels[state.myTeam] : '2';
   const oppTeam: TeamKey = state.myTeam === 't1' ? 't2' : 't1';
   const oppLevel: LevelRank = state.teamLevels[oppTeam];
+  const myTurn = state.myPlayerId !== null && state.currentTurn === state.myPlayerId;
 
   // The hand actually rendered + indexed by `selected`. When 理牌 has run we
   // render the reordered copy; otherwise the reducer's myHand verbatim. ALL
@@ -259,13 +303,29 @@ export function GameTable4P({
     setSelected(new Set(indices));
   };
 
+  /** Normalize a rejected command into the on-table error line. */
+  const surfaceMoveError = (err: unknown): void => {
+    const msg =
+      err instanceof RoomApiError
+        ? err.message
+        : err instanceof Error
+          ? `网络错误（${err.message}）`
+          : '网络错误';
+    setMoveError(msg);
+  };
+
   /**
    * POST the play. Wrapped in measureAndBeacon so each move round-trip emits a
    * latency sample (DEPLOY-2). Beacon failure never disturbs the play.
    */
   const dispatchPlay = async (ids: CardId[]): Promise<void> => {
+    setMoveError(null);
     const cmd: PlayCommand = { kind: 'play', cards: ids, fromVersion: version };
-    await measureAndBeacon(() => postCommand(roomId, joinToken, cmd));
+    try {
+      await measureAndBeacon(() => postCommand(roomId, joinToken, cmd));
+    } catch (err) {
+      surfaceMoveError(err);
+    }
   };
 
   const submitPlay = async (): Promise<void> => {
@@ -295,8 +355,13 @@ export function GameTable4P({
   };
 
   const submitPass = async (): Promise<void> => {
+    setMoveError(null);
     const cmd: PassCommand = { kind: 'pass', fromVersion: version };
-    await measureAndBeacon(() => postCommand(roomId, joinToken, cmd));
+    try {
+      await measureAndBeacon(() => postCommand(roomId, joinToken, cmd));
+    } catch (err) {
+      surfaceMoveError(err);
+    }
   };
 
   /** Exchange vote (losing-team voter). */
@@ -345,6 +410,15 @@ export function GameTable4P({
     await postCommand(roomId, joinToken, cmd);
   };
 
+  // Auto-dismiss the RoundEnd overlay after 8s — the next round is already
+  // dealt underneath; lingering forever would read as a frozen game.
+  useEffect(() => {
+    const view = state.roundEndView;
+    if (!view || view.roundNumber === dismissedRoundEnd) return undefined;
+    const timer = setTimeout(() => setDismissedRoundEnd(view.roundNumber), 8000);
+    return () => clearTimeout(timer);
+  }, [state.roundEndView, dismissedRoundEnd]);
+
   const seats = useMemo(() => splitSeats(state, myHandle), [state, myHandle]);
   const tributeModalState = useMemo(
     () =>
@@ -392,7 +466,12 @@ export function GameTable4P({
       <div className="table-arena">
         {seats.partner && (
           <div className="seat-partner">
-            <Avatar handle={seats.partner.handle} role="partner" size="sm" />
+            <Avatar
+              handle={seats.partner.handle}
+              role="partner"
+              size="sm"
+              active={state.currentTurn === seats.partner.id}
+            />
             <span className="seat-name mono">
               {seats.partner.handle}
               <PlayerStatusBadge status={seats.partner.status} />
@@ -460,9 +539,17 @@ export function GameTable4P({
       <div className="table-bot">
         <div className="my-hand-wrap">
           <div className="my-hand-meta mono">
-            <span>我 · <em>{myHandle}</em> · {displayHand.length} 张</span>
+            <span>
+              我 · <em>{myHandle}</em> · {displayHand.length} 张
+              {myTurn ? <span className="turn-flag">▶ 轮到你出牌</span> : null}
+            </span>
             <span>红心通配 ★ · 钢板可</span>
           </div>
+          {moveError ? (
+            <div className="move-error mono" role="alert">
+              {moveError}
+            </div>
+          ) : null}
           {hintOn ? (
             <SuggestionHint
               cards={displayHand}
@@ -560,8 +647,49 @@ export function GameTable4P({
           busy={exchangeBusy}
         />
       ) : null}
+
+      {state.roundEndView &&
+      state.roundEndView.roundNumber !== dismissedRoundEnd &&
+      !state.gameEndView ? (
+        <RoundEnd
+          roundNumber={state.roundEndView.roundNumber}
+          resultLabel={roundResultLabel(state.roundEndView.upgrade)}
+          levelDelta={state.roundEndView.upgrade}
+          finishOrder={state.roundEndView.finishOrder.map((f, i) => ({
+            handle: f.handle,
+            rank: Math.min(i + 1, 8) as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8,
+          }))}
+          teamWasLevel={state.roundEndView.wasLevel}
+          teamNowLevel={state.roundEndView.nowLevel}
+          nextLeaderHandle={state.roundEndView.finishOrder[0]?.handle ?? ''}
+          autoAdvanceSeconds={8}
+          onContinue={() => setDismissedRoundEnd(state.roundEndView?.roundNumber ?? 0)}
+        />
+      ) : null}
+
+      {state.gameEndView ? (
+        <Victory
+          winningTeam={state.gameEndView.winnerTeam}
+          winningTeamLabel={state.gameEndView.winnerTeam === state.myTeam ? '我方' : '对方'}
+          winningRoster={[...state.players.values()]
+            .filter((p) => p.team === state.gameEndView?.winnerTeam)
+            .map((p) => ({ handle: p.handle }))}
+          finalLevel={state.teamLevels[state.gameEndView.winnerTeam]}
+          roundCount={state.roundNumber}
+          onReturn={() => {
+            window.location.hash = '#/';
+          }}
+        />
+      ) : null}
     </div>
   );
+}
+
+/** Headline label for a round result by upgrade size (双下 +3 / 单下 +2 / 平下 +1). */
+function roundResultLabel(upgrade: number): string {
+  if (upgrade >= 3) return '双下';
+  if (upgrade === 2) return '单下';
+  return '平下';
 }
 
 /**
@@ -589,11 +717,33 @@ async function postReport(
 // Pure helpers (exported for testing)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Events that carry modal/pending state the snapshot does NOT encode.
+ * These re-apply idempotently, so they're exempt from the snapshot-version
+ * skip guard — otherwise a reload mid-tribute/mid-exchange would lose the
+ * modal forever (the replayed *_pending event would be skipped).
+ */
+const SNAPSHOT_EXEMPT_EVENTS: ReadonlySet<ServerEvent['type']> = new Set([
+  'tribute_pending',
+  'exchange_vote_required',
+  'exchange_select_required',
+]);
+
 export function reduceEvent(
   prev: TableState,
   evt: ServerEvent,
   myHandle: PlayerHandle,
 ): TableState {
+  // Skip backlog events already reflected in the connect snapshot — see
+  // TableState.snapshotVersion. The snapshot itself always applies.
+  if (
+    evt.type !== 'snapshot' &&
+    typeof evt.version === 'number' &&
+    evt.version <= (prev.snapshotVersion ?? 0) &&
+    !SNAPSHOT_EXEMPT_EVENTS.has(evt.type)
+  ) {
+    return prev;
+  }
   switch (evt.type) {
     case 'snapshot':
       return reduceSnapshot(prev, evt, myHandle);
@@ -615,6 +765,8 @@ export function reduceEvent(
       return reduceTributeResolved(prev, evt);
     case 'round_end':
       return reduceRoundEnd(prev, evt);
+    case 'game_end':
+      return reduceGameEnd(prev, evt);
     case 'exchange_vote_required':
       return reduceExchangeVoteRequired(prev, evt);
     case 'exchange_vote_resolved':
@@ -668,7 +820,7 @@ function reduceExchangeCompleted(
   // Replace my hand with the post-swap hand and refresh public counts. Clear
   // the exchange UI — the swap is done and the trick can proceed.
   const players = new Map(prev.players);
-  for (const [id, count] of Object.entries(evt.publicHandCounts)) {
+  for (const [id, count] of Object.entries(evt.publicHandCounts ?? {})) {
     const p = players.get(id);
     if (p) players.set(id, { ...p, handCount: count });
   }
@@ -684,17 +836,48 @@ function reduceRoundEnd(prev: TableState, evt: RoundEndEvent): TableState {
   // Track the winning team so the next tribute_pending (anti_tribute) can
   // gate `canDeclare` on team membership rather than red-joker ownership.
   // Update teamLevels too — the server emits newLevels with the post-round
-  // upgrade applied.
+  // upgrade applied. Capture the pre-upgrade level for the RoundEnd ladder.
   return {
     ...prev,
     lastRoundWinnerTeam: evt.winnerTeam,
     teamLevels: { t1: evt.newLevels.t1, t2: evt.newLevels.t2 },
+    roundEndView: {
+      roundNumber: prev.roundNumber,
+      winnerTeam: evt.winnerTeam,
+      upgrade: evt.upgrade,
+      wasLevel: prev.teamLevels[evt.winnerTeam],
+      nowLevel: evt.newLevels[evt.winnerTeam],
+      finishOrder: prev.finishOrder ?? [],
+    },
+  };
+}
+
+function reduceGameEnd(prev: TableState, evt: GameEndEvent): TableState {
+  return {
+    ...prev,
+    gameEndView: { winnerTeam: evt.winnerTeam, summary: evt.summary },
   };
 }
 
 function reduceSnapshot(prev: TableState, evt: SnapshotEvent, myHandle: PlayerHandle): TableState {
   const players = new Map(evt.players.map((p) => [p.id, p]));
-  const me = evt.players.find((p) => p.handle === myHandle);
+  const me = evt.players.find((p) => handlesEqual(p.handle, myHandle));
+  // Rebuild the visible trick from the snapshot — backlog events at or below
+  // snapshotVersion are skipped by reduceEvent, so without this a reload
+  // mid-trick would show an empty center.
+  const lastEntry = evt.table.currentTrick[evt.table.currentTrick.length - 1];
+  const myTeam = evt.you.teamId;
+  const level = evt.table.teamLevels[myTeam];
+  let lastPlayed: PlayedLine | null = prev.lastPlayed;
+  if (lastEntry) {
+    const cards = decodeHand(lastEntry.cards);
+    const reading = analyzeHand(cards, level);
+    lastPlayed = {
+      player: players.get(lastEntry.player)?.handle ?? lastEntry.player,
+      cards,
+      combinationLabel: reading?.kind ?? '',
+    };
+  }
   return {
     ...prev,
     myHand: decodeHand(evt.you.hand),
@@ -702,17 +885,31 @@ function reduceSnapshot(prev: TableState, evt: SnapshotEvent, myHandle: PlayerHa
     teamLevels: { t1: evt.table.teamLevels.t1, t2: evt.table.teamLevels.t2 },
     currentTurn: evt.table.currentTurn,
     myPlayerId: me?.id ?? evt.you.playerId,
-    myTeam: evt.you.teamId,
+    myTeam,
     partnerId: evt.you.partnerId,
-    lastPlayed: prev.lastPlayed,
+    lastPlayed,
+    snapshotVersion: evt.version,
   };
 }
 
 function reduceDeal(prev: TableState, evt: DealEvent): TableState {
+  // Reset public hand counts from the deal — counts are tracked by
+  // decrement on move_played, so a full-backlog replay must restart each
+  // count from the dealt size or the arithmetic drifts.
+  const players = new Map(prev.players);
+  for (const [id, count] of Object.entries(evt.publicHandCounts ?? {})) {
+    const p = players.get(id);
+    if (p) players.set(id, { ...p, handCount: count });
+  }
   return {
     ...prev,
+    players,
     myHand: decodeHand(evt.yourHand),
     lastPlayed: null,
+    finishOrder: [],
+    // The deal names the new round's first leader — without this currentTurn
+    // is stale from the previous round and the leader's buttons stay locked.
+    currentTurn: evt.leader ?? prev.currentTurn,
     // A `deal` event closes any prior tribute (round transition has finished).
     // Auto-mode emits tribute_resolved BEFORE deal; manual mode emits
     // tribute_pending BEFORE deal and tribute_resolved later. Either way,
@@ -764,13 +961,22 @@ function reduceMovePlayed(prev: TableState, evt: MovePlayedEvent): TableState {
   const isMe = evt.player === prev.myPlayerId;
   const newHand = isMe ? removeCards(prev.myHand, evt.cards) : prev.myHand;
   const players = new Map(prev.players);
+  let finishOrder = prev.finishOrder ?? [];
   if (author) {
-    players.set(evt.player, { ...author, handCount: Math.max(0, author.handCount - evt.cards.length) });
+    const newCount = Math.max(0, author.handCount - evt.cards.length);
+    players.set(evt.player, { ...author, handCount: newCount });
+    // Player just emptied their hand → record their finish position. The
+    // round_end event only names the winning team, so this list is the
+    // only source for the RoundEnd roster.
+    if (newCount === 0 && !finishOrder.some((f) => f.id === evt.player)) {
+      finishOrder = [...finishOrder, { id: evt.player, handle }];
+    }
   }
   return {
     ...prev,
     myHand: newHand,
     players,
+    finishOrder,
     currentTurn: evt.nextTurn,
     lastPlayed: {
       player: handle,
@@ -813,7 +1019,14 @@ interface SeatLayout {
 export function splitSeats(state: TableState, myHandle: PlayerHandle): SeatLayout {
   const all = [...state.players.values()];
   if (all.length === 0) return { partner: null, left: null, right: null };
-  const myIndex = all.findIndex((p) => p.handle === myHandle);
+  // Locate myself by server-assigned playerId first (authoritative, set by
+  // the snapshot event). Handle comparison is only a fallback and MUST be
+  // normalized — server handles are bare-lowercase, client handles are
+  // @-prefixed (see identity.ts handlesEqual).
+  let myIndex = state.myPlayerId
+    ? all.findIndex((p) => p.id === state.myPlayerId)
+    : -1;
+  if (myIndex < 0) myIndex = all.findIndex((p) => handlesEqual(p.handle, myHandle));
   if (myIndex < 0) return { partner: null, left: null, right: null };
 
   const N = all.length;
@@ -862,21 +1075,6 @@ function removeCards(hand: readonly GameCard[], played: readonly CardId[]): Game
   return hand.filter((c) => !playedSet.has(encodeCard(c) ?? ''));
 }
 
-async function postCommand(
-  roomId: string,
-  joinToken: string,
-  cmd: MoveCommand,
-): Promise<void> {
-  const url = `/api/room/${encodeURIComponent(roomId)}/move`;
-  await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${joinToken}`,
-    },
-    body: JSON.stringify({ ...cmd, moveId: crypto.randomUUID() }),
-  });
-}
 
 /**
  * Pick the TributeModal substate to render for the local player given the

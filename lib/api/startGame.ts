@@ -226,6 +226,7 @@ export async function handleStartGame(
       version: dealVersion,
       hands: encodedHands,
       roundOwner: round.seats[0]!.team,
+      leader: round.leader,
     };
     try {
       const gameState = buildGameState(updatedRoom, round);

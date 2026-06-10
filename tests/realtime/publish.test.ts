@@ -24,6 +24,7 @@ const dealAuthor: AuthorEvent = {
   version: 1,
   hands: STATE.hands,
   roundOwner: 't1',
+  leader: 'alice',
 };
 
 // ─── Fanout ──────────────────────────────────────────────────────────────────

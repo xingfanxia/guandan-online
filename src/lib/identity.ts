@@ -79,6 +79,22 @@ export function normalizeHandle(input: string): string {
 }
 
 /**
+ * Compare two handles ignoring the `@` prefix and case. The CLIENT normalizes
+ * to `@lower` (normalizeHandle above) but the SERVER's lib/auth/handle.ts
+ * normalizes to bare lowercase (strips `@`), and bot handles arrive with `@`
+ * baked in — so raw `===` between a local handle and a wire handle is never
+ * safe. Every roster lookup must go through this.
+ */
+export function handlesEqual(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false;
+  const canon = (h: string): string => {
+    const t = h.trim();
+    return (t.startsWith('@') ? t.slice(1) : t).toLowerCase();
+  };
+  return canon(a) === canon(b);
+}
+
+/**
  * Loose client-side handle validation. Server does the canonical check —
  * this exists so the UI can highlight obvious mistakes before the round-trip.
  * Allow letters / digits / underscore / 2-16 chars after the `@`. Reject empty

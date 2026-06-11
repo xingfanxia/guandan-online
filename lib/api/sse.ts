@@ -336,7 +336,10 @@ async function buildConnectSnapshot(
     teamLevels: session?.teamLevels ?? { t1: round.level, t2: round.level },
     roundOwner: round.owner ?? 't1',
     phase: round.pendingTribute ? 'tribute' : 'playing',
-    turnDeadline: new Date(Date.now() + 30_000).toISOString(),
+    // Honest deadline: the turn-timeout sweep measures idleness from the
+    // envelope's last mutation, so the countdown a reconnecting client sees
+    // matches what the server will actually enforce (60s threshold).
+    turnDeadline: new Date(envelope.updatedAt + 60_000).toISOString(),
   };
 
   const author: AuthorSnapshotEvent = {

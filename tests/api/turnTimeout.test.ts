@@ -114,6 +114,11 @@ async function fixture(opts: {
     roundStore,
     adminToken: ADMIN,
     now: () => NOW,
+    // Deterministic RNG that avoids the easy strategy's 30% noise branch
+    // (rng() < 0.3 → random pass/play). Without this the "forces a play"
+    // assertion below flakes ~15% of runs — it failed CI run 27365765331
+    // and twice locally before the cause was identified.
+    rng: () => 0.99,
     dispatchMove: async (code, joinToken, body) => {
       dispatched.push({ code, joinToken, body });
       return new Response(JSON.stringify({ ok: opts.dispatchOk ?? true }), { status: 200 });

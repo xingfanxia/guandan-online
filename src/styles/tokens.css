@@ -52,6 +52,13 @@
   --suit-dark: oklch(22% 0.02 60);          /* clubs ♣ + spades ♠ */
 
   /* Card body — light cream */
+  /* Card scale — cards were authored at landscape-phone size (28x40 base)
+   * and rendered unreadably small on anything bigger. All card dimensions,
+   * inner type, overlaps and lift offsets multiply by this factor. Media
+   * queries measure the UNROTATED viewport, so the OrientationLock rotate
+   * wrapper (portrait phones) correctly stays at the base scale. */
+  --card-scale: 1.2;
+
   --card-face: oklch(94% 0.020 80);         /* cream paper */
   --card-face-2: oklch(88% 0.025 80);       /* second deck-edge stripe */
   --card-back: oklch(28% 0.030 25);         /* card back warm */
@@ -136,6 +143,13 @@
 /* ============ RESET & BASE ============ */
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
+
+@media (min-width: 1000px) and (min-height: 560px) {
+  :root { --card-scale: 1.75; }
+}
+@media (min-width: 1360px) and (min-height: 760px) {
+  :root { --card-scale: 2.2; }
+}
 
 html { font-feature-settings: "cv11", "ss01", "ss02"; -webkit-font-smoothing: antialiased; }
 

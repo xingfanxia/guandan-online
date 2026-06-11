@@ -90,7 +90,7 @@
   text-transform: uppercase;
 }
 .seat-cards-stack { display: flex; }
-.seat-cards-stack .card { margin-left: -22px; }
+.seat-cards-stack .card { margin-left: calc(-22px * var(--card-scale, 1)); }
 .seat-cards-stack .card:first-child { margin-left: 0; }
 .seat-count {
   font-family: var(--font-mono);
@@ -245,9 +245,10 @@
 .tribute-notice__line { white-space: nowrap; }
 .my-hand-row {
   display: flex;
-  padding-top: 14px;
+  /* Room for the lift offset, which scales with the cards. */
+  padding-top: calc(14px * var(--card-scale, 1));
 }
-.my-hand-row .card { margin-left: -16px; }
+.my-hand-row .card { margin-left: calc(-16px * var(--card-scale, 1)); }
 .my-hand-row .card:first-child { margin-left: 0; }
 
 .actions {

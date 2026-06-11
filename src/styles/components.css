@@ -201,8 +201,8 @@ button.avatar:focus-visible,
 /* Single card primitive — used throughout for hand display, played cards, etc. */
 
 .card {
-  --card-w: 28px;
-  --card-h: 40px;
+  --card-w: calc(28px * var(--card-scale, 1));
+  --card-h: calc(40px * var(--card-scale, 1));
   position: relative;
   width: var(--card-w);
   height: var(--card-h);
@@ -214,7 +214,7 @@ button.avatar:focus-visible,
   color: var(--suit-dark);
   display: flex;
   flex-direction: column;
-  padding: 3px 4px;
+  padding: calc(3px * var(--card-scale, 1)) calc(4px * var(--card-scale, 1));
   user-select: none;
   flex-shrink: 0;
   transition: transform var(--dur-base) var(--ease-out),
@@ -239,22 +239,22 @@ button.card:focus-visible,
   outline-offset: 2px;
 }
 
-.card--lg { --card-w: 56px; --card-h: 80px; }
-.card--md { --card-w: 40px; --card-h: 58px; }
+.card--lg { --card-w: calc(56px * var(--card-scale, 1)); --card-h: calc(80px * var(--card-scale, 1)); }
+.card--md { --card-w: calc(40px * var(--card-scale, 1)); --card-h: calc(58px * var(--card-scale, 1)); }
 
 .card--red { color: var(--suit-red); }
 
 .card__rank {
-  font-size: var(--t-2xs);
+  font-size: calc(var(--t-2xs) * var(--card-scale, 1));
   line-height: 1;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0;
 }
-.card--lg .card__rank { font-size: var(--t-md); }
-.card--md .card__rank { font-size: var(--t-sm); }
+.card--lg .card__rank { font-size: calc(var(--t-md) * var(--card-scale, 1)); }
+.card--md .card__rank { font-size: calc(var(--t-sm) * var(--card-scale, 1)); }
 
 .card__suit {
-  font-size: 8px;
+  font-size: calc(8px * var(--card-scale, 1));
   line-height: 1;
   margin-top: 1px;
 }
@@ -266,13 +266,13 @@ button.card:focus-visible,
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: calc(13px * var(--card-scale, 1));
 }
-.card--lg .card__center { font-size: 24px; }
-.card--md .card__center { font-size: 18px; }
+.card--lg .card__center { font-size: calc(24px * var(--card-scale, 1)); }
+.card--md .card__center { font-size: calc(18px * var(--card-scale, 1)); }
 
 .card--lifted {
-  transform: translateY(-12px);
+  transform: translateY(calc(-12px * var(--card-scale, 1)));
   box-shadow: var(--shadow-lifted);
 }
 
@@ -284,7 +284,7 @@ button.card:focus-visible,
   content: "★";
   position: absolute;
   top: 1px; right: 2px;
-  font-size: 7px;
+  font-size: calc(7px * var(--card-scale, 1));
   color: var(--gold);
 }
 
@@ -302,10 +302,11 @@ button.card:focus-visible,
 .hand {
   display: flex;
   position: relative;
-  padding-top: 16px; /* room for lift */
+  padding-top: calc(16px * var(--card-scale, 1)); /* room for lift */
 }
 .hand .card {
-  margin-left: -12px; /* default 28px wide, 16px visible after overlap */
+  /* default 28px wide, 16px visible after overlap — both scale together */
+  margin-left: calc(-12px * var(--card-scale, 1));
 }
 .hand .card:first-child { margin-left: 0; }
 
@@ -315,7 +316,7 @@ button.card:focus-visible,
   position: relative;
 }
 .played-stack .card {
-  margin-left: -8px;
+  margin-left: calc(-8px * var(--card-scale, 1));
 }
 .played-stack .card:first-child { margin-left: 0; }
 

@@ -162,7 +162,7 @@
 .oval-trick__meta em { font-style: normal; color: var(--ink-1); }
 
 .oval-trick__cards { display: flex; justify-content: center; }
-.oval-trick__cards .card { margin-left: -14px; }
+.oval-trick__cards .card { margin-left: calc(-14px * var(--card-scale, 1)); }
 .oval-trick__cards .card:first-child { margin-left: 0; }
 
 .mtable-bot {

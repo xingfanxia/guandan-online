@@ -70,10 +70,16 @@ test.describe('@landing CTA navigation', () => {
     await expect(modal).toBeVisible();
   });
 
-  test('"浏览房间" is disabled (ROOM-3 not shipped)', async ({ page }) => {
+  test('"浏览房间" opens the public room browse modal (ROOM-3)', async ({ page }) => {
+    await preseedHandle(page, '@alice');
     await page.goto('/');
     const btn = page.getByRole('button', { name: '浏览房间' });
-    await expect(btn).toBeDisabled();
+    await expect(btn).toBeEnabled();
+    await btn.click();
+    const modal = page.getByRole('dialog', { name: '浏览房间' });
+    await expect(modal).toBeVisible();
+    // Fresh memory infra → empty state copy explains how rooms get listed.
+    await expect(modal).toContainText(/公开房间/);
   });
 });
 

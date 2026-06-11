@@ -10,7 +10,7 @@
 // /api/room/[code]/move. Optimistic-version fromVersion tracks the lastVersion
 // surfaced by the SSE client.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Avatar } from '@/components/Avatar';
 import { Hand } from '@/components/Hand';
 import { Trick } from '@/components/Trick';
@@ -321,9 +321,14 @@ export function GameTable4P({
   };
 
   /** Lift the suggested cards (indices into displayHand) when 提示 fires. */
-  const onSuggest = (indices: number[]): void => {
+  // MUST be referentially stable: SuggestionHint notifies via a useEffect
+  // keyed on this callback. An inline closure changes identity every render,
+  // and since the notification itself sets state (re-render), that loops
+  // until React throws "Maximum update depth exceeded" — caught by the
+  // play-cards e2e the first time anything clicked 提示.
+  const onSuggest = useCallback((indices: number[]): void => {
     setSelected(new Set(indices));
-  };
+  }, []);
 
   /** Normalize a rejected command into the on-table error line. */
   const surfaceMoveError = (err: unknown): void => {

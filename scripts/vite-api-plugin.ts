@@ -27,6 +27,7 @@ import * as adminResetStatsRoute from '../api/admin/reset-stats.js';
 import * as telemetryLatencyRoute from '../api/telemetry/latency.js';
 import * as dcCheckRoute from '../api/cron/dcCheck.js';
 import * as createHandleRoute from '../api/auth/createHandle.js';
+import * as listRoomsRoute from '../api/rooms.js';
 
 type WebHandler = (request: Request) => Promise<Response> | Response;
 
@@ -56,6 +57,10 @@ const routes: ReadonlyArray<RouteEntry> = [
   // AI-4 disconnect-takeover sweep; SEC-2 IP-throttled handle creation.
   { method: 'GET', pattern: /^\/api\/cron\/dcCheck\/?$/, handler: dcCheckRoute.GET },
   { method: 'POST', pattern: /^\/api\/auth\/createHandle\/?$/, handler: createHandleRoute.POST },
+  // ROOM-3 public room browse list. NOTE: must be matched before the
+  // /api/room/[code] GET would be (different prefix — rooms vs room — so no
+  // actual collision; listed here for the reader).
+  { method: 'GET', pattern: /^\/api\/rooms\/?(\?.*)?$/, handler: listRoomsRoute.GET },
 ];
 
 async function nodeToWebRequest(

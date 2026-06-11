@@ -202,3 +202,89 @@ describe('Landing', () => {
     expect(stored[0].code).toBe('K7M2P9');
   });
 });
+
+// ─── ROOM-3: browse public rooms ──────────────────────────────────────────────
+
+describe('Landing — browse public rooms (ROOM-3)', () => {
+  const LISTING = [
+    {
+      code: 'PUB001',
+      mode: '4' as const,
+      seatsFilled: 1,
+      seatsTotal: 4,
+      hostHandle: '@host',
+      createdAt: 1_700_000_000_000,
+      strictA: true,
+    },
+  ];
+
+  it('opens the browse modal and lists public rooms', async () => {
+    const listFn = vi.fn().mockResolvedValue(LISTING);
+    render(
+      <Landing initialHandle="@阿祥" initialRecent={[]} listFn={listFn} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '浏览房间' }));
+    expect(listFn).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(screen.getByText('PUB001')).toBeInTheDocument();
+    });
+    expect(screen.getByText(/4P · 1\/4 · @host/)).toBeInTheDocument();
+  });
+
+  it('joins a listed room through the shared join path', async () => {
+    const listFn = vi.fn().mockResolvedValue(LISTING);
+    const joinFn = vi
+      .fn()
+      .mockResolvedValue({ playerId: 'p1', joinToken: 'jt-browse' });
+    const navigateFn = vi.fn();
+    render(
+      <Landing
+        initialHandle="@阿祥"
+        initialRecent={[]}
+        listFn={listFn}
+        joinFn={joinFn}
+        navigateFn={navigateFn}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '浏览房间' }));
+    await waitFor(() => screen.getByText('PUB001'));
+    fireEvent.click(screen.getByRole('button', { name: '加入' }));
+    await waitFor(() => {
+      expect(joinFn).toHaveBeenCalledWith('PUB001', { handle: '@阿祥' });
+      expect(navigateFn).toHaveBeenCalledWith({ kind: 'wait', code: 'PUB001' });
+    });
+  });
+
+  it('shows the empty state when no public rooms exist', async () => {
+    const listFn = vi.fn().mockResolvedValue([]);
+    render(
+      <Landing initialHandle="@阿祥" initialRecent={[]} listFn={listFn} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '浏览房间' }));
+    await waitFor(() => {
+      expect(screen.getByText(/现在没有公开房间/)).toBeInTheDocument();
+    });
+  });
+
+  it('surfaces a join failure and refreshes the list', async () => {
+    const listFn = vi.fn().mockResolvedValue(LISTING);
+    const joinFn = vi
+      .fn()
+      .mockRejectedValue(new RoomApiError(409, 'conflict', '房间已满'));
+    render(
+      <Landing
+        initialHandle="@阿祥"
+        initialRecent={[]}
+        listFn={listFn}
+        joinFn={joinFn}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '浏览房间' }));
+    await waitFor(() => screen.getByText('PUB001'));
+    fireEvent.click(screen.getByRole('button', { name: '加入' }));
+    await waitFor(() => {
+      expect(screen.getByText('房间已满或已开局')).toBeInTheDocument();
+    });
+    expect(listFn).toHaveBeenCalledTimes(2); // initial + post-failure refresh
+  });
+});

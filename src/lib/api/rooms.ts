@@ -175,6 +175,8 @@ export async function createRoom(
     mode: GameMode;
     handle: string;
     bots?: readonly BotSeat[];
+    /** ROOM-3: list the room on the public browse list. Default private. */
+    visibility?: 'public' | 'private';
   } & RoomRuleOverrides,
   opts: RoomApiOptions = {}
 ): Promise<CreateRoomResponse> {
@@ -186,6 +188,9 @@ export async function createRoom(
   };
   if (input.bots && input.bots.length > 0) {
     body['bots'] = input.bots.map((b) => ({ tier: b.tier }));
+  }
+  if (input.visibility !== undefined) {
+    body['visibility'] = input.visibility;
   }
   // Thread each rule override only when explicitly set. Omitting a key tells
   // the server to use DEFAULT_MODE_RULES. Keeps the wire payload minimal
@@ -214,6 +219,31 @@ export async function createRoom(
     },
     fetcher
   );
+}
+
+/** One entry in the public browse list (ROOM-3). Mirrors lib/api/listRooms. */
+export interface PublicRoomListing {
+  readonly code: string;
+  readonly mode: GameMode;
+  readonly seatsFilled: number;
+  readonly seatsTotal: number;
+  readonly hostHandle: string;
+  readonly createdAt: number;
+  readonly strictA: boolean;
+}
+
+/** GET /api/rooms — public lobby rooms with open seats, newest first. */
+export async function listPublicRooms(
+  opts: RoomApiOptions = {}
+): Promise<readonly PublicRoomListing[]> {
+  const fetcher = opts.fetcher ?? defaultFetcher;
+  const base = opts.baseUrl ?? '';
+  const res = await call<{ rooms: PublicRoomListing[] }>(
+    `${base}/api/rooms`,
+    { method: 'GET' },
+    fetcher
+  );
+  return res.rooms;
 }
 
 export async function joinRoom(

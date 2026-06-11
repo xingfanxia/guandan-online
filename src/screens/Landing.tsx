@@ -25,7 +25,12 @@ import {
   storeCredentials,
   type RoomCredentials,
 } from '@/lib/identity';
-import { joinRoom, RoomApiError } from '@/lib/api/rooms';
+import {
+  joinRoom,
+  listPublicRooms,
+  RoomApiError,
+  type PublicRoomListing,
+} from '@/lib/api/rooms';
 import { navigate } from '@/lib/router';
 
 export interface LandingProps {
@@ -35,6 +40,8 @@ export interface LandingProps {
   initialRecent?: readonly RoomCredentials[];
   /** Override the joinRoom API — tests pass a stub. */
   joinFn?: typeof joinRoom;
+  /** Override the public-room-list API (ROOM-3) — tests pass a stub. */
+  listFn?: typeof listPublicRooms;
   /** Override navigate — tests assert calls. */
   navigateFn?: typeof navigate;
 }
@@ -43,6 +50,7 @@ export function Landing({
   initialHandle,
   initialRecent,
   joinFn = joinRoom,
+  listFn = listPublicRooms,
   navigateFn = navigate,
 }: LandingProps): React.JSX.Element {
   const [handle, setHandleState] = useState<string | null>(
@@ -64,6 +72,12 @@ export function Landing({
   const [joinCode, setJoinCode] = useState('');
   const [joinBusy, setJoinBusy] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
+
+  // ROOM-3 browse modal: null = closed; 'loading' | list | error string.
+  const [browseOpen, setBrowseOpen] = useState(false);
+  const [browseRooms, setBrowseRooms] = useState<readonly PublicRoomListing[] | null>(null);
+  const [browseError, setBrowseError] = useState<string | null>(null);
+  const [browseJoining, setBrowseJoining] = useState<string | null>(null);
 
   const recent = useMemo<readonly RoomCredentials[]>(
     () => initialRecent ?? listRecentCredentials(),
@@ -115,6 +129,35 @@ export function Landing({
     setJoinOpen('manual');
   }
 
+  /** Shared join path for the code modal AND the browse list (ROOM-3). */
+  async function joinByCode(code: string): Promise<void> {
+    if (!handle) return;
+    const res = await joinFn(code, { handle });
+    storeCredentials({
+      code,
+      playerId: res.playerId,
+      joinToken: res.joinToken,
+      // Persist our handle alongside the playerId so the game-table
+      // component can match `evt.players[].handle === myHandle` on
+      // snapshot. Without this, App.tsx falls back to the global
+      // getHandle() — fine for the active user, but breaks if they
+      // changed their handle between joining and entering the table.
+      handle,
+      storedAt: Date.now(),
+    });
+    navigateFn({ kind: 'wait', code });
+  }
+
+  function joinErrorMessage(err: unknown): string {
+    return err instanceof RoomApiError
+      ? err.code === 'room_not_found'
+        ? '房间不存在或已结束'
+        : err.code === 'conflict'
+          ? '房间已满或已开局'
+          : err.details ?? err.code
+      : '加入失败 — 请检查网络';
+  }
+
   async function submitJoin(): Promise<void> {
     if (!handle) return;
     const code = joinCode.trim().toUpperCase();
@@ -125,32 +168,52 @@ export function Landing({
     setJoinBusy(true);
     setJoinError(null);
     try {
-      const res = await joinFn(code, { handle });
-      storeCredentials({
-        code,
-        playerId: res.playerId,
-        joinToken: res.joinToken,
-        // Persist our handle alongside the playerId so the game-table
-        // component can match `evt.players[].handle === myHandle` on
-        // snapshot. Without this, App.tsx falls back to the global
-        // getHandle() — fine for the active user, but breaks if they
-        // changed their handle between joining and entering the table.
-        handle,
-        storedAt: Date.now(),
-      });
-      navigateFn({ kind: 'wait', code });
+      await joinByCode(code);
     } catch (err) {
-      const msg =
-        err instanceof RoomApiError
-          ? err.code === 'room_not_found'
-            ? '房间不存在或已结束'
-            : err.code === 'conflict'
-              ? '房间已满或已开局'
-              : err.details ?? err.code
-          : '加入失败 — 请检查网络';
-      setJoinError(msg);
+      setJoinError(joinErrorMessage(err));
     } finally {
       setJoinBusy(false);
+    }
+  }
+
+  /** Reload the list WITHOUT touching browseError — join failures must
+   *  stay visible across the honesty-refresh that follows them. */
+  async function loadBrowseRooms(): Promise<void> {
+    setBrowseRooms(null);
+    try {
+      setBrowseRooms(await listFn());
+    } catch {
+      setBrowseError('载入房间列表失败 — 请重试');
+      setBrowseRooms([]);
+    }
+  }
+
+  async function refreshBrowse(): Promise<void> {
+    setBrowseError(null);
+    await loadBrowseRooms();
+  }
+
+  function openBrowse(): void {
+    if (!handle) {
+      setSignInOpen('manual');
+      return;
+    }
+    setBrowseOpen(true);
+    void refreshBrowse();
+  }
+
+  async function joinFromBrowse(code: string): Promise<void> {
+    setBrowseJoining(code);
+    setBrowseError(null);
+    try {
+      await joinByCode(code);
+    } catch (err) {
+      setBrowseError(joinErrorMessage(err));
+      // The room may have filled/started — reload so the list is honest
+      // (loadBrowseRooms keeps the join error visible).
+      void loadBrowseRooms();
+    } finally {
+      setBrowseJoining(null);
     }
   }
 
@@ -221,12 +284,11 @@ export function Landing({
             <button
               type="button"
               className="btn btn--ghost btn--lg"
-              disabled
-              title="ROOM-3 · 公开房间列表（开发中）"
+              onClick={openBrowse}
               aria-label="浏览房间"
             >
               浏览房间
-              <span className="landing__cta-sub">开发中</span>
+              <span className="landing__cta-sub">公开房间列表</span>
             </button>
           </div>
         </section>
@@ -278,6 +340,17 @@ export function Landing({
           autoFocusInput={signInOpen === 'manual'}
           onSubmit={submitHandle}
           onClose={handle ? () => setSignInOpen(false) : undefined}
+        />
+      ) : null}
+
+      {browseOpen ? (
+        <BrowseModal
+          rooms={browseRooms}
+          error={browseError}
+          joining={browseJoining}
+          onJoin={(code) => void joinFromBrowse(code)}
+          onRefresh={() => void refreshBrowse()}
+          onClose={() => setBrowseOpen(false)}
         />
       ) : null}
 
@@ -340,6 +413,69 @@ function SignInModal({
           ) : null}
           <button type="button" className="btn btn--primary btn--sm" onClick={onSubmit}>
             确认
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BrowseModal({
+  rooms,
+  error,
+  joining,
+  onJoin,
+  onRefresh,
+  onClose,
+}: {
+  /** null = loading. */
+  rooms: readonly PublicRoomListing[] | null;
+  error: string | null;
+  /** Room code with an in-flight join, if any. */
+  joining: string | null;
+  onJoin: (code: string) => void;
+  onRefresh: () => void;
+  onClose: () => void;
+}): React.JSX.Element {
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="浏览房间">
+      <div className="modal browse-modal">
+        <h2 className="modal__title">公开房间</h2>
+        <p className="modal__label">等人开局的公开房间 · 点击加入</p>
+        {error ? <p className="modal__error">{error}</p> : null}
+        {rooms === null ? (
+          <p className="browse-modal__empty mono">载入中…</p>
+        ) : rooms.length === 0 ? (
+          <p className="browse-modal__empty mono">
+            现在没有公开房间。建房时勾选「公开房间」就会出现在这里。
+          </p>
+        ) : (
+          <ul className="browse-modal__list">
+            {rooms.map((r) => (
+              <li key={r.code} className="browse-modal__row">
+                <span className="browse-modal__code mono">{r.code}</span>
+                <span className="browse-modal__meta mono">
+                  {r.mode}P · {r.seatsFilled}/{r.seatsTotal} · {r.hostHandle}
+                  {r.strictA ? ' · 严格A' : ''}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn--primary btn--sm"
+                  disabled={joining !== null}
+                  onClick={() => onJoin(r.code)}
+                >
+                  {joining === r.code ? '加入中…' : '加入'}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="modal__actions">
+          <button type="button" className="btn btn--ghost btn--sm" onClick={onRefresh}>
+            刷新
+          </button>
+          <button type="button" className="btn btn--ghost btn--sm" onClick={onClose}>
+            关闭
           </button>
         </div>
       </div>

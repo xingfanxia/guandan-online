@@ -66,6 +66,12 @@ export interface RoomState {
    * in-game round. Optional — absent on freshly-created rooms.
    */
   lastSeenAt?: Record<PlayerId, number>;
+  /**
+   * ROOM-3: rooms opt IN to the public browse list (GET /api/rooms) at
+   * create time. Optional for back-compat with persisted rooms — absent
+   * means 'private' (invite-link / code only).
+   */
+  visibility?: 'public' | 'private';
 }
 
 // ─── createRoom ───────────────────────────────────────────────────────────────
@@ -78,6 +84,8 @@ export interface CreateRoomInput {
   now: number;
   /** Token generator; caller controls source (crypto.randomUUID in prod). */
   tokenGen: () => string;
+  /** ROOM-3: opt-in to the public browse list. Defaults to 'private'. */
+  visibility?: 'public' | 'private';
 }
 
 export function createRoom(input: CreateRoomInput): RoomState {
@@ -102,6 +110,7 @@ export function createRoom(input: CreateRoomInput): RoomState {
     createdAt: input.now,
     lastActiveAt: input.now,
     eventVersion: 0,
+    visibility: input.visibility ?? 'private',
   };
 }
 

@@ -217,6 +217,7 @@ export async function handleCreateRoom(
         host: { id: 'p0', handle: parsed.value.handle },
         now: ts,
         tokenGen,
+        visibility: parsed.value.visibility,
       });
 
       // Seat bots before persistence — at create-time the host has already
@@ -350,6 +351,8 @@ interface ParsedBody {
   bots: BotSeatConfig[];
   /** Subset of ModeRules to overlay on DEFAULT_MODE_RULES. */
   rules: Partial<ModeRules>;
+  /** ROOM-3: opt-in to the public browse list. Defaults to 'private'. */
+  visibility: 'public' | 'private';
 }
 
 /** Boolean rule axes accepted from the wire. Other ModeRules fields (numeric
@@ -432,7 +435,19 @@ function parseBody(
     rules[key as BooleanRuleKey] = raw;
   }
 
-  return { ok: true, value: { mode: mode as GameMode, handle, bots, rules } };
+  // ROOM-3: optional visibility flag. Only the literal 'public' opts in;
+  // anything else (including omission) stays private.
+  const visibilityRaw = obj['visibility'];
+  if (
+    visibilityRaw !== undefined &&
+    visibilityRaw !== 'public' &&
+    visibilityRaw !== 'private'
+  ) {
+    return { ok: false, error: "visibility must be 'public' or 'private'" };
+  }
+  const visibility = visibilityRaw === 'public' ? 'public' : 'private';
+
+  return { ok: true, value: { mode: mode as GameMode, handle, bots, rules, visibility } };
 }
 
 function defaultTokenGen(): string {

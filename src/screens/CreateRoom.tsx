@@ -90,6 +90,9 @@ export function CreateRoom({
   });
   const [aiTiers, setAiTiers] = useState<Record<number, AiTier>>({});
 
+  // ROOM-3: list this room on the public browse list (浏览房间). Default
+  // private — discovery is opt-in.
+  const [isPublic, setIsPublic] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -138,8 +141,10 @@ export function CreateRoom({
         mode: GameMode;
         handle: string;
         bots?: BotSeat[];
+        visibility?: 'public' | 'private';
       } & RoomRuleOverrides = { mode, handle, ...ruleOverrides };
       if (bots.length > 0) createInput.bots = bots;
+      if (isPublic) createInput.visibility = 'public';
       const res = await createFn(createInput);
       storeCredentials({
         code: res.code,
@@ -251,6 +256,16 @@ export function CreateRoom({
                   <span className="create__rule-label">{axis.label}</span>
                 </button>
               ))}
+              <button
+                type="button"
+                className={`create__rule ${isPublic ? 'create__rule--active' : ''}`}
+                onClick={() => setIsPublic((v) => !v)}
+                aria-pressed={isPublic}
+                aria-label="公开房间"
+              >
+                <span className="create__rule-check" />
+                <span className="create__rule-label">公开房间</span>
+              </button>
             </div>
           </div>
         </section>
